@@ -16,6 +16,7 @@ Talent-style impact documentation.
 - Tag: `v0.1.0`
 - Release workflow: <https://github.com/ogulcanaydogan/eu-ai-act-compliance-kit/actions/workflows/release.yml>
 - Latest run for `v0.1.0`: <https://github.com/ogulcanaydogan/eu-ai-act-compliance-kit/actions/runs/23296772746>
+- Latest failed publish job (`invalid-publisher`): <https://github.com/ogulcanaydogan/eu-ai-act-compliance-kit/actions/runs/23296772746/job/67750646592>
 
 ## Preflight Quality Signals
 
@@ -42,6 +43,8 @@ Trusted publishing policy:
 - Read the Docs config file: `.readthedocs.yaml`
 - MkDocs config: `mkdocs.yml`
 - Docs URL target: `https://eu-ai-act-compliance-kit.readthedocs.io`
+- RTD project dashboard: <https://app.readthedocs.org/projects/eu-ai-act-compliance-kit/>
+- RTD successful build (`latest`): <https://app.readthedocs.org/projects/eu-ai-act-compliance-kit/builds/31879843/>
 
 ## Community and Open Contribution Signals
 
@@ -55,7 +58,7 @@ Trusted publishing policy:
 - [ ] GitHub Release `v0.1.0` visible with wheel + sdist artifacts
 - [ ] TestPyPI install smoke succeeds: `ai-act --help`
 - [ ] PyPI install smoke succeeds: `ai-act --help`
-- [ ] RTD homepage returns HTTP `200` and pages are accessible
+- [x] RTD homepage returns HTTP `200` and pages are accessible
 
 ## Remaining One-Time Setup (External UIs)
 
@@ -84,6 +87,12 @@ Expected OIDC claims (from failed run log):
 - `sub`: `repo:ogulcanaydogan/eu-ai-act-compliance-kit:environment:testpypi`
 - `workflow_ref`: `ogulcanaydogan/eu-ai-act-compliance-kit/.github/workflows/release.yml@refs/tags/v0.1.0`
 - `ref`: `refs/tags/v0.1.0`
+
+Observed failure status:
+
+- Current release reruns fail at TestPyPI publish with `invalid-publisher`.
+- GitHub environment and claims are correct; missing step is TestPyPI-side trusted
+  publisher registration matching the claims above.
 
 ### 3) Configure Trusted Publisher on PyPI
 
