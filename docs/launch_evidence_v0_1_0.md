@@ -16,12 +16,12 @@ Talent-style impact documentation.
 - Tag: `v0.1.0`
 - Release workflow: <https://github.com/ogulcanaydogan/eu-ai-act-compliance-kit/actions/workflows/release.yml>
 - Latest run for `v0.1.0`: <https://github.com/ogulcanaydogan/eu-ai-act-compliance-kit/actions/runs/23296772746>
-- Run attempt (current): `6`
-- Latest failed publish job (`invalid-publisher`): <https://github.com/ogulcanaydogan/eu-ai-act-compliance-kit/actions/runs/23296772746/job/67800631468>
+- Run attempt (current): `7`
+- Latest failed publish job (`invalid-publisher`): <https://github.com/ogulcanaydogan/eu-ai-act-compliance-kit/actions/runs/23296772746/job/67806660875>
 - Last 3 failed TestPyPI publish jobs:
-  - Attempt 4: <https://github.com/ogulcanaydogan/eu-ai-act-compliance-kit/actions/runs/23296772746/job/67750398253>
   - Attempt 5: <https://github.com/ogulcanaydogan/eu-ai-act-compliance-kit/actions/runs/23296772746/job/67750646592>
   - Attempt 6: <https://github.com/ogulcanaydogan/eu-ai-act-compliance-kit/actions/runs/23296772746/job/67800631468>
+  - Attempt 7: <https://github.com/ogulcanaydogan/eu-ai-act-compliance-kit/actions/runs/23296772746/job/67806660875>
 
 ## Preflight Quality Signals
 
@@ -67,19 +67,19 @@ Trusted publishing policy:
 
 ## Escalation Snapshot (After Retry Limit)
 
-Retry policy target was max 3 reruns; current run is attempt 6 and still fails
+Retry policy target was max 3 reruns; current run is attempt 7 and still fails
 at TestPyPI trusted publishing with `invalid-publisher`.
 
 ### Last 3 attempt outcomes
 
-- Attempt 4 (`67750398253`): `Publish to TestPyPI` failed with
-  `invalid-publisher`.
 - Attempt 5 (`67750646592`): `Publish to TestPyPI` failed with
   `invalid-publisher`.
 - Attempt 6 (`67800631468`): `Publish to TestPyPI` failed with
   `invalid-publisher`.
+- Attempt 7 (`67806660875`): `Publish to TestPyPI` failed with
+  `invalid-publisher`.
 
-### Latest failed log excerpt (attempt 6)
+### Latest failed log excerpt (attempt 7)
 
 ```text
 Trusted publishing exchange failure
