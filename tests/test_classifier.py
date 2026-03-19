@@ -5,14 +5,15 @@ Tests RiskClassifier logic for categorizing AI systems into risk tiers.
 """
 
 import pytest
+
+from eu_ai_act.classifier import RiskClassifier, RiskTier
 from eu_ai_act.schema import (
     AISystemDescriptor,
-    UseCase,
     DataPractice,
     HumanOversight,
+    UseCase,
     UseCaseDomain,
 )
-from eu_ai_act.classifier import RiskClassifier, RiskTier
 
 
 class TestRiskClassifierHighRisk:

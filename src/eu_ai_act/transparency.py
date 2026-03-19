@@ -3,7 +3,6 @@ Transparency obligations checker for EU AI Act Art. 50 and GPAI-related duties.
 """
 
 from dataclasses import dataclass
-from typing import List
 
 from eu_ai_act.checker import ComplianceStatus
 from eu_ai_act.schema import AISystemDescriptor, UseCaseDomain
@@ -19,7 +18,7 @@ class TransparencyFinding:
     title: str
     description: str
     gap_analysis: str
-    recommendations: List[str]
+    recommendations: list[str]
 
 
 class TransparencyChecker:
@@ -44,7 +43,7 @@ class TransparencyChecker:
         "broad training",
     ]
 
-    def check_art50_disclosure(self, descriptor: AISystemDescriptor) -> List[TransparencyFinding]:
+    def check_art50_disclosure(self, descriptor: AISystemDescriptor) -> list[TransparencyFinding]:
         """
         Check Art. 50 disclosure obligations.
 
@@ -138,12 +137,12 @@ class TransparencyChecker:
             ],
         )
 
-    def check_gpai_obligations(self, descriptor: AISystemDescriptor) -> List[TransparencyFinding]:
+    def check_gpai_obligations(self, descriptor: AISystemDescriptor) -> list[TransparencyFinding]:
         """Check GPAI obligations (Art. 51-55) when GPAI signals are present."""
         if not self._is_gpai_signal(descriptor):
             return []
 
-        findings: List[TransparencyFinding] = []
+        findings: list[TransparencyFinding] = []
         text = self._descriptor_text(descriptor)
         has_model_card = "model card" in text
         has_systemic_risk_wording = "systemic risk" in text
@@ -267,7 +266,7 @@ class TransparencyChecker:
         if descriptor.incident_procedure and descriptor.performance_monitoring:
             status = ComplianceStatus.COMPLIANT
             gap = ""
-            recommendations: List[str] = []
+            recommendations: list[str] = []
         elif descriptor.incident_procedure or descriptor.performance_monitoring:
             status = ComplianceStatus.PARTIAL
             gap = "Mitigation controls exist but are incomplete for GPAI lifecycle risks."
@@ -335,7 +334,9 @@ class TransparencyChecker:
 
     def _is_gpai_signal(self, descriptor: AISystemDescriptor) -> bool:
         """Detect whether descriptor suggests GPAI characteristics."""
-        if any(use_case.domain == UseCaseDomain.GENERAL_PURPOSE for use_case in descriptor.use_cases):
+        if any(
+            use_case.domain == UseCaseDomain.GENERAL_PURPOSE for use_case in descriptor.use_cases
+        ):
             return True
         return self._contains_any(self._descriptor_text(descriptor), self.GPAI_SIGNAL_KEYWORDS)
 
@@ -351,6 +352,6 @@ class TransparencyChecker:
         ]
         return " ".join(parts).lower()
 
-    def _contains_any(self, text: str, keywords: List[str]) -> bool:
+    def _contains_any(self, text: str, keywords: list[str]) -> bool:
         """Simple keyword-match helper."""
         return any(keyword in text for keyword in keywords)

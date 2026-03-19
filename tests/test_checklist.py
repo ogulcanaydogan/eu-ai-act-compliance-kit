@@ -51,13 +51,19 @@ class TestChecklistGenerator:
 
         checker = ComplianceChecker()
         report = checker.check(descriptor)
-        checklist = ChecklistGenerator().generate(descriptor, report.risk_tier, findings=report.findings)
+        checklist = ChecklistGenerator().generate(
+            descriptor, report.risk_tier, findings=report.findings
+        )
 
         assert checklist.summary.compliant_count == 5
         assert checklist.summary.actionable_count == 1
         assert checklist.total_items == 1
-        assert any(item.article == "Art. 43" and item.status == "partial" for item in checklist.items)
-        assert all(item.status in {"non_compliant", "partial", "not_assessed"} for item in checklist.items)
+        assert any(
+            item.article == "Art. 43" and item.status == "partial" for item in checklist.items
+        )
+        assert all(
+            item.status in {"non_compliant", "partial", "not_assessed"} for item in checklist.items
+        )
 
     def test_limited_risk_disclosure_gap_generates_art50_action(self):
         """Limited-risk systems with disclosure gaps should produce an Art.50 task."""
@@ -86,7 +92,9 @@ class TestChecklistGenerator:
 
         checker = ComplianceChecker()
         report = checker.check(descriptor)
-        checklist = ChecklistGenerator().generate(descriptor, report.risk_tier, findings=report.findings)
+        checklist = ChecklistGenerator().generate(
+            descriptor, report.risk_tier, findings=report.findings
+        )
 
         assert checklist.total_items == 1
         assert checklist.items[0].article == "Art. 50"
@@ -120,7 +128,9 @@ class TestChecklistGenerator:
 
         checker = ComplianceChecker()
         report = checker.check(descriptor)
-        checklist = ChecklistGenerator().generate(descriptor, report.risk_tier, findings=report.findings)
+        checklist = ChecklistGenerator().generate(
+            descriptor, report.risk_tier, findings=report.findings
+        )
 
         assert checklist.total_items == 0
         assert checklist.items == []

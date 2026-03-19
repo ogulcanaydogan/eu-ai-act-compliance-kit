@@ -3,7 +3,6 @@ GPAI (General-Purpose AI) model obligation assessment.
 """
 
 from dataclasses import dataclass
-from typing import List, Optional
 
 import yaml
 from pydantic import BaseModel, Field
@@ -21,7 +20,7 @@ class GPAIFinding:
     title: str
     description: str
     gap_analysis: str
-    recommendations: List[str]
+    recommendations: list[str]
 
 
 class GPAIModelInfo(BaseModel):
@@ -29,9 +28,9 @@ class GPAIModelInfo(BaseModel):
 
     model_name: str = Field(..., min_length=1)
     provider: str = Field(..., min_length=1)
-    training_compute_flops: Optional[float] = None
-    model_params_billion: Optional[float] = None
-    eu_monthly_users: Optional[int] = None
+    training_compute_flops: float | None = None
+    model_params_billion: float | None = None
+    eu_monthly_users: int | None = None
     supports_tool_use: bool = False
     autonomous_task_execution: bool = False
     generates_synthetic_media: bool = False
@@ -46,9 +45,9 @@ class GPAIAssessment:
     """Output model for GPAI obligation assessment."""
 
     systemic_risk_flag: bool
-    findings: List[GPAIFinding]
-    compliance_gaps: List[str]
-    recommendations: List[str]
+    findings: list[GPAIFinding]
+    compliance_gaps: list[str]
+    recommendations: list[str]
 
 
 class GPAIAssessor:
@@ -61,12 +60,11 @@ class GPAIAssessor:
     def assess(self, model_info: GPAIModelInfo) -> GPAIAssessment:
         """Assess a GPAI model against Articles 51-55 obligations."""
         systemic_risk_flag = self._is_systemic_risk(model_info)
-        threshold_data_missing = (
-            model_info.training_compute_flops is None
-            and (model_info.model_params_billion is None or model_info.eu_monthly_users is None)
+        threshold_data_missing = model_info.training_compute_flops is None and (
+            model_info.model_params_billion is None or model_info.eu_monthly_users is None
         )
 
-        findings: List[GPAIFinding] = [
+        findings: list[GPAIFinding] = [
             self._assess_art51(model_info),
             self._assess_art52(model_info),
             self._assess_art53(model_info, systemic_risk_flag, threshold_data_missing),
@@ -77,10 +75,15 @@ class GPAIAssessor:
         compliance_gaps = [
             f"[{finding.requirement_id}] {finding.gap_analysis}"
             for finding in findings
-            if finding.status in {ComplianceStatus.NON_COMPLIANT, ComplianceStatus.PARTIAL, ComplianceStatus.NOT_ASSESSED}
+            if finding.status
+            in {
+                ComplianceStatus.NON_COMPLIANT,
+                ComplianceStatus.PARTIAL,
+                ComplianceStatus.NOT_ASSESSED,
+            }
             and finding.gap_analysis
         ]
-        recommendations: List[str] = []
+        recommendations: list[str] = []
         for finding in findings:
             recommendations.extend(finding.recommendations)
         recommendations = list(dict.fromkeys(recommendations))
@@ -125,11 +128,13 @@ class GPAIAssessor:
         if model_info.training_data_documented:
             status = ComplianceStatus.COMPLIANT
             gap = ""
-            recommendations: List[str] = []
+            recommendations: list[str] = []
         else:
             status = ComplianceStatus.NON_COMPLIANT
             gap = "Training data documentation evidence is missing."
-            recommendations = ["Document training data provenance, quality controls, and filtering steps."]
+            recommendations = [
+                "Document training data provenance, quality controls, and filtering steps."
+            ]
 
         return GPAIFinding(
             requirement_id="Art. 51",
@@ -146,7 +151,7 @@ class GPAIAssessor:
         if model_info.model_card_available:
             status = ComplianceStatus.COMPLIANT
             gap = ""
-            recommendations: List[str] = []
+            recommendations: list[str] = []
         else:
             status = ComplianceStatus.NON_COMPLIANT
             gap = "Model card or equivalent capability documentation is missing."
@@ -206,15 +211,19 @@ class GPAIAssessor:
         if model_info.systemic_risk_mitigation_plan and model_info.post_market_monitoring:
             status = ComplianceStatus.COMPLIANT
             gap = ""
-            recommendations: List[str] = []
+            recommendations: list[str] = []
         elif model_info.systemic_risk_mitigation_plan or model_info.post_market_monitoring:
             status = ComplianceStatus.PARTIAL
             gap = "Mitigation and post-market monitoring controls are partially implemented."
-            recommendations = ["Complete both mitigation planning and post-market monitoring controls."]
+            recommendations = [
+                "Complete both mitigation planning and post-market monitoring controls."
+            ]
         elif systemic_risk_flag:
             status = ComplianceStatus.NON_COMPLIANT
             gap = "Systemic-risk model lacks mitigation and post-market monitoring controls."
-            recommendations = ["Implement mitigation plan and post-market monitoring before deployment."]
+            recommendations = [
+                "Implement mitigation plan and post-market monitoring before deployment."
+            ]
         else:
             status = ComplianceStatus.NOT_ASSESSED
             gap = "Insufficient mitigation/monitoring evidence for GPAI obligations."
@@ -235,7 +244,7 @@ class GPAIAssessor:
         if model_info.model_card_available and model_info.training_data_documented:
             status = ComplianceStatus.COMPLIANT
             gap = ""
-            recommendations: List[str] = []
+            recommendations: list[str] = []
         elif model_info.model_card_available or model_info.training_data_documented:
             status = ComplianceStatus.PARTIAL
             gap = "Only part of downstream transparency information is available."
@@ -266,5 +275,5 @@ def load_gpai_model_info_from_yaml(yaml_content: str) -> GPAIModelInfo:
 
 def load_gpai_model_info_from_file(filepath: str) -> GPAIModelInfo:
     """Load GPAI model info from YAML file."""
-    with open(filepath, "r", encoding="utf-8") as file:
+    with open(filepath, encoding="utf-8") as file:
         return load_gpai_model_info_from_yaml(file.read())

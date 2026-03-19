@@ -1,7 +1,13 @@
 """Tests for transparency checker logic."""
 
 from eu_ai_act.checker import ComplianceStatus
-from eu_ai_act.schema import AISystemDescriptor, DataPractice, HumanOversight, UseCase, UseCaseDomain
+from eu_ai_act.schema import (
+    AISystemDescriptor,
+    DataPractice,
+    HumanOversight,
+    UseCase,
+    UseCaseDomain,
+)
 from eu_ai_act.transparency import TransparencyChecker
 
 

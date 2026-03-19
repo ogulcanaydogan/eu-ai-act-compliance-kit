@@ -52,7 +52,14 @@ class TestComplianceChecker:
         report = ComplianceChecker().check(descriptor)
 
         assert report.risk_tier == RiskTier.HIGH_RISK
-        assert set(report.findings.keys()) == {"Art. 10", "Art. 11", "Art. 13", "Art. 14", "Art. 15", "Art. 43"}
+        assert set(report.findings.keys()) == {
+            "Art. 10",
+            "Art. 11",
+            "Art. 13",
+            "Art. 14",
+            "Art. 15",
+            "Art. 43",
+        }
         assert report.summary.total_requirements == 6
         assert report.summary.compliant_count == 5
         assert report.summary.partial_count == 1

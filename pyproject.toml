@@ -100,7 +100,10 @@ select = [
     "B",    # flake8-bugbear
     "UP",   # pyupgrade
 ]
-ignore = ["E501"]  # line-too-long (handled by black)
+ignore = [
+    "E501",  # line-too-long (handled by black)
+    "C901",  # function complexity threshold (tracked separately)
+]
 
 [tool.mypy]
 python_version = "3.11"
@@ -113,6 +116,10 @@ no_implicit_optional = true
 warn_redundant_casts = true
 warn_unused_ignores = true
 warn_no_return = true
+
+[[tool.mypy.overrides]]
+module = ["yaml", "weasyprint"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

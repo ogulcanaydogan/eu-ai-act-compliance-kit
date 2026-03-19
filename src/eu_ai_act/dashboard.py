@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
 import html
 import json
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from eu_ai_act.checker import ComplianceChecker
 from eu_ai_act.classifier import RiskClassifier
@@ -32,16 +32,16 @@ class DashboardGenerator:
         *,
         recursive: bool = False,
         include_history: bool = False,
-        history_path: Optional[str | Path] = None,
-    ) -> Dict[str, Any]:
+        history_path: str | Path | None = None,
+    ) -> dict[str, Any]:
         """Build dashboard payload from descriptors in a directory."""
         scan_root = Path(descriptor_dir).expanduser().resolve()
         if not scan_root.exists() or not scan_root.is_dir():
             raise ValueError(f"Descriptor directory does not exist: {scan_root}")
 
         descriptor_files = self._discover_descriptor_files(scan_root, recursive=recursive)
-        systems: List[Dict[str, Any]] = []
-        errors: List[Dict[str, str]] = []
+        systems: list[dict[str, Any]] = []
+        errors: list[dict[str, str]] = []
         risk_tier_distribution = {tier.value: 0 for tier in RiskTier}
 
         for descriptor_file in descriptor_files:
@@ -81,7 +81,7 @@ class DashboardGenerator:
             else 0.0
         )
 
-        payload: Dict[str, Any] = {
+        payload: dict[str, Any] = {
             "generated_at": _utc_now_iso(),
             "scan_root": str(scan_root),
             "scanned_file_count": len(descriptor_files),
@@ -101,7 +101,7 @@ class DashboardGenerator:
 
         return payload
 
-    def render_html(self, payload: Dict[str, Any]) -> str:
+    def render_html(self, payload: dict[str, Any]) -> str:
         """Render dashboard payload as static HTML."""
         cards = self._render_cards(payload)
         systems_rows = self._render_system_rows(payload.get("systems", []))
@@ -110,10 +110,10 @@ class DashboardGenerator:
 
         return (
             "<!DOCTYPE html>\n"
-            "<html lang=\"en\">\n"
+            '<html lang="en">\n'
             "<head>\n"
-            "  <meta charset=\"UTF-8\">\n"
-            "  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n"
+            '  <meta charset="UTF-8">\n'
+            '  <meta name="viewport" content="width=device-width, initial-scale=1.0">\n'
             "  <title>EU AI Act Multi-System Dashboard</title>\n"
             "  <style>\n"
             "    body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; margin: 24px; color: #1c2434; }\n"
@@ -148,13 +148,13 @@ class DashboardGenerator:
         )
 
     @staticmethod
-    def to_json(payload: Dict[str, Any]) -> str:
+    def to_json(payload: dict[str, Any]) -> str:
         """Serialize dashboard payload as JSON string."""
         return json.dumps(payload, indent=2)
 
-    def _discover_descriptor_files(self, scan_root: Path, *, recursive: bool) -> List[Path]:
+    def _discover_descriptor_files(self, scan_root: Path, *, recursive: bool) -> list[Path]:
         patterns = ("*.yaml", "*.yml")
-        files: List[Path] = []
+        files: list[Path] = []
         for pattern in patterns:
             if recursive:
                 files.extend(scan_root.rglob(pattern))
@@ -166,19 +166,21 @@ class DashboardGenerator:
     def _build_history_trends(
         self,
         *,
-        systems: List[Dict[str, Any]],
-        history_path: Optional[str | Path],
-    ) -> List[Dict[str, Any]]:
+        systems: list[dict[str, Any]],
+        history_path: str | Path | None,
+    ) -> list[dict[str, Any]]:
         if not systems:
             return []
 
         system_names = {row["system_name"] for row in systems}
         events = list_events(history_path=history_path)
-        trends: List[Dict[str, Any]] = []
+        trends: list[dict[str, Any]] = []
 
         for system_name in sorted(system_names):
             system_events = [
-                event for event in events if event.system_name == system_name and event.event_type in {"check", "report"}
+                event
+                for event in events
+                if event.system_name == system_name and event.event_type in {"check", "report"}
             ]
             if not system_events:
                 continue
@@ -186,7 +188,7 @@ class DashboardGenerator:
             latest = system_events[0]
             previous = system_events[1] if len(system_events) > 1 else None
 
-            trend: Dict[str, Any] = {
+            trend: dict[str, Any] = {
                 "system_name": system_name,
                 "event_count": len(system_events),
                 "latest_event_id": latest.event_id,
@@ -201,7 +203,9 @@ class DashboardGenerator:
                 trend["previous_risk_tier"] = previous.risk_tier
                 trend["previous_compliance_percentage"] = previous.summary["compliance_percentage"]
                 trend["compliance_percentage_delta"] = round(
-                    latest.summary["compliance_percentage"] - previous.summary["compliance_percentage"], 2
+                    latest.summary["compliance_percentage"]
+                    - previous.summary["compliance_percentage"],
+                    2,
                 )
                 trend["non_compliant_count_delta"] = (
                     latest.summary["non_compliant_count"] - previous.summary["non_compliant_count"]
@@ -210,7 +214,7 @@ class DashboardGenerator:
 
         return trends
 
-    def _render_cards(self, payload: Dict[str, Any]) -> str:
+    def _render_cards(self, payload: dict[str, Any]) -> str:
         cards = [
             ("Scanned Files", payload.get("scanned_file_count", 0)),
             ("Valid Systems", payload.get("valid_system_count", 0)),
@@ -221,26 +225,26 @@ class DashboardGenerator:
         card_html = []
         for title, value in cards:
             card_html.append(
-                "    <div class=\"card\">"
-                f"<div class=\"card-title\">{html.escape(str(title))}</div>"
-                f"<div class=\"card-value\">{html.escape(str(value))}</div>"
+                '    <div class="card">'
+                f'<div class="card-title">{html.escape(str(title))}</div>'
+                f'<div class="card-value">{html.escape(str(value))}</div>'
                 "</div>"
             )
-        return "  <div class=\"cards\">\n" + "\n".join(card_html) + "\n  </div>"
+        return '  <div class="cards">\n' + "\n".join(card_html) + "\n  </div>"
 
-    def _render_risk_distribution(self, distribution: Dict[str, Any]) -> str:
+    def _render_risk_distribution(self, distribution: dict[str, Any]) -> str:
         if not distribution:
-            return "<p class=\"empty\">No risk distribution data available.</p>"
+            return '<p class="empty">No risk distribution data available.</p>'
         labels = ["unacceptable", "high_risk", "limited", "minimal"]
         items = [
             f"<span><strong>{html.escape(label)}:</strong> {html.escape(str(distribution.get(label, 0)))}</span>"
             for label in labels
         ]
-        return "<div class=\"risk-grid\">" + "".join(items) + "</div>"
+        return '<div class="risk-grid">' + "".join(items) + "</div>"
 
-    def _render_system_rows(self, systems: List[Dict[str, Any]]) -> str:
+    def _render_system_rows(self, systems: list[dict[str, Any]]) -> str:
         if not systems:
-            return "<p class=\"empty\">No valid systems detected.</p>"
+            return '<p class="empty">No valid systems detected.</p>'
 
         rows = []
         for row in systems:
@@ -269,9 +273,9 @@ class DashboardGenerator:
             "</table>"
         )
 
-    def _render_error_rows(self, errors: List[Dict[str, str]]) -> str:
+    def _render_error_rows(self, errors: list[dict[str, str]]) -> str:
         if not errors:
-            return "<p class=\"empty\">No invalid descriptor files.</p>"
+            return '<p class="empty">No invalid descriptor files.</p>'
 
         rows = []
         for row in errors:
@@ -290,12 +294,12 @@ class DashboardGenerator:
             "</table>"
         )
 
-    def _render_history_section(self, history_trends: Optional[List[Dict[str, Any]]]) -> str:
+    def _render_history_section(self, history_trends: list[dict[str, Any]] | None) -> str:
         if history_trends is None:
             return ""
 
         if not history_trends:
-            return "<h2>History Trends</h2><p class=\"empty\">No history trends available.</p>"
+            return '<h2>History Trends</h2><p class="empty">No history trends available.</p>'
 
         rows = []
         for row in history_trends:

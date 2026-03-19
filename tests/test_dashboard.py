@@ -6,13 +6,14 @@ from pathlib import Path
 from eu_ai_act.dashboard import DashboardGenerator
 from eu_ai_act.history import append_event, build_event
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 EXAMPLES_DIR = REPO_ROOT / "examples"
 
 
 def _copy_example(source_name: str, destination: Path) -> None:
-    destination.write_text((EXAMPLES_DIR / source_name).read_text(encoding="utf-8"), encoding="utf-8")
+    destination.write_text(
+        (EXAMPLES_DIR / source_name).read_text(encoding="utf-8"), encoding="utf-8"
+    )
 
 
 class TestDashboardGenerator:
@@ -57,7 +58,8 @@ class TestDashboardGenerator:
 
         payload = DashboardGenerator().build(scan_root)
         expected_average = round(
-            sum(system["compliance_percentage"] for system in payload["systems"]) / len(payload["systems"]),
+            sum(system["compliance_percentage"] for system in payload["systems"])
+            / len(payload["systems"]),
             2,
         )
         assert payload["average_compliance_percentage"] == expected_average
@@ -65,8 +67,12 @@ class TestDashboardGenerator:
     def test_no_valid_systems_returns_empty_systems_and_errors(self, tmp_path):
         scan_root = tmp_path / "scan"
         scan_root.mkdir()
-        (scan_root / "invalid_one.yaml").write_text("name: broken\nuse_cases: [\n", encoding="utf-8")
-        (scan_root / "invalid_two.yml").write_text("description: missing required fields\n", encoding="utf-8")
+        (scan_root / "invalid_one.yaml").write_text(
+            "name: broken\nuse_cases: [\n", encoding="utf-8"
+        )
+        (scan_root / "invalid_two.yml").write_text(
+            "description: missing required fields\n", encoding="utf-8"
+        )
 
         payload = DashboardGenerator().build(scan_root)
 

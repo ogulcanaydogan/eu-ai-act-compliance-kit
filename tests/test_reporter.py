@@ -2,8 +2,8 @@
 
 import builtins
 import json
-from pathlib import Path
 import sys
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -16,7 +16,6 @@ from eu_ai_act.gpai import GPAIAssessor
 from eu_ai_act.reporter import ReportGenerator
 from eu_ai_act.schema import load_system_descriptor_from_file
 from eu_ai_act.transparency import TransparencyChecker
-
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 EXAMPLES_DIR = REPO_ROOT / "examples"
@@ -41,7 +40,14 @@ def _build_report_inputs(system_yaml: Path):
         generated_at=compliance_report.generated_at,
     )
 
-    return descriptor, classification, compliance_report, transparency_findings, gpai_assessment, checklist
+    return (
+        descriptor,
+        classification,
+        compliance_report,
+        transparency_findings,
+        gpai_assessment,
+        checklist,
+    )
 
 
 class TestReportGenerator:
@@ -84,7 +90,12 @@ class TestReportGenerator:
         ]:
             assert key in payload
 
-        for key in ["compliance_findings", "audit_trail", "recommended_actions", "recommended_action_count"]:
+        for key in [
+            "compliance_findings",
+            "audit_trail",
+            "recommended_actions",
+            "recommended_action_count",
+        ]:
             assert key in payload
 
         assert payload["recommended_action_count"] == len(payload["recommended_actions"])
@@ -155,7 +166,11 @@ class TestReportGenerator:
 
         assert payload["audit_trail"] == compliance_report.audit_trail
         assert "Art. 43" in payload["compliance_findings"]
-        assert payload["compliance_findings"]["Art. 43"]["status"] in {"partial", "non_compliant", "not_assessed"}
+        assert payload["compliance_findings"]["Art. 43"]["status"] in {
+            "partial",
+            "non_compliant",
+            "not_assessed",
+        }
 
     def test_markdown_and_html_include_required_sections(self):
         """Markdown/HTML output should expose standardized section headers."""

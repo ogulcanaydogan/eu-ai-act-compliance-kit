@@ -5,10 +5,9 @@ Generates actionable checklists based on AI system risk tier and applicable
 EU AI Act requirements.
 """
 
+import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Dict, List, Optional
-import json
 
 from eu_ai_act.checker import ComplianceFinding, ComplianceStatus
 from eu_ai_act.schema import AISystemDescriptor, RiskTier
@@ -31,6 +30,7 @@ class ChecklistItem:
         success_criteria: How to verify completion
         gap_analysis: Reported compliance gap for the item
     """
+
     id: str
     title: str
     article: str
@@ -46,6 +46,7 @@ class ChecklistItem:
 @dataclass
 class ChecklistSummary:
     """Summary metrics for checklist generation."""
+
     total_requirements: int
     compliant_count: int
     non_compliant_count: int
@@ -69,10 +70,11 @@ class ComplianceChecklist:
         estimated_completion_hours: Estimated effort to complete
         summary: Summary metrics from findings
     """
+
     system_name: str
     risk_tier: RiskTier
     generated_at: str
-    items: List[ChecklistItem]
+    items: list[ChecklistItem]
     total_items: int
     estimated_completion_hours: float
     summary: ChecklistSummary
@@ -139,7 +141,9 @@ class ComplianceChecklist:
                 md += f"### {severity} Priority ({len(severity_items)} items)\n\n"
                 for item in severity_items:
                     md += f"- [ ] **{item.title}** ({item.article})\n"
-                    md += f"      *Status: {item.status} | Deadline: {item.deadline_months} months*\n"
+                    md += (
+                        f"      *Status: {item.status} | Deadline: {item.deadline_months} months*\n"
+                    )
                     if item.gap_analysis:
                         md += f"      Gap: {item.gap_analysis}\n"
                     md += f"      {item.description}\n"
@@ -158,8 +162,7 @@ class ComplianceChecklist:
         }
         rows = []
         for item in self.items:
-            rows.append(
-                f"""
+            rows.append(f"""
                 <tr>
                     <td>{item.id}</td>
                     <td>{item.title}</td>
@@ -169,18 +172,15 @@ class ComplianceChecklist:
                     <td>{item.deadline_months}</td>
                     <td>{item.gap_analysis or '-'}</td>
                 </tr>
-                """
-            )
+                """)
 
-        body = (
-            f"""
+        body = f"""
             <p><strong>Generated:</strong> {self.generated_at}</p>
             <p><strong>Risk Tier:</strong> {self.risk_tier.value.upper()}</p>
             <p><strong>Total Requirements:</strong> {self.summary.total_requirements}</p>
             <p><strong>Compliant (Not Listed):</strong> {self.summary.compliant_count}</p>
             <p><strong>Actionable Tasks:</strong> {self.total_items}</p>
             """
-        )
         if rows:
             body += (
                 """
@@ -229,6 +229,7 @@ class ChecklistGenerator:
     Creates actionable, prioritized checklists based on risk tier and specific
     gaps identified in the system descriptor.
     """
+
     ACTIONABLE_STATUSES = {
         ComplianceStatus.NON_COMPLIANT,
         ComplianceStatus.PARTIAL,
@@ -250,7 +251,7 @@ class ChecklistGenerator:
         RiskTier.LIMITED: ["Art. 50"],
         RiskTier.MINIMAL: [],
     }
-    TEMPLATE_BY_ARTICLE: Dict[str, Dict[str, str]] = {
+    TEMPLATE_BY_ARTICLE: dict[str, dict[str, str]] = {
         "Art. 5": {
             "title": "Remove prohibited AI practice from deployment path",
             "severity": "CRITICAL",
@@ -313,8 +314,8 @@ class ChecklistGenerator:
         self,
         descriptor: AISystemDescriptor,
         tier: RiskTier,
-        findings: Optional[Dict[str, ComplianceFinding]] = None,
-        generated_at: Optional[str] = None,
+        findings: dict[str, ComplianceFinding] | None = None,
+        generated_at: str | None = None,
     ) -> ComplianceChecklist:
         """
         Generate a compliance checklist for an AI system.
@@ -358,14 +359,14 @@ class ChecklistGenerator:
     def _build_actionable_items_from_findings(
         self,
         tier: RiskTier,
-        findings: Dict[str, ComplianceFinding],
-    ) -> List[ChecklistItem]:
+        findings: dict[str, ComplianceFinding],
+    ) -> list[ChecklistItem]:
         """Build actionable checklist items from checker findings."""
         ordered_articles = self.TIER_ARTICLES.get(tier, [])
         remaining_articles = [article for article in findings if article not in ordered_articles]
         articles_to_check = ordered_articles + sorted(remaining_articles)
 
-        items: List[ChecklistItem] = []
+        items: list[ChecklistItem] = []
         counter = 1
         for article in articles_to_check:
             finding = findings.get(article)
@@ -391,10 +392,10 @@ class ChecklistGenerator:
             counter += 1
         return items
 
-    def _build_default_items_for_tier(self, tier: RiskTier) -> List[ChecklistItem]:
+    def _build_default_items_for_tier(self, tier: RiskTier) -> list[ChecklistItem]:
         """Build default tier-based checklist tasks when findings are unavailable."""
         articles = self.TIER_ARTICLES.get(tier, [])
-        items: List[ChecklistItem] = []
+        items: list[ChecklistItem] = []
         for index, article in enumerate(articles, start=1):
             template = self._get_template(article)
             items.append(
@@ -413,13 +414,17 @@ class ChecklistGenerator:
             )
         return items
 
-    def _summarize_findings(self, findings: Dict[str, ComplianceFinding]) -> ChecklistSummary:
+    def _summarize_findings(self, findings: dict[str, ComplianceFinding]) -> ChecklistSummary:
         """Compute summary metrics from checker findings."""
-        compliant_count = sum(1 for finding in findings.values() if finding.status == ComplianceStatus.COMPLIANT)
+        compliant_count = sum(
+            1 for finding in findings.values() if finding.status == ComplianceStatus.COMPLIANT
+        )
         non_compliant_count = sum(
             1 for finding in findings.values() if finding.status == ComplianceStatus.NON_COMPLIANT
         )
-        partial_count = sum(1 for finding in findings.values() if finding.status == ComplianceStatus.PARTIAL)
+        partial_count = sum(
+            1 for finding in findings.values() if finding.status == ComplianceStatus.PARTIAL
+        )
         not_assessed_count = sum(
             1 for finding in findings.values() if finding.status == ComplianceStatus.NOT_ASSESSED
         )
@@ -429,8 +434,8 @@ class ChecklistGenerator:
             compliance_percentage = 0.0
         else:
             compliance_percentage = (
-                compliant_count + (partial_count * 0.5)
-            ) / total_requirements * 100
+                (compliant_count + (partial_count * 0.5)) / total_requirements * 100
+            )
         return ChecklistSummary(
             total_requirements=total_requirements,
             compliant_count=compliant_count,
@@ -441,7 +446,7 @@ class ChecklistGenerator:
             compliance_percentage=compliance_percentage,
         )
 
-    def _get_template(self, article: str) -> Dict[str, str]:
+    def _get_template(self, article: str) -> dict[str, str]:
         """Return template for an article with a safe generic fallback."""
         return self.TEMPLATE_BY_ARTICLE.get(
             article,

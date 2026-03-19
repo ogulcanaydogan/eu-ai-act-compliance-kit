@@ -10,7 +10,6 @@ import eu_ai_act.cli as cli_module
 from eu_ai_act.cli import main
 from eu_ai_act.reporter import ReportGenerator
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 EXAMPLES_DIR = REPO_ROOT / "examples"
 
@@ -148,7 +147,7 @@ class TestCLI:
         assert md_result.exit_code == 0
         assert html_result.exit_code == 0
 
-        json_payload = json.loads(json_result.output[json_result.output.find("{"):])
+        json_payload = json.loads(json_result.output[json_result.output.find("{") :])
         assert "transparency_findings" in json_payload
         assert "gpai_assessment" in json_payload
         assert "compliance_findings" in json_payload
@@ -184,7 +183,7 @@ class TestCLI:
             ["history", "list", "--event-type", "check", "--limit", "2", "--json"],
         )
         assert list_result.exit_code == 0
-        list_payload = json.loads(list_result.output[list_result.output.find("{"):])
+        list_payload = json.loads(list_result.output[list_result.output.find("{") :])
         assert list_payload["count"] == 2
         assert len(list_payload["events"]) == 2
 
@@ -193,13 +192,13 @@ class TestCLI:
 
         show_result = runner.invoke(main, ["history", "show", newer_id, "--json"])
         assert show_result.exit_code == 0
-        show_payload = json.loads(show_result.output[show_result.output.find("{"):])
+        show_payload = json.loads(show_result.output[show_result.output.find("{") :])
         assert show_payload["event_id"] == newer_id
         assert show_payload["event_type"] == "check"
 
         diff_result = runner.invoke(main, ["history", "diff", older_id, newer_id, "--json"])
         assert diff_result.exit_code == 0
-        diff_payload = json.loads(diff_result.output[diff_result.output.find("{"):])
+        diff_payload = json.loads(diff_result.output[diff_result.output.find("{") :])
         assert "risk_tier_change" in diff_payload
         assert "summary_changes" in diff_payload
         assert "finding_status_changes" in diff_payload

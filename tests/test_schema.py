@@ -4,10 +4,11 @@ Tests for AI system descriptor schema validation.
 Tests Pydantic models for validating AI system descriptors.
 """
 
-from datetime import timedelta
 import warnings
+from datetime import timedelta
 
 import pytest
+
 from eu_ai_act.schema import (
     AISystemDescriptor,
     DataPractice,
@@ -87,9 +88,7 @@ class TestAISystemDescriptor:
                 description="Test system",
                 version="1.0.0",
                 use_cases=[],  # Invalid: must have at least one
-                data_practices=[
-                    DataPractice(type="personal", retention_period=90)
-                ],
+                data_practices=[DataPractice(type="personal", retention_period=90)],
                 human_oversight=HumanOversight(
                     oversight_mechanism="approval_required",
                     fallback_procedure="Manual review",

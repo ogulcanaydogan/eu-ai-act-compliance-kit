@@ -7,15 +7,15 @@ risk tier classification. Returns detailed compliance findings for each requirem
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Dict, List
-from enum import Enum
+from enum import StrEnum
 
 from eu_ai_act.classifier import RiskClassifier
 from eu_ai_act.schema import AISystemDescriptor, RiskTier
 
 
-class ComplianceStatus(str, Enum):
+class ComplianceStatus(StrEnum):
     """Status of compliance with a requirement."""
+
     COMPLIANT = "compliant"
     NON_COMPLIANT = "non_compliant"
     PARTIAL = "partial"
@@ -36,18 +36,20 @@ class ComplianceFinding:
         remediation_steps: How to become compliant
         severity: CRITICAL, HIGH, MEDIUM, LOW
     """
+
     requirement_id: str
     requirement_title: str
     status: ComplianceStatus
     description: str
     gap_analysis: str = ""
-    remediation_steps: List[str] = field(default_factory=list)
+    remediation_steps: list[str] = field(default_factory=list)
     severity: str = "MEDIUM"
 
 
 @dataclass
 class ComplianceSummary:
     """Summary statistics of compliance assessment."""
+
     total_requirements: int
     compliant_count: int
     non_compliant_count: int
@@ -76,11 +78,12 @@ class ComplianceReport:
         audit_trail: List of timestamped checks performed
         generated_at: Report generation timestamp
     """
+
     system_name: str
     risk_tier: RiskTier
-    findings: Dict[str, ComplianceFinding]
+    findings: dict[str, ComplianceFinding]
     summary: ComplianceSummary
-    audit_trail: List[str] = field(default_factory=list)
+    audit_trail: list[str] = field(default_factory=list)
     generated_at: str = ""
 
 
@@ -109,7 +112,7 @@ class ComplianceChecker:
         """
         generated_at = self._utc_now()
         classification = self.classifier.classify(descriptor)
-        findings: Dict[str, ComplianceFinding] = {}
+        findings: dict[str, ComplianceFinding] = {}
         audit_trail = [
             f"{generated_at} Started compliance assessment",
             (
@@ -153,7 +156,7 @@ class ComplianceChecker:
             generated_at=generated_at,
         )
 
-    def _load_requirement_database(self) -> Dict[str, Dict]:
+    def _load_requirement_database(self) -> dict[str, dict]:
         """Load requirement definitions from articles database."""
         return {
             "Art. 5": {
@@ -344,13 +347,23 @@ class ComplianceChecker:
                 descriptor.incident_procedure or "",
             ]
         ).lower()
-        conformity_keywords = ["conformity assessment", "ce mark", "notified body", "annex vii", "annex vi"]
+        conformity_keywords = [
+            "conformity assessment",
+            "ce mark",
+            "notified body",
+            "annex vii",
+            "annex vi",
+        ]
         has_explicit_evidence = any(keyword in evidence_text for keyword in conformity_keywords)
 
         if has_explicit_evidence:
             return self._make_finding("Art. 43", ComplianceStatus.COMPLIANT)
 
-        if descriptor.documentation and descriptor.performance_monitoring and descriptor.human_oversight.human_authority:
+        if (
+            descriptor.documentation
+            and descriptor.performance_monitoring
+            and descriptor.human_oversight.human_authority
+        ):
             return self._make_finding(
                 "Art. 43",
                 ComplianceStatus.PARTIAL,
@@ -376,8 +389,22 @@ class ComplianceChecker:
             [descriptor.description, descriptor.training_data_source]
             + [use_case.description for use_case in descriptor.use_cases]
         ).lower()
-        generation_keywords = ["deepfake", "synthetic", "generated", "chatbot", "generative", "text generation"]
-        disclosure_keywords = ["disclos", "inform", "transparent", "label", "ai-generated", "ai generated"]
+        generation_keywords = [
+            "deepfake",
+            "synthetic",
+            "generated",
+            "chatbot",
+            "generative",
+            "text generation",
+        ]
+        disclosure_keywords = [
+            "disclos",
+            "inform",
+            "transparent",
+            "label",
+            "ai-generated",
+            "ai generated",
+        ]
         produces_generated_content = any(keyword in text for keyword in generation_keywords)
         has_disclosure_evidence = any(keyword in text for keyword in disclosure_keywords)
 
@@ -420,7 +447,7 @@ class ComplianceChecker:
         requirement_id: str,
         status: ComplianceStatus,
         gap_analysis: str = "",
-        remediation_steps: List[str] | None = None,
+        remediation_steps: list[str] | None = None,
     ) -> ComplianceFinding:
         """Build a finding using canonical requirement metadata."""
         requirement = self.requirement_database[requirement_id]
@@ -434,12 +461,18 @@ class ComplianceChecker:
             severity=requirement["severity"],
         )
 
-    def _summarize(self, findings: Dict[str, ComplianceFinding]) -> ComplianceSummary:
+    def _summarize(self, findings: dict[str, ComplianceFinding]) -> ComplianceSummary:
         """Build summary counts from finding statuses."""
-        compliant_count = sum(1 for f in findings.values() if f.status == ComplianceStatus.COMPLIANT)
-        non_compliant_count = sum(1 for f in findings.values() if f.status == ComplianceStatus.NON_COMPLIANT)
+        compliant_count = sum(
+            1 for f in findings.values() if f.status == ComplianceStatus.COMPLIANT
+        )
+        non_compliant_count = sum(
+            1 for f in findings.values() if f.status == ComplianceStatus.NON_COMPLIANT
+        )
         partial_count = sum(1 for f in findings.values() if f.status == ComplianceStatus.PARTIAL)
-        not_assessed_count = sum(1 for f in findings.values() if f.status == ComplianceStatus.NOT_ASSESSED)
+        not_assessed_count = sum(
+            1 for f in findings.values() if f.status == ComplianceStatus.NOT_ASSESSED
+        )
         return ComplianceSummary(
             total_requirements=len(findings),
             compliant_count=compliant_count,
