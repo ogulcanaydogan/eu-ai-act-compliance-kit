@@ -1,0 +1,42 @@
+name: "Email Spam Filter"
+version: "4.2.1"
+description: |
+  Basic email spam detection system that classifies incoming emails as spam or legitimate.
+  Provides low-risk functionality with minimal impact on fundamental rights. Users can
+  manually review and restore flagged emails. System provides transparency about spam
+  classification reasons.
+
+use_cases:
+  - domain: content_moderation
+    description: |
+      Identifies and filters unsolicited commercial emails and phishing attempts.
+      Users can always access the spam folder and manually mark emails as spam or
+      move them back to inbox. No autonomous account restrictions applied.
+    autonomous_decision: true
+    impacts_fundamental_rights: false
+    affected_population: "Email users"
+
+data_practices:
+  - type: "personal"
+    retention_period: 30
+    sharing_third_parties: false
+    explicit_consent: false
+    anonymization: "Email content analyzed but not stored for training"
+
+human_oversight:
+  oversight_mechanism: "continuous_monitoring"
+  fallback_procedure: "Users can move emails from spam folder back to inbox at any time"
+  review_frequency: "user_controlled"
+  human_authority: true
+
+training_data_source: |
+  Trained on historical spam/legitimate email corpus. Model uses simple heuristics
+  (sender reputation, URL patterns, keywords) without continuous learning on user data.
+
+documentation: false
+performance_monitoring: true
+
+incident_procedure: |
+  If system accuracy drops below 95%, revert to previous model version.
+  Users can report false positives through feedback mechanism.
+  Quarterly accuracy review to ensure spam detection rates remain consistent.

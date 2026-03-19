@@ -1,0 +1,11 @@
+repos:
+  - repo: local
+    hooks:
+      - id: ai-act-prepush-compliance-gate
+        name: AI Act pre-push compliance gate
+        entry: python3 scripts/prepush_gate.py
+        language: system
+        stages: [pre-push]
+        files: \.(yaml|yml)$
+        pass_filenames: true
+        require_serial: true

@@ -1,0 +1,61 @@
+name: "Customer Support Chatbot"
+version: "3.1.0"
+description: |
+  Conversational AI assistant that answers common customer support questions,
+  provides product information, and routes complex issues to human support agents.
+  System handles basic FAQ-style queries without making autonomous decisions
+  affecting customer rights or finances. Used by SaaS company for EU customer
+  support operations.
+
+use_cases:
+  - domain: general_purpose
+    description: |
+      Provides natural language responses to customer inquiries about product
+      features, pricing, and account management. Generates helpful responses
+      from training on historical support interactions and product documentation.
+    autonomous_decision: false
+    impacts_fundamental_rights: false
+    affected_population: "SaaS platform customers in EU"
+
+  - domain: content_moderation
+    description: |
+      Filters inappropriate language and detects abusive inputs from users.
+      Mild violations logged, repeated violations escalate to human agent.
+    autonomous_decision: true
+    impacts_fundamental_rights: false
+    affected_population: "Support chat users"
+
+data_practices:
+  - type: "personal"
+    retention_period: 30  # Short retention, deleted after resolution
+    sharing_third_parties: false
+    explicit_consent: true
+    anonymization: "Chat logs pseudonymized and encrypted at rest"
+
+human_oversight:
+  oversight_mechanism: "continuous_monitoring"
+  fallback_procedure: |
+    Complex queries automatically escalated to human agent. System provides
+    suggested response for human review but agent can override. No autonomous
+    decisions about customer accounts or refunds. Monitoring dashboard shows
+    system confidence scores for training purposes.
+  review_frequency: "continuous_monitoring"
+  human_authority: true
+
+training_data_source: |
+  System trained on 50,000 support conversations from historical chat logs.
+  All personally identifiable information removed before training. Training
+  includes Q&A pairs from product documentation and FAQ articles. Quality
+  assurance includes basic accuracy testing on held-out test set (>90% response
+  relevance) and human evaluation of sampled outputs monthly.
+
+documentation: false
+performance_monitoring: true
+
+incident_procedure: |
+  Monitoring includes: (1) Automated detection of unusual query patterns
+  (e.g., SQL injection attempts); (2) User reporting mechanism for unhelpful
+  responses; (3) Weekly review of escalation reasons to identify training gaps;
+  (4) If response hallucinations detected, immediately disable system until
+  reviewed. No financial transactions processed by system. Sensitive topics
+  (billing, account deletion) always routed to human agents.

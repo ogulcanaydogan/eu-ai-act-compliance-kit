@@ -1,0 +1,12 @@
+model_name: "Aurora Foundation Model XL"
+provider: "ExampleAI Labs"
+training_compute_flops: 1.8e25
+model_params_billion: 72
+eu_monthly_users: 24000000
+supports_tool_use: true
+autonomous_task_execution: true
+generates_synthetic_media: true
+model_card_available: true
+training_data_documented: false
+systemic_risk_mitigation_plan: false
+post_market_monitoring: true

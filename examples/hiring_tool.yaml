@@ -1,0 +1,70 @@
+name: "Resume Screening AI"
+version: "1.5.2"
+description: |
+  AI system that analyzes job applications and resumes to identify qualified
+  candidates for shortlisting. System scores candidates based on skill matching,
+  experience level, and cultural fit. Human recruiters make all final hiring
+  decisions and review flagged candidates before rejection. Used by multinational
+  corporation with operations across EU member states.
+
+use_cases:
+  - domain: employment
+    description: |
+      Automatically screens resumes against job requirements, extracting key
+      qualifications and generating candidate scores. System flags candidates
+      for human review but does not make autonomous hiring decisions.
+    autonomous_decision: false
+    impacts_fundamental_rights: true
+    affected_population: "Job applicants in EU and internationally"
+
+  - domain: education
+    description: |
+      System analyzes educational background and certifications to assess
+      job fit for technically specialized roles. Evaluates degree relevance,
+      institution rankings, and skills match.
+    autonomous_decision: false
+    impacts_fundamental_rights: false
+    affected_population: "Job applicants with educational background requirements"
+
+data_practices:
+  - type: "personal"
+    retention_period: 180  # 6 months per GDPR requirements
+    sharing_third_parties: true  # Shared with hiring managers
+    explicit_consent: true
+    anonymization: "Names and identifying information available to recruiters for final review"
+
+  - type: "sensitive"
+    retention_period: 90  # Stricter retention for sensitive inferences
+    sharing_third_parties: false
+    explicit_consent: true
+    anonymization: "Demographic inferences from resume deleted after 90 days"
+
+human_oversight:
+  oversight_mechanism: "approval_required"
+  fallback_procedure: |
+    If system confidence score is borderline (40-60%), candidate automatically
+    escalated to human recruiter for full review without AI scoring influence.
+    All rejected candidates can request manual review by hiring manager.
+    Monthly audit of acceptance/rejection rates by protected characteristics.
+  review_frequency: "per_decision"
+  human_authority: true
+
+training_data_source: |
+  System trained on 100,000 historical hiring records from company database
+  spanning 5 years. Training data de-identified but includes hiring outcomes.
+  Quality measures: (1) Regular bias audit against gender, age, ethnicity
+  using protected group analysis; (2) Fairness testing ensuring false negative
+  rate consistent across demographic groups; (3) Override frequency tracking
+  to identify systematic biases in model recommendations.
+
+documentation: true
+performance_monitoring: true
+
+incident_procedure: |
+  Monitoring: Automated daily check of acceptance rate variance by protected
+  characteristics. Alert threshold: >3% variance from baseline. Response:
+  (1) Pause system, notify compliance officer; (2) Conduct fairness audit;
+  (3) If systemic bias detected, retrain with balanced sampling; (4) If
+  unfixable, human-only review until root cause resolved. Escalation to
+  HR Director if demographic disparity detected. Quarterly third-party
+  fairness audit by external AI ethics firm required.

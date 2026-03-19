@@ -1,0 +1,12 @@
+model_name: "Support Assistant Mini"
+provider: "ExampleAI Labs"
+training_compute_flops: 7.5e23
+model_params_billion: 8
+eu_monthly_users: 650000
+supports_tool_use: false
+autonomous_task_execution: false
+generates_synthetic_media: false
+model_card_available: true
+training_data_documented: true
+systemic_risk_mitigation_plan: true
+post_market_monitoring: true

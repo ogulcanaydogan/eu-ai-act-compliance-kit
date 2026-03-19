@@ -1,0 +1,67 @@
+name: "Medical Imaging Diagnosis AI"
+version: "2.3.1"
+description: |
+  AI system for automated analysis of medical imaging (CT, MRI, X-ray) to detect
+  and classify abnormalities. System provides diagnostic assistance to radiologists
+  but all final clinical decisions require human expert review and approval before
+  patient communication. Used in hospitals and diagnostic centers across EU.
+
+use_cases:
+  - domain: healthcare
+    description: |
+      Analyzes medical imaging data to detect tumors, fractures, and other abnormalities.
+      System generates structured reports with confidence scores for each finding.
+      Used primarily in radiology departments.
+    autonomous_decision: false
+    impacts_fundamental_rights: true
+    affected_population: "Patients undergoing medical imaging"
+
+  - domain: critical_infrastructure
+    description: |
+      Deployed in hospital imaging centers which are critical to healthcare infrastructure.
+      System downtime could impact emergency care capacity.
+    autonomous_decision: false
+    impacts_fundamental_rights: true
+    affected_population: "Hospital patients requiring diagnostic imaging"
+
+data_practices:
+  - type: "sensitive_health"
+    retention_period: 2555  # 7 years per medical regulations
+    sharing_third_parties: false
+    explicit_consent: true
+    anonymization: "De-identification of patient identifiers with research consent options"
+
+  - type: "biometric"
+    retention_period: 2555  # 7 years per medical data protection
+    sharing_third_parties: false
+    explicit_consent: true
+    anonymization: "Biometric features extracted from imaging but not stored for identification"
+
+human_oversight:
+  oversight_mechanism: "approval_required"
+  fallback_procedure: |
+    System failures trigger automatic escalation to senior radiologist.
+    Manual image review process activated. Hospital maintains on-call imaging
+    specialists for emergency cases. No autonomous decisions permitted.
+  review_frequency: "per_decision"
+  human_authority: true
+
+training_data_source: |
+  System trained on 500,000+ de-identified medical imaging studies from
+  collaborative hospital network. Training data includes diverse patient demographics,
+  imaging equipment manufacturers, and clinical institutions. Quality assurance
+  includes: expert radiologist annotation verification, inter-rater reliability
+  testing (kappa >0.85), and clinical outcome tracking. Training data governance
+  follows HIPAA and GDPR requirements.
+
+documentation: true
+performance_monitoring: true
+
+incident_procedure: |
+  Incident protocol: (1) System diagnostic failed -> immediately notify radiologist
+  on duty; (2) If accuracy drops below 92% on validation set -> system enters
+  diagnostic mode (suggestions only, not confidence scores); (3) Log all failures
+  with patient outcome correlation; (4) Monthly safety review with hospital ethics
+  committee; (5) Quarterly blind accuracy testing against gold-standard diagnoses;
+  (6) If systematic bias detected (sensitivity/specificity variance >5% by demographic)
+  -> retraining cycle initiated with adjusted data sampling.

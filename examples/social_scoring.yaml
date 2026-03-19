@@ -1,0 +1,40 @@
+name: "Social Credit Scoring System"
+version: "1.0.0"
+description: |
+  WARNING: This system implements social credit scoring, which is EXPLICITLY PROHIBITED
+  under EU AI Act Article 5(1)(a). This example is included for demonstration purposes only
+  to show how the toolkit identifies prohibited practices.
+
+  System would evaluate individuals based on social behavior, financial history, online
+  activity, and community participation to generate "social credit" scores affecting
+  access to services, employment, and public benefits.
+
+use_cases:
+  - domain: other
+    description: |
+      Social scoring system that rates citizens based on behavior and financial metrics,
+      restricting access based on autonomous scoring. This would be used to determine
+      credit worthiness, employment eligibility, and public service access.
+    autonomous_decision: true
+    impacts_fundamental_rights: true
+    affected_population: "All citizens in jurisdiction"
+
+data_practices:
+  - type: "personal"
+    retention_period: 36500  # Indefinite retention
+    sharing_third_parties: true
+    explicit_consent: false
+    anonymization: null
+
+human_oversight:
+  oversight_mechanism: "none"
+  fallback_procedure: "No fallback - scores are autonomous and permanent"
+  review_frequency: "never"
+  human_authority: false
+
+training_data_source: |
+  Training data aggregated from financial institutions, government agencies,
+  online behavior tracking, and social networks. No explicit consent for data use.
+
+documentation: false
+performance_monitoring: false

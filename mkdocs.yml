@@ -1,0 +1,38 @@
+site_name: EU AI Act Compliance Kit
+site_description: Deterministic EU AI Act (Regulation 2024/1689) risk and compliance assessment toolkit.
+site_url: https://eu-ai-act-compliance-kit.readthedocs.io
+repo_url: https://github.com/ogulcanaydogan/eu-ai-act-compliance-kit
+repo_name: ogulcanaydogan/eu-ai-act-compliance-kit
+
+strict: true
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+
+plugins:
+  - search
+
+markdown_extensions:
+  - admonition
+  - tables
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Getting Started:
+      - Installation: installation.md
+      - Quickstart: quickstart.md
+  - User Guide:
+      - CLI Reference: cli-reference.md
+      - EU AI Act Guide: eu-ai-act-guide.md
+      - Examples: examples.md
+      - Custom System Descriptors: custom-systems.md
+  - Developer Guide:
+      - API Reference: api-reference.md
+  - Launch:
+      - Launch Post Draft: launch_post.md

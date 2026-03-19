@@ -1,0 +1,151 @@
+name: "EU AI Act Compliance Check"
+description: "Automated compliance assessment for EU AI Act (2024/1689)"
+
+inputs:
+  system_yaml:
+    description: "Path to AI system descriptor YAML file"
+    required: true
+  fail_on_high_risk:
+    description: "Fail workflow when high-risk systems have non-compliant requirements"
+    required: false
+    default: "false"
+  report_format:
+    description: "Report output format (json, md, html)"
+    required: false
+    default: "json"
+  report_path:
+    description: "Path to save generated report"
+    required: false
+    default: "compliance_report.json"
+
+outputs:
+  risk_tier:
+    description: "Assigned risk tier (minimal, limited, high_risk, unacceptable)"
+    value: ${{ steps.analyze.outputs.risk_tier }}
+  compliance_percentage:
+    description: "Compliance score from check summary (0-100)"
+    value: ${{ steps.analyze.outputs.compliance_percentage }}
+  report_path:
+    description: "Path to generated compliance report"
+    value: ${{ steps.report.outputs.report_path }}
+  articles_applicable:
+    description: "Comma-separated list of applicable EU AI Act articles"
+    value: ${{ steps.analyze.outputs.articles_applicable }}
+  total_requirements:
+    description: "Total evaluated requirements from compliance check"
+    value: ${{ steps.analyze.outputs.total_requirements }}
+  compliant_count:
+    description: "Compliant requirement count"
+    value: ${{ steps.analyze.outputs.compliant_count }}
+  non_compliant_count:
+    description: "Non-compliant requirement count"
+    value: ${{ steps.analyze.outputs.non_compliant_count }}
+  partial_count:
+    description: "Partially compliant requirement count"
+    value: ${{ steps.analyze.outputs.partial_count }}
+  not_assessed_count:
+    description: "Not-assessed requirement count"
+    value: ${{ steps.analyze.outputs.not_assessed_count }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: "Set up Python"
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
+        cache: "pip"
+
+    - name: "Install compliance kit from action source"
+      shell: bash
+      run: |
+        python -m pip install --upgrade pip
+        pip install --no-cache-dir "$GITHUB_ACTION_PATH"
+
+    - name: "Classify and check system"
+      id: analyze
+      shell: bash
+      run: |
+        ai-act classify "${{ inputs.system_yaml }}" --json > /tmp/classification.json
+        ai-act check "${{ inputs.system_yaml }}" --json > /tmp/check.json
+
+        python -c "import json, pathlib; c=json.loads(pathlib.Path('/tmp/classification.json').read_text()); k=json.loads(pathlib.Path('/tmp/check.json').read_text()); s=k.get('summary', {}); print(f\"risk_tier={c.get('risk_tier', '')}\"); print(f\"articles_applicable={', '.join(c.get('articles_applicable', []))}\"); print(f\"compliance_percentage={s.get('compliance_percentage', 0)}\"); print(f\"total_requirements={int(s.get('total_requirements', 0))}\"); print(f\"compliant_count={int(s.get('compliant_count', 0))}\"); print(f\"non_compliant_count={int(s.get('non_compliant_count', 0))}\"); print(f\"partial_count={int(s.get('partial_count', 0))}\"); print(f\"not_assessed_count={int(s.get('not_assessed_count', 0))}\")" >> "$GITHUB_OUTPUT"
+
+    - name: "Generate report"
+      id: report
+      shell: bash
+      run: |
+        ai-act report "${{ inputs.system_yaml }}" \
+          --format "${{ inputs.report_format }}" \
+          --output "${{ inputs.report_path }}"
+        echo "report_path=${{ inputs.report_path }}" >> "$GITHUB_OUTPUT"
+
+    - name: "Post PR comment"
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          const classification = JSON.parse(fs.readFileSync('/tmp/classification.json', 'utf8'));
+          const check = JSON.parse(fs.readFileSync('/tmp/check.json', 'utf8'));
+          const summary = check.summary || {};
+
+          const tierEmoji = {
+            unacceptable: '🚫',
+            high_risk: '⚠️',
+            limited: '⚡',
+            minimal: '✅'
+          };
+
+          const comment = `## 🤖 EU AI Act Compliance Check
+
+          **Risk Tier**: ${tierEmoji[classification.risk_tier] || 'ℹ️'} **${classification.risk_tier.toUpperCase()}**
+
+          **Compliance Score**: ${(Number(summary.compliance_percentage || 0)).toFixed(2)}%
+
+          **Findings Summary**:
+          - Non-compliant: ${summary.non_compliant_count || 0}
+          - Partial: ${summary.partial_count || 0}
+          - Not assessed: ${summary.not_assessed_count || 0}
+
+          **Applicable Articles**:
+          ${(classification.articles_applicable || []).map(a => `- ${a}`).join('\n')}
+
+          **Reasoning**:
+          > ${classification.reasoning}
+
+          [View Full Report](${{ steps.report.outputs.report_path }})
+
+          ---
+          *This is an automated compliance assessment. Professional legal review is recommended.*`;
+
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: comment
+          });
+
+    - name: "Apply compliance gate policy"
+      shell: bash
+      run: |
+        RISK_TIER="${{ steps.analyze.outputs.risk_tier }}"
+        NON_COMPLIANT_COUNT="${{ steps.analyze.outputs.non_compliant_count }}"
+
+        if [[ "$RISK_TIER" == "unacceptable" ]]; then
+          echo "❌ Workflow failed: System classified as UNACCEPTABLE"
+          echo "   Unacceptable systems are always blocked."
+          exit 1
+        fi
+
+        if [[ "${{ inputs.fail_on_high_risk }}" == "true" && "$RISK_TIER" == "high_risk" && "$NON_COMPLIANT_COUNT" -gt 0 ]]; then
+          echo "❌ Workflow failed: High-risk system has non-compliant requirements (${NON_COMPLIANT_COUNT})"
+          echo "   Address non-compliant findings before merging."
+          exit 1
+        fi
+
+        echo "✅ Compliance gate passed"
+
+branding:
+  icon: "shield"
+  color: "blue"

@@ -1,0 +1,233 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    name: Lint
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Lint with ruff
+        run: ruff check src/ tests/
+
+      - name: Format check with black
+        run: black --check src/ tests/
+
+      - name: Type check with mypy
+        run: mypy src/eu_ai_act/
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+    name: Test (Python ${{ matrix.python-version }})
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run tests
+        run: pytest tests/ -v --cov=src/eu_ai_act --cov-report=xml --cov-report=term-missing
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./coverage.xml
+          fail_ci_if_error: false
+          verbose: true
+
+  build:
+    runs-on: ubuntu-latest
+    name: Build
+    needs: [lint, test]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install build tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install build
+
+      - name: Build package
+        run: python -m build
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: python-package-distributions
+          path: dist/
+
+  docker:
+    runs-on: ubuntu-latest
+    name: Build Docker Image
+    needs: [lint, test]
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          push: false
+          tags: eu-ai-act-compliance-kit:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  docs:
+    runs-on: ubuntu-latest
+    name: Build Documentation
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[docs]"
+
+      - name: Build documentation
+        run: mkdocs build
+
+  security:
+    runs-on: ubuntu-latest
+    name: Security Check
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install bandit
+
+      - name: Run security check
+        run: bandit -r src/
+
+  action-smoke:
+    runs-on: ubuntu-latest
+    name: Action Smoke
+    needs: [lint, test]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Minimal-risk scenario should pass
+        id: minimal
+        uses: ./
+        with:
+          system_yaml: examples/spam_filter.yaml
+          fail_on_high_risk: "true"
+          report_format: json
+          report_path: minimal_report.json
+
+      - name: Validate minimal-risk action outputs
+        run: |
+          test "${{ steps.minimal.outputs.risk_tier }}" = "minimal"
+          test "${{ steps.minimal.outputs.non_compliant_count }}" = "0"
+          test -f minimal_report.json
+
+      - name: Create high-risk non-compliant fixture
+        run: |
+          cat > /tmp/high_risk_noncompliant.yaml <<'YAML'
+          name: "CI Gate Hiring Assistant"
+          version: "0.1.0"
+          description: "Automated employment screening model for applicant ranking."
+          use_cases:
+            - domain: employment
+              description: "Ranks applicants for hiring decisions without human intervention."
+              autonomous_decision: true
+              impacts_fundamental_rights: true
+          data_practices:
+            - type: personal
+              retention_period: 365
+              sharing_third_parties: false
+              explicit_consent: false
+          human_oversight:
+            oversight_mechanism: "none"
+            fallback_procedure: "No fallback process is currently defined."
+            review_frequency: "never"
+            human_authority: false
+          training_data_source: "Historical applicant data from prior recruitment cycles."
+          documentation: false
+          performance_monitoring: false
+          YAML
+
+      - name: High-risk non-compliant scenario should fail gate
+        id: highrisk
+        continue-on-error: true
+        uses: ./
+        with:
+          system_yaml: /tmp/high_risk_noncompliant.yaml
+          fail_on_high_risk: "true"
+          report_format: json
+          report_path: high_risk_report.json
+
+      - name: Assert high-risk gate failure
+        run: |
+          if [[ "${{ steps.highrisk.outcome }}" != "failure" ]]; then
+            echo "Expected high-risk non-compliant gate failure"
+            exit 1
+          fi
+
+  all-checks:
+    runs-on: ubuntu-latest
+    name: All Checks Passed
+    needs: [lint, test, build, docker, docs, security, action-smoke]
+    if: always()
+    steps:
+      - name: Check status
+        run: |
+          if [[ "${{ needs.lint.result }}" == "failure" || "${{ needs.test.result }}" == "failure" || "${{ needs.build.result }}" == "failure" || "${{ needs.docker.result }}" == "failure" || "${{ needs.action-smoke.result }}" == "failure" ]]; then
+            echo "One or more checks failed"
+            exit 1
+          fi
+          echo "All checks passed!"

@@ -1,0 +1,153 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: read
+
+jobs:
+  qa-build:
+    name: QA + Build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+          pip install build twine
+
+      - name: Run tests
+        run: pytest -q
+
+      - name: Build distributions
+        run: python -m build
+
+      - name: Check distribution metadata
+        run: twine check dist/*
+
+      - name: Upload distribution artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish-testpypi:
+    name: Publish to TestPyPI
+    runs-on: ubuntu-latest
+    needs: [qa-build]
+    permissions:
+      id-token: write
+      contents: read
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/p/eu-ai-act-compliance-kit
+    steps:
+      - name: Download distribution artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish package to TestPyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+
+  testpypi-smoke:
+    name: TestPyPI Smoke Install
+    runs-on: ubuntu-latest
+    needs: [publish-testpypi]
+    permissions:
+      contents: read
+    steps:
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install package from TestPyPI
+        run: |
+          python -m pip install --upgrade pip
+          for attempt in 1 2 3 4 5; do
+            if pip install --index-url https://test.pypi.org/simple/ \
+              --extra-index-url https://pypi.org/simple \
+              eu-ai-act-compliance-kit; then
+              break
+            fi
+            if [[ "$attempt" -eq 5 ]]; then
+              echo "Package was not available on TestPyPI after 5 attempts."
+              exit 1
+            fi
+            echo "TestPyPI propagation delay detected, retrying in 30s..."
+            sleep 30
+          done
+
+      - name: CLI smoke test
+        run: ai-act --help
+
+  publish-pypi:
+    name: Publish to PyPI
+    runs-on: ubuntu-latest
+    needs: [testpypi-smoke]
+    permissions:
+      id-token: write
+      contents: read
+    environment:
+      name: pypi
+      url: https://pypi.org/p/eu-ai-act-compliance-kit
+    steps:
+      - name: Download distribution artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish package to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+  github-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [publish-pypi]
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download distribution artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Generate release notes body
+        run: |
+          {
+            echo "## Release ${{ github.ref_name }}"
+            echo
+            echo "- Published to TestPyPI and PyPI via trusted publishing"
+            echo "- Distribution artifacts attached (wheel + sdist)"
+            echo
+            echo "See CHANGELOG.md for detailed changes."
+          } > release-notes.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          body_path: release-notes.md
+          files: dist/*

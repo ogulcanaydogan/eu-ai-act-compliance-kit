@@ -1,0 +1,49 @@
+# EU AI Act Compliance Kit
+
+Deterministic compliance toolkit for the EU AI Act (Regulation 2024/1689).
+It classifies AI systems by risk tier, evaluates requirement-level compliance,
+checks transparency and GPAI obligations, and renders audit-oriented reports.
+
+## What You Can Do
+
+- Classify AI systems into `unacceptable`, `high_risk`, `limited`, or `minimal`
+- Run requirement checks for key articles (`Art. 5`, `Art. 10`, `Art. 11`, `Art. 13`, `Art. 14`, `Art. 15`, `Art. 43`, `Art. 50`)
+- Generate action-focused checklists (JSON, Markdown, HTML)
+- Produce compliance reports (JSON, Markdown, HTML, PDF)
+- Assess transparency obligations and GPAI signals (`Art. 50`, `Art. 51-55`)
+- Integrate checks into CI/CD using the repository's composite GitHub Action
+
+## Current Delivery Status (March 19, 2026)
+
+- Phase 1: Risk classification complete
+- Phase 2: Compliance checker, checklist, transparency, GPAI complete
+- Phase 3: Reporter-centered JSON/MD/HTML/PDF complete
+- Phase 4: CI/CD hardening complete
+- Phase 5: Documentation and launch artifacts complete
+## End-to-End Flow
+
+1. Provide a system descriptor (`*.yaml`) compliant with the schema.
+2. Run `ai-act classify` to identify risk tier and applicable articles.
+3. Run `ai-act check --json` for requirement findings and summary counts.
+4. Generate checklist items for non-compliant/partial/not-assessed findings.
+5. Generate a report via `ai-act report --format json|md|html|pdf`.
+6. In CI, enforce gate policy through the composite action outputs.
+
+For PDF generation, install reporting extras: `pip install -e ".[reporting]"`.
+
+## Documentation Map
+
+- [Installation](installation.md)
+- [Quickstart](quickstart.md)
+- [CLI Reference](cli-reference.md)
+- [EU AI Act Guide](eu-ai-act-guide.md)
+- [Examples](examples.md)
+- [Custom System Descriptors](custom-systems.md)
+- [API Reference](api-reference.md)
+- [Launch Post Draft](launch_post.md)
+
+## Legal Note
+
+This toolkit provides technical, evidence-based compliance signals and does not
+replace legal advice. Final regulatory interpretation and conformity decisions
+should be made with qualified legal counsel.
