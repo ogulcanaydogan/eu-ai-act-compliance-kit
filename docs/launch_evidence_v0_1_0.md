@@ -16,12 +16,12 @@ Talent-style impact documentation.
 - Tag: `v0.1.0`
 - Release workflow: <https://github.com/ogulcanaydogan/eu-ai-act-compliance-kit/actions/workflows/release.yml>
 - Latest run for `v0.1.0`: <https://github.com/ogulcanaydogan/eu-ai-act-compliance-kit/actions/runs/23296772746>
-- Run attempt (current): `5`
-- Latest failed publish job (`invalid-publisher`): <https://github.com/ogulcanaydogan/eu-ai-act-compliance-kit/actions/runs/23296772746/job/67750646592>
+- Run attempt (current): `6`
+- Latest failed publish job (`invalid-publisher`): <https://github.com/ogulcanaydogan/eu-ai-act-compliance-kit/actions/runs/23296772746/job/67800631468>
 - Last 3 failed TestPyPI publish jobs:
-  - Attempt 3: <https://github.com/ogulcanaydogan/eu-ai-act-compliance-kit/actions/runs/23296772746/job/67746810657>
   - Attempt 4: <https://github.com/ogulcanaydogan/eu-ai-act-compliance-kit/actions/runs/23296772746/job/67750398253>
   - Attempt 5: <https://github.com/ogulcanaydogan/eu-ai-act-compliance-kit/actions/runs/23296772746/job/67750646592>
+  - Attempt 6: <https://github.com/ogulcanaydogan/eu-ai-act-compliance-kit/actions/runs/23296772746/job/67800631468>
 
 ## Preflight Quality Signals
 
@@ -67,17 +67,29 @@ Trusted publishing policy:
 
 ## Escalation Snapshot (After Retry Limit)
 
-Retry policy target was max 3 reruns; current run is attempt 5 and still fails
+Retry policy target was max 3 reruns; current run is attempt 6 and still fails
 at TestPyPI trusted publishing with `invalid-publisher`.
 
 ### Last 3 attempt outcomes
 
-- Attempt 3 (`67746810657`): `Publish to TestPyPI` failed with
-  `invalid-publisher`.
 - Attempt 4 (`67750398253`): `Publish to TestPyPI` failed with
   `invalid-publisher`.
 - Attempt 5 (`67750646592`): `Publish to TestPyPI` failed with
   `invalid-publisher`.
+- Attempt 6 (`67800631468`): `Publish to TestPyPI` failed with
+  `invalid-publisher`.
+
+### Latest failed log excerpt (attempt 6)
+
+```text
+Trusted publishing exchange failure
+Token request failed
+invalid-publisher: valid token, but no corresponding publisher
+sub=repo:ogulcanaydogan/eu-ai-act-compliance-kit:environment:testpypi
+workflow_ref=ogulcanaydogan/eu-ai-act-compliance-kit/.github/workflows/release.yml@refs/tags/v0.1.0
+ref=refs/tags/v0.1.0
+environment=testpypi
+```
 
 ### Claim set from failed publish job
 
