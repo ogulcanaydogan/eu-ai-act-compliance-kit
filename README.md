@@ -133,6 +133,7 @@ Evidence-friendly links:
 
 - Repo: <https://github.com/ogulcanaydogan/eu-ai-act-compliance-kit>
 - Docs: <https://eu-ai-act-compliance-kit.readthedocs.io>
+- Launch Evidence: [docs/launch_evidence_v0_1_0.md](docs/launch_evidence_v0_1_0.md)
 - Roadmap: [ROADMAP.md](ROADMAP.md)
 - Changelog: [CHANGELOG.md](CHANGELOG.md)
 - Contributing: [CONTRIBUTING.md](CONTRIBUTING.md)
