@@ -139,3 +139,9 @@ audit_logs/
 
 # Docker
 .dockerignore
+
+# Local tool caches
+.pre-commit-cache/
+
+# Local runtime artifacts
+.eu_ai_act/

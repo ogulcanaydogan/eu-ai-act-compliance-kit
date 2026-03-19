@@ -1,0 +1,34 @@
+name: Feature request
+description: Propose an enhancement to compliance workflows or developer UX
+title: "feature: <short summary>"
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem statement
+      description: What user or engineering problem should this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe expected behavior and public interface impact
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Any alternatives and why they are less suitable
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I reviewed README and docs to avoid duplicates
+          required: true
+        - label: I can help with implementation or validation
+          required: false
