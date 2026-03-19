@@ -41,6 +41,7 @@ For PDF generation, install reporting extras: `pip install -e ".[reporting]"`.
 - [Custom System Descriptors](custom-systems.md)
 - [API Reference](api-reference.md)
 - [Launch Post Draft](launch_post.md)
+- [Launch Evidence Pack (v0.1.0)](launch_evidence_v0_1_0.md)
 
 ## Legal Note
 
