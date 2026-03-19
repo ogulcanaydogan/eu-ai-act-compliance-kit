@@ -56,3 +56,47 @@ Trusted publishing policy:
 - [ ] TestPyPI install smoke succeeds: `ai-act --help`
 - [ ] PyPI install smoke succeeds: `ai-act --help`
 - [ ] RTD homepage returns HTTP `200` and pages are accessible
+
+## Remaining One-Time Setup (External UIs)
+
+These final steps require authenticated access to TestPyPI, PyPI, and Read the
+Docs.
+
+### 1) Import project on Read the Docs
+
+1. Log in at `https://app.readthedocs.org/` with GitHub.
+2. Import repository: `ogulcanaydogan/eu-ai-act-compliance-kit`.
+3. Confirm build config is read from `.readthedocs.yaml`.
+4. Trigger `latest` build and verify:
+   - `https://eu-ai-act-compliance-kit.readthedocs.io/` returns `200`.
+
+### 2) Configure Trusted Publisher on TestPyPI
+
+Create a trusted publisher for project `eu-ai-act-compliance-kit` with:
+
+- Owner: `ogulcanaydogan`
+- Repository: `eu-ai-act-compliance-kit`
+- Workflow: `.github/workflows/release.yml`
+- Environment: `testpypi`
+
+Expected OIDC claims (from failed run log):
+
+- `sub`: `repo:ogulcanaydogan/eu-ai-act-compliance-kit:environment:testpypi`
+- `workflow_ref`: `ogulcanaydogan/eu-ai-act-compliance-kit/.github/workflows/release.yml@refs/tags/v0.1.0`
+- `ref`: `refs/tags/v0.1.0`
+
+### 3) Configure Trusted Publisher on PyPI
+
+Create a trusted publisher for project `eu-ai-act-compliance-kit` with:
+
+- Owner: `ogulcanaydogan`
+- Repository: `eu-ai-act-compliance-kit`
+- Workflow: `.github/workflows/release.yml`
+- Environment: `pypi`
+
+### 4) Rerun release workflow and approve PyPI gate
+
+1. Rerun failed release run:
+   - `gh run rerun 23296772746`
+2. Approve `pypi` environment when prompt appears in Actions UI.
+3. Verify `publish-pypi` and `github-release` jobs complete successfully.
