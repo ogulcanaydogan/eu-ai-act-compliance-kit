@@ -16,7 +16,12 @@ Talent-style impact documentation.
 - Tag: `v0.1.0`
 - Release workflow: <https://github.com/ogulcanaydogan/eu-ai-act-compliance-kit/actions/workflows/release.yml>
 - Latest run for `v0.1.0`: <https://github.com/ogulcanaydogan/eu-ai-act-compliance-kit/actions/runs/23296772746>
+- Run attempt (current): `5`
 - Latest failed publish job (`invalid-publisher`): <https://github.com/ogulcanaydogan/eu-ai-act-compliance-kit/actions/runs/23296772746/job/67750646592>
+- Last 3 failed TestPyPI publish jobs:
+  - Attempt 3: <https://github.com/ogulcanaydogan/eu-ai-act-compliance-kit/actions/runs/23296772746/job/67746810657>
+  - Attempt 4: <https://github.com/ogulcanaydogan/eu-ai-act-compliance-kit/actions/runs/23296772746/job/67750398253>
+  - Attempt 5: <https://github.com/ogulcanaydogan/eu-ai-act-compliance-kit/actions/runs/23296772746/job/67750646592>
 
 ## Preflight Quality Signals
 
@@ -60,20 +65,50 @@ Trusted publishing policy:
 - [ ] PyPI install smoke succeeds: `ai-act --help`
 - [x] RTD homepage returns HTTP `200` and pages are accessible
 
+## Escalation Snapshot (After Retry Limit)
+
+Retry policy target was max 3 reruns; current run is attempt 5 and still fails
+at TestPyPI trusted publishing with `invalid-publisher`.
+
+### Last 3 attempt outcomes
+
+- Attempt 3 (`67746810657`): `Publish to TestPyPI` failed with
+  `invalid-publisher`.
+- Attempt 4 (`67750398253`): `Publish to TestPyPI` failed with
+  `invalid-publisher`.
+- Attempt 5 (`67750646592`): `Publish to TestPyPI` failed with
+  `invalid-publisher`.
+
+### Claim set from failed publish job
+
+- `sub`: `repo:ogulcanaydogan/eu-ai-act-compliance-kit:environment:testpypi`
+- `repository`: `ogulcanaydogan/eu-ai-act-compliance-kit`
+- `workflow_ref`: `ogulcanaydogan/eu-ai-act-compliance-kit/.github/workflows/release.yml@refs/tags/v0.1.0`
+- `ref`: `refs/tags/v0.1.0`
+- `environment`: `testpypi`
+
+### Environment policy snapshot (GitHub)
+
+- `testpypi` environment:
+  - branch policy: custom, tag pattern `v*.*.*`
+  - required reviewers: none (auto)
+- `pypi` environment:
+  - branch policy: custom, tag pattern `v*.*.*`
+  - required reviewer: `ogulcanaydogan`
+
+### Support-ready incident summary
+
+- Symptom: OIDC token exchange fails at TestPyPI with `invalid-publisher`.
+- Scope: Release chain blocks at `publish-testpypi`; downstream jobs are skipped.
+- Root cause likelihood: missing or non-matching Trusted Publisher registration
+  on TestPyPI (and/or PyPI).
+- Required fix owner: package index account admin (UI-side configuration).
+
 ## Remaining One-Time Setup (External UIs)
 
-These final steps require authenticated access to TestPyPI, PyPI, and Read the
-Docs.
+These final steps require authenticated access to TestPyPI and PyPI.
 
-### 1) Import project on Read the Docs
-
-1. Log in at `https://app.readthedocs.org/` with GitHub.
-2. Import repository: `ogulcanaydogan/eu-ai-act-compliance-kit`.
-3. Confirm build config is read from `.readthedocs.yaml`.
-4. Trigger `latest` build and verify:
-   - `https://eu-ai-act-compliance-kit.readthedocs.io/` returns `200`.
-
-### 2) Configure Trusted Publisher on TestPyPI
+### 1) Configure Trusted Publisher on TestPyPI
 
 Create a trusted publisher for project `eu-ai-act-compliance-kit` with:
 
@@ -94,7 +129,7 @@ Observed failure status:
 - GitHub environment and claims are correct; missing step is TestPyPI-side trusted
   publisher registration matching the claims above.
 
-### 3) Configure Trusted Publisher on PyPI
+### 2) Configure Trusted Publisher on PyPI
 
 Create a trusted publisher for project `eu-ai-act-compliance-kit` with:
 
@@ -103,7 +138,7 @@ Create a trusted publisher for project `eu-ai-act-compliance-kit` with:
 - Workflow: `.github/workflows/release.yml`
 - Environment: `pypi`
 
-### 4) Rerun release workflow and approve PyPI gate
+### 3) Rerun release workflow and approve PyPI gate
 
 1. Rerun failed release run:
    - `gh run rerun 23296772746`
