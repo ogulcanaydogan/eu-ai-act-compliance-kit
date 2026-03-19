@@ -7,13 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-- Tag-driven release workflow with staged publish (`TestPyPI -> PyPI`) and GitHub Release generation.
-- PDF report generation support in `ai-act report --format pdf -o <path>`.
-
-### Changed
-- Pydantic v2 schema hardening (`ConfigDict`, `min_length`, UTC-aware timestamp defaults).
-- `eu_ai_act.__version__` now resolves from installed package metadata with deterministic local fallback.
+- No unreleased changes yet.
 
 ## [0.1.0] - 2026-03-19
 
@@ -26,4 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Transparency and GPAI assessment modules.
 - CLI commands: `classify`, `check`, `checklist`, `report`, `transparency`, `gpai`, `validate`, `articles`.
 - Composite GitHub Action for CI gating.
+- Tag-driven release workflow with staged publish (`TestPyPI -> PyPI`) and GitHub Release generation.
 - MkDocs documentation set and launch material.
+
+### Changed
+- Pydantic v2 schema hardening (`ConfigDict`, `min_length`, UTC-aware timestamp defaults).
+- `eu_ai_act.__version__` now resolves from installed package metadata with deterministic local fallback.
