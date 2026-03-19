@@ -6,7 +6,6 @@ Contains article titles, summaries, requirements, and deadlines.
 """
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional
 
 from eu_ai_act.schema import RiskTier
 
@@ -26,14 +25,15 @@ class Article:
         deadline_months: Months from enforcement to comply
         related_articles: Cross-references to related articles
     """
+
     article_id: str
     title: str
     summary: str
     full_text: str
-    risk_tiers: List[RiskTier]
-    requirements: List[str]
+    risk_tiers: list[RiskTier]
+    requirements: list[str]
     deadline_months: int
-    related_articles: List[str]
+    related_articles: list[str]
 
 
 class ArticleDatabase:
@@ -43,7 +43,7 @@ class ArticleDatabase:
         """Initialize article database."""
         self._articles = self._load_articles()
 
-    def get_article(self, article_id: str) -> Optional[Article]:
+    def get_article(self, article_id: str) -> Article | None:
         """
         Retrieve an article by ID.
 
@@ -55,7 +55,7 @@ class ArticleDatabase:
         """
         return self._articles.get(article_id)
 
-    def get_articles_by_tier(self, tier: RiskTier) -> List[Article]:
+    def get_articles_by_tier(self, tier: RiskTier) -> list[Article]:
         """
         Get all articles applicable to a risk tier.
 
@@ -67,7 +67,7 @@ class ArticleDatabase:
         """
         return [article for article in self._articles.values() if tier in article.risk_tiers]
 
-    def get_requirements_by_tier(self, tier: RiskTier) -> Dict[str, List[str]]:
+    def get_requirements_by_tier(self, tier: RiskTier) -> dict[str, list[str]]:
         """
         Get all requirements for a risk tier.
 
@@ -77,12 +77,12 @@ class ArticleDatabase:
         Returns:
             Dictionary mapping article IDs to requirement lists
         """
-        requirements: Dict[str, List[str]] = {}
+        requirements: dict[str, list[str]] = {}
         for article in self.get_articles_by_tier(tier):
             requirements[article.article_id] = article.requirements
         return requirements
 
-    def _load_articles(self) -> Dict[str, Article]:
+    def _load_articles(self) -> dict[str, Article]:
         """Load all articles from database."""
         return {
             "5": Article(

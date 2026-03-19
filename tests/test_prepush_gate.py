@@ -7,7 +7,6 @@ import json
 import sys
 from pathlib import Path
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT_PATH = REPO_ROOT / "scripts" / "prepush_gate.py"
 MODULE_NAME = "scripts.prepush_gate"
@@ -78,15 +77,15 @@ class TestPrepushGate:
         malformed.write_text(
             (
                 "name: broken\n"
-                "description: \"Broken descriptor for gate test\"\n"
+                'description: "Broken descriptor for gate test"\n'
                 "use_cases:\n"
                 "  - domain: general_purpose\n"
-                "    description: \"valid looking\"\n"
+                '    description: "valid looking"\n'
                 "data_practices:\n"
                 "  - type: personal\n"
                 "human_oversight:\n"
                 "  oversight_mechanism: approval_required\n"
-                "training_data_source: \"synthetic\"\n"
+                'training_data_source: "synthetic"\n'
                 "documentation: true\n"
                 "performance_monitoring: true\n"
                 ":\n"
@@ -110,7 +109,9 @@ class TestPrepushGate:
                 return _cp(0, json.dumps({"summary": {"non_compliant_count": 0}}))
             raise AssertionError(f"Unexpected step: {step}")
 
-        exit_code = prepush_gate.run_gate([str(descriptor)], command_runner=_runner, repo_root=tmp_path)
+        exit_code = prepush_gate.run_gate(
+            [str(descriptor)], command_runner=_runner, repo_root=tmp_path
+        )
         assert exit_code == 1
 
     def test_policy_fail_for_high_risk_with_non_compliant(self, tmp_path):
@@ -125,7 +126,9 @@ class TestPrepushGate:
                 return _cp(0, json.dumps({"summary": {"non_compliant_count": 2}}))
             raise AssertionError(f"Unexpected step: {step}")
 
-        exit_code = prepush_gate.run_gate([str(descriptor)], command_runner=_runner, repo_root=tmp_path)
+        exit_code = prepush_gate.run_gate(
+            [str(descriptor)], command_runner=_runner, repo_root=tmp_path
+        )
         assert exit_code == 1
 
     def test_policy_pass_for_non_blocking_cases(self, tmp_path):
@@ -138,6 +141,7 @@ class TestPrepushGate:
         ]
 
         for risk_tier, non_compliant_count in cases:
+
             def _runner(step, _descriptor, _repo_root, tier=risk_tier, nc=non_compliant_count):
                 if step == "validate":
                     return _cp(0, "ok")

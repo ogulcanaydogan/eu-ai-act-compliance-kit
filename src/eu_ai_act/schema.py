@@ -7,8 +7,7 @@ by the compliance checker.
 """
 
 from datetime import UTC, datetime
-from enum import Enum
-from typing import Any, Dict, List, Optional
+from enum import StrEnum
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
@@ -19,7 +18,7 @@ def _utc_now() -> datetime:
     return datetime.now(UTC)
 
 
-class RiskTier(str, Enum):
+class RiskTier(StrEnum):
     """
     EU AI Act risk tier classification.
 
@@ -28,17 +27,19 @@ class RiskTier(str, Enum):
     - LIMITED: Subject to transparency obligations only (Article 50)
     - MINIMAL: General-purpose low-risk AI systems
     """
+
     UNACCEPTABLE = "unacceptable"
     HIGH_RISK = "high_risk"
     LIMITED = "limited"
     MINIMAL = "minimal"
 
 
-class UseCaseDomain(str, Enum):
+class UseCaseDomain(StrEnum):
     """
     Primary domain/use case for the AI system.
     Aligns with Annex III of EU AI Act for high-risk category determination.
     """
+
     BIOMETRIC = "biometric"
     CRITICAL_INFRASTRUCTURE = "critical_infrastructure"
     LAW_ENFORCEMENT = "law_enforcement"
@@ -62,26 +63,19 @@ class DataPractice(BaseModel):
         explicit_consent: Whether explicit user consent is obtained
         anonymization: Whether data is anonymized or pseudonymized
     """
-    type: str = Field(
-        ...,
-        description="Type of data: personal, sensitive, biometric, or other"
-    )
+
+    type: str = Field(..., description="Type of data: personal, sensitive, biometric, or other")
     retention_period: int = Field(
-        365,
-        ge=0,
-        description="Data retention period in days (0 = immediate deletion)"
+        365, ge=0, description="Data retention period in days (0 = immediate deletion)"
     )
     sharing_third_parties: bool = Field(
-        False,
-        description="Whether data is shared with external third parties"
+        False, description="Whether data is shared with external third parties"
     )
     explicit_consent: bool = Field(
-        False,
-        description="Whether explicit user consent is obtained for data use"
+        False, description="Whether explicit user consent is obtained for data use"
     )
-    anonymization: Optional[str] = Field(
-        None,
-        description="Anonymization/pseudonymization method used, if any"
+    anonymization: str | None = Field(
+        None, description="Anonymization/pseudonymization method used, if any"
     )
 
     model_config = ConfigDict(
@@ -107,21 +101,20 @@ class HumanOversight(BaseModel):
         review_frequency: How often human review occurs
         human_authority: Whether humans can override AI decisions
     """
+
     oversight_mechanism: str = Field(
         ...,
-        description="Type of human oversight: manual_review, approval_required, continuous_monitoring, or other"
+        description="Type of human oversight: manual_review, approval_required, continuous_monitoring, or other",
     )
     fallback_procedure: str = Field(
-        ...,
-        description="Procedure for handling system failures or errors"
+        ..., description="Procedure for handling system failures or errors"
     )
     review_frequency: str = Field(
         ...,
-        description="Frequency of human review: real_time, per_decision, daily, weekly, or other"
+        description="Frequency of human review: real_time, per_decision, daily, weekly, or other",
     )
     human_authority: bool = Field(
-        True,
-        description="Whether humans have authority to override or reject AI decisions"
+        True, description="Whether humans have authority to override or reject AI decisions"
     )
 
     model_config = ConfigDict(
@@ -147,26 +140,19 @@ class UseCase(BaseModel):
         impacts_fundamental_rights: Whether decisions impact fundamental rights
         affected_population: Description of who is affected by the system
     """
-    domain: UseCaseDomain = Field(
-        ...,
-        description="Primary use case domain"
-    )
+
+    domain: UseCaseDomain = Field(..., description="Primary use case domain")
     description: str = Field(
-        ...,
-        min_length=10,
-        description="Detailed description of the use case and functionality"
+        ..., min_length=10, description="Detailed description of the use case and functionality"
     )
     autonomous_decision: bool = Field(
-        False,
-        description="Whether the system makes autonomous decisions without human review"
+        False, description="Whether the system makes autonomous decisions without human review"
     )
     impacts_fundamental_rights: bool = Field(
-        False,
-        description="Whether decisions significantly impact fundamental rights or freedoms"
+        False, description="Whether decisions significantly impact fundamental rights or freedoms"
     )
-    affected_population: Optional[str] = Field(
-        None,
-        description="Description of the population affected by this system"
+    affected_population: str | None = Field(
+        None, description="Description of the population affected by this system"
     )
 
     model_config = ConfigDict(
@@ -204,59 +190,36 @@ class AISystemDescriptor(BaseModel):
         created_at: System creation date
         last_updated: Last update date
     """
-    name: str = Field(
-        ...,
-        min_length=1,
-        max_length=256,
-        description="Name of the AI system"
-    )
-    version: str = Field(
-        "1.0.0",
-        description="System version (semantic versioning)"
-    )
+
+    name: str = Field(..., min_length=1, max_length=256, description="Name of the AI system")
+    version: str = Field("1.0.0", description="System version (semantic versioning)")
     description: str = Field(
         ...,
         min_length=10,
-        description="Comprehensive description of the AI system's purpose and functionality"
+        description="Comprehensive description of the AI system's purpose and functionality",
     )
-    use_cases: List[UseCase] = Field(
-        ...,
-        min_length=1,
-        description="List of primary use cases"
+    use_cases: list[UseCase] = Field(..., min_length=1, description="List of primary use cases")
+    data_practices: list[DataPractice] = Field(
+        ..., min_length=1, description="Data collection and management practices"
     )
-    data_practices: List[DataPractice] = Field(
-        ...,
-        min_length=1,
-        description="Data collection and management practices"
-    )
-    human_oversight: HumanOversight = Field(
-        ...,
-        description="Human oversight mechanisms"
-    )
+    human_oversight: HumanOversight = Field(..., description="Human oversight mechanisms")
     training_data_source: str = Field(
-        ...,
-        min_length=10,
-        description="Description of training data sources and quality assurance"
+        ..., min_length=10, description="Description of training data sources and quality assurance"
     )
     documentation: bool = Field(
-        False,
-        description="Whether comprehensive technical documentation exists"
+        False, description="Whether comprehensive technical documentation exists"
     )
     performance_monitoring: bool = Field(
-        False,
-        description="Whether system performance is continuously monitored"
+        False, description="Whether system performance is continuously monitored"
     )
-    incident_procedure: Optional[str] = Field(
-        None,
-        description="Procedure for handling incidents, errors, or system failures"
+    incident_procedure: str | None = Field(
+        None, description="Procedure for handling incidents, errors, or system failures"
     )
-    created_at: Optional[datetime] = Field(
-        default_factory=_utc_now,
-        description="System creation timestamp"
+    created_at: datetime | None = Field(
+        default_factory=_utc_now, description="System creation timestamp"
     )
-    last_updated: Optional[datetime] = Field(
-        default_factory=_utc_now,
-        description="Last update timestamp"
+    last_updated: datetime | None = Field(
+        default_factory=_utc_now, description="Last update timestamp"
     )
 
     model_config = ConfigDict(
@@ -327,5 +290,5 @@ def load_system_descriptor_from_file(filepath: str) -> AISystemDescriptor:
         FileNotFoundError: If file doesn't exist
         ValueError: If YAML is invalid or schema doesn't match
     """
-    with open(filepath, "r") as f:
+    with open(filepath) as f:
         return load_system_descriptor_from_yaml(f.read())

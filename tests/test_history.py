@@ -199,7 +199,9 @@ class TestHistoryStorage:
 
     def test_invalid_jsonl_raises_clear_error(self, tmp_path):
         history_path = tmp_path / "history.jsonl"
-        history_path.write_text('{"event_id":"ok","event_type":"check"}\nnot-json\n', encoding="utf-8")
+        history_path.write_text(
+            '{"event_id":"ok","event_type":"check"}\nnot-json\n', encoding="utf-8"
+        )
 
         with pytest.raises(ValueError):
             list_events(history_path=history_path)

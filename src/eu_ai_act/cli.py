@@ -8,7 +8,7 @@ checklist generation, and report generation.
 import json
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import cast
 
 import click
 from rich.console import Console
@@ -16,20 +16,18 @@ from rich.panel import Panel
 from rich.progress import Progress
 from rich.table import Table
 
-from eu_ai_act.schema import load_system_descriptor_from_file, AISystemDescriptor, RiskTier, UseCaseDomain
-from eu_ai_act.classifier import RiskClassifier
 from eu_ai_act.checker import ComplianceChecker
 from eu_ai_act.checklist import ChecklistGenerator
-from eu_ai_act.reporter import ReportGenerator
-from eu_ai_act.transparency import TransparencyChecker, TransparencyFinding
+from eu_ai_act.classifier import RiskClassifier
+from eu_ai_act.dashboard import DashboardGenerator
 from eu_ai_act.gpai import (
-    GPAIAssessor,
     GPAIAssessment,
+    GPAIAssessor,
     GPAIModelInfo,
     load_gpai_model_info_from_file,
 )
-from eu_ai_act.dashboard import DashboardGenerator
 from eu_ai_act.history import (
+    EventType,
     append_event,
     build_event,
     diff_events,
@@ -37,7 +35,14 @@ from eu_ai_act.history import (
     list_events,
     resolve_history_path,
 )
-
+from eu_ai_act.reporter import ReportGenerator
+from eu_ai_act.schema import (
+    AISystemDescriptor,
+    RiskTier,
+    UseCaseDomain,
+    load_system_descriptor_from_file,
+)
+from eu_ai_act.transparency import TransparencyChecker, TransparencyFinding
 
 console = Console()
 
@@ -122,16 +127,12 @@ def classify(system_yaml: str, output_json: bool) -> None:
             )
         )
         console.print(f"\n[cyan]Reasoning:[/cyan]\n{classification.reasoning}")
-        console.print(
-            f"\n[cyan]Confidence:[/cyan] {classification.confidence:.0%}"
-        )
-        console.print(
-            f"\n[cyan]Contributing Factors:[/cyan]"
-        )
+        console.print(f"\n[cyan]Confidence:[/cyan] {classification.confidence:.0%}")
+        console.print("\n[cyan]Contributing Factors:[/cyan]")
         for factor in classification.contributing_factors:
             console.print(f"  • {factor}")
 
-        console.print(f"\n[cyan]Applicable EU AI Act Articles:[/cyan]")
+        console.print("\n[cyan]Applicable EU AI Act Articles:[/cyan]")
         for article in classification.articles_applicable:
             console.print(f"  • {article}")
 
@@ -219,7 +220,9 @@ def check(system_yaml: str, output_json: bool) -> None:
                 "compliance_percentage": round(report_result.summary.compliance_percentage, 2),
             },
             "findings": findings_payload,
-            "transparency": [_serialize_transparency_finding(finding) for finding in transparency_findings],
+            "transparency": [
+                _serialize_transparency_finding(finding) for finding in transparency_findings
+            ],
             "gpai_summary": gpai_summary,
             "audit_trail": report_result.audit_trail,
             "generated_at": report_result.generated_at,
@@ -271,12 +274,12 @@ def check(system_yaml: str, output_json: bool) -> None:
             transparency_table.add_column("Status")
             transparency_table.add_column("Severity")
             transparency_table.add_column("Gap")
-            for finding in transparency_findings:
+            for transparency_finding in transparency_findings:
                 transparency_table.add_row(
-                    finding.requirement_id,
-                    finding.status.value,
-                    finding.severity,
-                    finding.gap_analysis or "-",
+                    transparency_finding.requirement_id,
+                    transparency_finding.status.value,
+                    transparency_finding.severity,
+                    transparency_finding.gap_analysis or "-",
                 )
             console.print(transparency_table)
 
@@ -284,7 +287,9 @@ def check(system_yaml: str, output_json: bool) -> None:
         gpai_table.add_column("Metric", style="cyan")
         gpai_table.add_column("Value", justify="right")
         gpai_table.add_row("Applicable", "yes" if gpai_summary["applicable"] else "no")
-        gpai_table.add_row("Systemic Risk Flag", "yes" if gpai_summary["systemic_risk_flag"] else "no")
+        gpai_table.add_row(
+            "Systemic Risk Flag", "yes" if gpai_summary["systemic_risk_flag"] else "no"
+        )
         gpai_table.add_row("Total Findings", str(gpai_summary["total_findings"]))
         gpai_table.add_row("Actionable Gaps", str(gpai_summary["actionable_gaps"]))
         console.print(gpai_table)
@@ -307,7 +312,7 @@ def check(system_yaml: str, output_json: bool) -> None:
     type=click.Path(),
     help="Output file path (default: stdout for json, system_name.format otherwise)",
 )
-def checklist(system_yaml: str, format: str, output: Optional[str]) -> None:
+def checklist(system_yaml: str, format: str, output: str | None) -> None:
     """
     Generate a compliance checklist for an AI system.
 
@@ -486,7 +491,7 @@ def gpai(model_yaml: str, output_json: bool) -> None:
     type=click.Path(),
     help="Output file path",
 )
-def report(system_yaml: str, format: str, output: Optional[str]) -> None:
+def report(system_yaml: str, format: str, output: str | None) -> None:
     """
     Generate a compliance report for an AI system.
 
@@ -572,6 +577,7 @@ def report(system_yaml: str, format: str, output: Optional[str]) -> None:
         history_warning = str(e)
 
     if format == "pdf":
+        assert output is not None
         output_path = Path(output)
         output_path.write_bytes(report_bytes)
         console.print(f"[green]PDF report saved to: {output_path}[/green]")
@@ -607,7 +613,7 @@ def validate(system_yaml: str) -> None:
         console.print(f"[red]Error: File not found: {system_yaml}[/red]")
         sys.exit(1)
     except Exception as e:
-        console.print(f"[red]Validation failed:[/red]")
+        console.print("[red]Validation failed:[/red]")
         console.print(f"  {e}")
         sys.exit(1)
 
@@ -618,7 +624,7 @@ def validate(system_yaml: str) -> None:
     type=click.Choice(["minimal", "limited", "high_risk", "unacceptable"]),
     help="Filter by risk tier",
 )
-def articles(tier: Optional[str]) -> None:
+def articles(tier: str | None) -> None:
     """
     Display EU AI Act articles and requirements.
 
@@ -631,7 +637,9 @@ def articles(tier: Optional[str]) -> None:
     """
     classifier = RiskClassifier()
     tier_order = [RiskTier.MINIMAL, RiskTier.LIMITED, RiskTier.HIGH_RISK, RiskTier.UNACCEPTABLE]
-    articles_data = {risk_tier.value: classifier.get_applicable_articles(risk_tier) for risk_tier in tier_order}
+    articles_data = {
+        risk_tier.value: classifier.get_applicable_articles(risk_tier) for risk_tier in tier_order
+    }
 
     if tier:
         articles_list = articles_data.get(tier, [])
@@ -666,8 +674,8 @@ def dashboard_build(
     descriptor_dir: str,
     recursive: bool,
     include_history: bool,
-    history_path: Optional[str],
-    output_dir: Optional[str],
+    history_path: str | None,
+    output_dir: str | None,
 ) -> None:
     """Build JSON and static HTML dashboard artifacts from descriptor files."""
     generator = DashboardGenerator()
@@ -695,14 +703,14 @@ def dashboard_build(
 
     if payload["invalid_descriptor_count"] > 0:
         console.print(
-            (
-                f"[yellow]Skipped {payload['invalid_descriptor_count']} invalid descriptor file(s). "
-                "See dashboard 'errors' section for details.[/yellow]"
-            )
+            f"[yellow]Skipped {payload['invalid_descriptor_count']} invalid descriptor file(s). "
+            "See dashboard 'errors' section for details.[/yellow]"
         )
 
     if payload["valid_system_count"] == 0:
-        console.print("[red]No valid system descriptors found. Dashboard build marked as failed.[/red]")
+        console.print(
+            "[red]No valid system descriptors found. Dashboard build marked as failed.[/red]"
+        )
         sys.exit(1)
 
 
@@ -723,15 +731,15 @@ def history() -> None:
 @click.option("--json", "output_json", is_flag=True, help="Output as JSON")
 @click.option("--history-path", type=click.Path(), help="Override history JSONL path")
 def history_list(
-    system_name: Optional[str],
-    event_type: Optional[str],
-    limit: Optional[int],
+    system_name: str | None,
+    event_type: str | None,
+    limit: int | None,
     output_json: bool,
-    history_path: Optional[str],
+    history_path: str | None,
 ) -> None:
     """List persisted history events."""
     try:
-        event_type_filter = event_type if event_type else None
+        event_type_filter = cast(EventType | None, event_type if event_type else None)
         events = list_events(
             history_path=history_path,
             system=system_name,
@@ -777,7 +785,7 @@ def history_list(
 @click.argument("event_id")
 @click.option("--json", "output_json", is_flag=True, help="Output as JSON")
 @click.option("--history-path", type=click.Path(), help="Override history JSONL path")
-def history_show(event_id: str, output_json: bool, history_path: Optional[str]) -> None:
+def history_show(event_id: str, output_json: bool, history_path: str | None) -> None:
     """Show details for one history event."""
     try:
         event = get_event(event_id, history_path=history_path)
@@ -833,7 +841,7 @@ def history_diff(
     older_event_id: str,
     newer_event_id: str,
     output_json: bool,
-    history_path: Optional[str],
+    history_path: str | None,
 ) -> None:
     """Diff two history events."""
     try:
@@ -935,14 +943,22 @@ def _build_gpai_model_info_from_descriptor(descriptor: AISystemDescriptor) -> GP
         training_compute_flops=None,
         model_params_billion=None,
         eu_monthly_users=None,
-        supports_tool_use=any(keyword in text for keyword in ["tool use", "function calling", "agent"]),
-        autonomous_task_execution=any(use_case.autonomous_decision for use_case in descriptor.use_cases),
+        supports_tool_use=any(
+            keyword in text for keyword in ["tool use", "function calling", "agent"]
+        ),
+        autonomous_task_execution=any(
+            use_case.autonomous_decision for use_case in descriptor.use_cases
+        ),
         generates_synthetic_media=any(
-            keyword in text for keyword in ["generated", "generative", "synthetic", "deepfake", "chatbot"]
+            keyword in text
+            for keyword in ["generated", "generative", "synthetic", "deepfake", "chatbot"]
         ),
         model_card_available="model card" in text or descriptor.documentation,
-        training_data_documented=descriptor.documentation and len(descriptor.training_data_source.strip()) >= 20,
-        systemic_risk_mitigation_plan=bool(descriptor.incident_procedure and descriptor.incident_procedure.strip()),
+        training_data_documented=descriptor.documentation
+        and len(descriptor.training_data_source.strip()) >= 20,
+        systemic_risk_mitigation_plan=bool(
+            descriptor.incident_procedure and descriptor.incident_procedure.strip()
+        ),
         post_market_monitoring=descriptor.performance_monitoring,
     )
 
@@ -954,7 +970,13 @@ def _build_gpai_summary(assessment: GPAIAssessment, descriptor: AISystemDescript
         use_case.domain == UseCaseDomain.GENERAL_PURPOSE for use_case in descriptor.use_cases
     ) or any(
         keyword in gpai_text
-        for keyword in ["general purpose", "foundation model", "large language", "multimodal", "broad training"]
+        for keyword in [
+            "general purpose",
+            "foundation model",
+            "large language",
+            "multimodal",
+            "broad training",
+        ]
     )
 
     return {

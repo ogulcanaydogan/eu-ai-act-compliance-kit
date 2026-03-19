@@ -6,7 +6,6 @@ Uses a decision tree based on use case domain, data sensitivity, and autonomy le
 """
 
 from dataclasses import dataclass, field
-from typing import List, Optional
 
 from eu_ai_act.schema import AISystemDescriptor, RiskTier, UseCaseDomain
 
@@ -23,11 +22,12 @@ class RiskClassification:
         confidence: Confidence score (0.0-1.0)
         contributing_factors: List of factors that influenced the classification
     """
+
     tier: RiskTier
     reasoning: str
-    articles_applicable: List[str]
+    articles_applicable: list[str]
     confidence: float
-    contributing_factors: List[str] = field(default_factory=list)
+    contributing_factors: list[str] = field(default_factory=list)
 
     def __str__(self) -> str:
         return f"Risk Tier: {self.tier.value} (confidence: {self.confidence:.0%})\n{self.reasoning}"
@@ -68,7 +68,15 @@ class RiskClassifier:
     }
     ARTICLES_BY_TIER = {
         RiskTier.UNACCEPTABLE: ["Art. 5"],
-        RiskTier.HIGH_RISK: ["Art. 6", "Art. 10", "Art. 11", "Art. 13", "Art. 14", "Art. 15", "Art. 43"],
+        RiskTier.HIGH_RISK: [
+            "Art. 6",
+            "Art. 10",
+            "Art. 11",
+            "Art. 13",
+            "Art. 14",
+            "Art. 15",
+            "Art. 43",
+        ],
         RiskTier.LIMITED: ["Art. 50", "Art. 51-55"],
         RiskTier.MINIMAL: ["Art. 69"],
     }
@@ -83,7 +91,7 @@ class RiskClassifier:
         Returns:
             RiskClassification with tier, reasoning, and applicable articles
         """
-        factors: List[str] = []
+        factors: list[str] = []
 
         # Check for prohibited practices (Article 5)
         prohibited_check = self._check_prohibited(descriptor)
@@ -131,7 +139,7 @@ class RiskClassifier:
             contributing_factors=factors,
         )
 
-    def _check_prohibited(self, descriptor: AISystemDescriptor) -> Optional[dict]:
+    def _check_prohibited(self, descriptor: AISystemDescriptor) -> dict | None:
         """
         Check for Article 5 prohibited practices.
 
@@ -174,13 +182,17 @@ class RiskClassifier:
         Returns:
             Dict with high-risk assessment
         """
-        factors: List[str] = []
+        factors: list[str] = []
         confidence = 0.0
 
         # Check use case domain
-        high_risk_domains = [uc for uc in descriptor.use_cases if uc.domain in self.HIGH_RISK_DOMAINS]
+        high_risk_domains = [
+            uc for uc in descriptor.use_cases if uc.domain in self.HIGH_RISK_DOMAINS
+        ]
         if high_risk_domains:
-            factors.append(f"High-risk domain detected: {', '.join(uc.domain.value for uc in high_risk_domains)}")
+            factors.append(
+                f"High-risk domain detected: {', '.join(uc.domain.value for uc in high_risk_domains)}"
+            )
             confidence = 0.90
 
         rights_impact = any(uc.impacts_fundamental_rights for uc in descriptor.use_cases)
@@ -199,15 +211,19 @@ class RiskClassifier:
             confidence = max(confidence, 0.95)
 
         sensitive_data = [
-            dp for dp in descriptor.data_practices
-            if ("sensitive" in dp.type.lower() or "health" in dp.type.lower()) and not dp.explicit_consent
+            dp
+            for dp in descriptor.data_practices
+            if ("sensitive" in dp.type.lower() or "health" in dp.type.lower())
+            and not dp.explicit_consent
         ]
         if sensitive_data:
             factors.append("System processes sensitive data without explicit consent")
             confidence = max(confidence, 0.80)
 
         personal_without_consent = [
-            dp for dp in descriptor.data_practices if dp.type.lower() == "personal" and not dp.explicit_consent
+            dp
+            for dp in descriptor.data_practices
+            if dp.type.lower() == "personal" and not dp.explicit_consent
         ]
         if personal_without_consent:
             factors.append("System processes personal data without explicit consent")
@@ -262,19 +278,27 @@ class RiskClassifier:
         Returns:
             Dict with limited-risk assessment
         """
-        factors: List[str] = []
+        factors: list[str] = []
         confidence = 0.0
 
         # Check for AI-generated content that requires disclosure
         for use_case in descriptor.use_cases:
             desc_lower = use_case.description.lower()
-            if any(keyword in desc_lower for keyword in ["deepfake", "synthetic", "generated", "chatbot", "text generation"]):
-                factors.append(f"System generates AI-synthesized content requiring disclosure ({use_case.domain.value})")
+            if any(
+                keyword in desc_lower
+                for keyword in ["deepfake", "synthetic", "generated", "chatbot", "text generation"]
+            ):
+                factors.append(
+                    f"System generates AI-synthesized content requiring disclosure ({use_case.domain.value})"
+                )
                 confidence = max(confidence, 0.85)
 
         # Check for general-purpose AI models
         training_lower = descriptor.training_data_source.lower()
-        if any(keyword in training_lower for keyword in ["general purpose", "broad training", "large language", "multimodal"]):
+        if any(
+            keyword in training_lower
+            for keyword in ["general purpose", "broad training", "large language", "multimodal"]
+        ):
             factors.append("System appears to be a general-purpose AI model")
             confidence = max(confidence, 0.80)
 
@@ -295,7 +319,7 @@ class RiskClassifier:
             "confidence": min(confidence, 0.90),
         }
 
-    def get_applicable_articles(self, tier: RiskTier) -> List[str]:
+    def get_applicable_articles(self, tier: RiskTier) -> list[str]:
         """
         Get list of applicable EU AI Act articles for a given risk tier.
 

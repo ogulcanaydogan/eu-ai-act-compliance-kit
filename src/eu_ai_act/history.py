@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import UTC, datetime
 import json
 import os
+from collections.abc import Iterable
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Dict, Iterable, Literal, Optional
+from typing import Any, Literal
 from uuid import uuid4
-
 
 EventType = Literal["check", "report"]
 
@@ -30,7 +30,7 @@ def _utc_now_iso() -> str:
 def _normalize_int(value: Any, field_name: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int):
         raise ValueError(f"Summary field '{field_name}' must be an integer.")
-    return value
+    return int(value)
 
 
 def _normalize_float(value: Any, field_name: str) -> float:
@@ -39,11 +39,11 @@ def _normalize_float(value: Any, field_name: str) -> float:
     return float(value)
 
 
-def _normalize_summary(summary: Dict[str, Any]) -> Dict[str, Any]:
+def _normalize_summary(summary: Any) -> dict[str, Any]:
     if not isinstance(summary, dict):
         raise ValueError("Summary must be an object.")
 
-    normalized: Dict[str, Any] = {}
+    normalized: dict[str, Any] = {}
     for field_name in SUMMARY_FIELDS:
         if field_name not in summary:
             raise ValueError(f"Summary is missing required field '{field_name}'.")
@@ -54,11 +54,11 @@ def _normalize_summary(summary: Dict[str, Any]) -> Dict[str, Any]:
     return normalized
 
 
-def _normalize_finding_statuses(finding_statuses: Dict[str, Any]) -> Dict[str, str]:
+def _normalize_finding_statuses(finding_statuses: Any) -> dict[str, str]:
     if not isinstance(finding_statuses, dict):
         raise ValueError("Finding statuses must be an object.")
 
-    normalized: Dict[str, str] = {}
+    normalized: dict[str, str] = {}
     for requirement_id, status in finding_statuses.items():
         if not isinstance(requirement_id, str) or not requirement_id:
             raise ValueError("Finding status keys must be non-empty strings.")
@@ -78,12 +78,12 @@ class HistoryEvent:
     system_name: str
     descriptor_path: str
     risk_tier: str
-    summary: Dict[str, Any]
-    finding_statuses: Dict[str, str]
-    report_format: Optional[str] = None
+    summary: dict[str, Any]
+    finding_statuses: dict[str, str]
+    report_format: str | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
-        payload: Dict[str, Any] = {
+    def to_dict(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {
             "event_id": self.event_id,
             "event_type": self.event_type,
             "generated_at": self.generated_at,
@@ -98,7 +98,7 @@ class HistoryEvent:
         return payload
 
     @classmethod
-    def from_dict(cls, payload: Dict[str, Any]) -> "HistoryEvent":
+    def from_dict(cls, payload: dict[str, Any]) -> HistoryEvent:
         if not isinstance(payload, dict):
             raise ValueError("History event payload must be an object.")
 
@@ -152,13 +152,13 @@ def build_event(
     system_name: str,
     descriptor_path: str,
     risk_tier: str,
-    summary: Dict[str, Any],
-    finding_statuses: Dict[str, str],
-    report_format: Optional[str] = None,
-    generated_at: Optional[str] = None,
+    summary: dict[str, Any],
+    finding_statuses: dict[str, str],
+    report_format: str | None = None,
+    generated_at: str | None = None,
 ) -> HistoryEvent:
     """Build and validate a new history event with generated event_id/timestamp."""
-    payload: Dict[str, Any] = {
+    payload: dict[str, Any] = {
         "event_id": str(uuid4()),
         "event_type": event_type,
         "generated_at": generated_at or _utc_now_iso(),
@@ -172,7 +172,7 @@ def build_event(
     return HistoryEvent.from_dict(payload)
 
 
-def _find_project_root(start_path: Path) -> Optional[Path]:
+def _find_project_root(start_path: Path) -> Path | None:
     for candidate in [start_path, *start_path.parents]:
         if (candidate / "pyproject.toml").exists():
             return candidate
@@ -180,14 +180,14 @@ def _find_project_root(start_path: Path) -> Optional[Path]:
 
 
 def resolve_history_path(
-    history_path: Optional[str | Path] = None,
+    history_path: str | Path | None = None,
     *,
-    cwd: Optional[str | Path] = None,
+    cwd: str | Path | None = None,
 ) -> Path:
     """Resolve explicit or default history path."""
     current_dir = Path(cwd).resolve() if cwd else Path.cwd().resolve()
 
-    path_input: Optional[str | Path] = history_path
+    path_input: str | Path | None = history_path
     if path_input is None:
         env_path = os.getenv("EU_AI_ACT_HISTORY_PATH")
         if env_path:
@@ -223,17 +223,15 @@ def _load_events(history_file: Path) -> list[HistoryEvent]:
             try:
                 events.append(HistoryEvent.from_dict(payload))
             except ValueError as exc:
-                raise ValueError(
-                    f"Invalid history event at line {line_number}: {exc}"
-                ) from exc
+                raise ValueError(f"Invalid history event at line {line_number}: {exc}") from exc
     return events
 
 
 def append_event(
     event: HistoryEvent,
     *,
-    history_path: Optional[str | Path] = None,
-    cwd: Optional[str | Path] = None,
+    history_path: str | Path | None = None,
+    cwd: str | Path | None = None,
 ) -> HistoryEvent:
     """Append a validated history event to JSONL storage."""
     history_file = resolve_history_path(history_path, cwd=cwd)
@@ -245,11 +243,11 @@ def append_event(
 
 def list_events(
     *,
-    history_path: Optional[str | Path] = None,
-    cwd: Optional[str | Path] = None,
-    system: Optional[str] = None,
-    event_type: Optional[EventType] = None,
-    limit: Optional[int] = None,
+    history_path: str | Path | None = None,
+    cwd: str | Path | None = None,
+    system: str | None = None,
+    event_type: EventType | None = None,
+    limit: int | None = None,
 ) -> list[HistoryEvent]:
     """List history events ordered newest-first with optional filtering."""
     if limit is not None and limit <= 0:
@@ -273,8 +271,8 @@ def list_events(
 def get_event(
     event_id: str,
     *,
-    history_path: Optional[str | Path] = None,
-    cwd: Optional[str | Path] = None,
+    history_path: str | Path | None = None,
+    cwd: str | Path | None = None,
 ) -> HistoryEvent:
     """Fetch one event by event_id."""
     history_file = resolve_history_path(history_path, cwd=cwd)
@@ -288,9 +286,9 @@ def diff_events(
     older_event_id: str,
     newer_event_id: str,
     *,
-    history_path: Optional[str | Path] = None,
-    cwd: Optional[str | Path] = None,
-) -> Dict[str, Any]:
+    history_path: str | Path | None = None,
+    cwd: str | Path | None = None,
+) -> dict[str, Any]:
     """Compute deterministic diff between two events."""
     history_file = resolve_history_path(history_path, cwd=cwd)
     events = _load_events(history_file)
@@ -304,7 +302,7 @@ def diff_events(
     older = index[older_event_id]
     newer = index[newer_event_id]
 
-    summary_changes: Dict[str, Dict[str, Any]] = {}
+    summary_changes: dict[str, dict[str, Any]] = {}
     for field_name in SUMMARY_FIELDS:
         older_value = older.summary[field_name]
         newer_value = newer.summary[field_name]

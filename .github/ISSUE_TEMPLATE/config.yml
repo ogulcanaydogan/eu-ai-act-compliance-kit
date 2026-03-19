@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Documentation
+    url: https://eu-ai-act-compliance-kit.readthedocs.io
+    about: Check setup, CLI reference, and examples.
+  - name: Discussions
+    url: https://github.com/ogulcanaydogan/eu-ai-act-compliance-kit/discussions
+    about: Ask questions or discuss ideas before opening an issue.

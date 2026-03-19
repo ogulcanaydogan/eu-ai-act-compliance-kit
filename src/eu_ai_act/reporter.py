@@ -5,10 +5,10 @@ Generates compliance reports in multiple formats (JSON, HTML, Markdown, PDF).
 Creates audit-ready documentation of AI system assessments.
 """
 
-from datetime import UTC, datetime
 import html
 import json
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any, cast
 
 from eu_ai_act.checker import ComplianceFinding, ComplianceReport
 from eu_ai_act.checklist import ChecklistItem, ComplianceChecklist
@@ -29,10 +29,10 @@ class ReportGenerator:
         self,
         descriptor: AISystemDescriptor,
         classification: RiskClassification,
-        compliance_report: Optional[ComplianceReport] = None,
-        transparency_findings: Optional[List[TransparencyFinding]] = None,
-        gpai_assessment: Optional[GPAIAssessment] = None,
-        checklist: Optional[ComplianceChecklist] = None,
+        compliance_report: ComplianceReport | None = None,
+        transparency_findings: list[TransparencyFinding] | None = None,
+        gpai_assessment: GPAIAssessment | None = None,
+        checklist: ComplianceChecklist | None = None,
         format: str = "json",
     ) -> str:
         """Generate a report using a shared payload and format-specific renderers."""
@@ -57,10 +57,10 @@ class ReportGenerator:
         self,
         descriptor: AISystemDescriptor,
         classification: RiskClassification,
-        compliance_report: Optional[ComplianceReport] = None,
-        transparency_findings: Optional[List[TransparencyFinding]] = None,
-        gpai_assessment: Optional[GPAIAssessment] = None,
-        checklist: Optional[ComplianceChecklist] = None,
+        compliance_report: ComplianceReport | None = None,
+        transparency_findings: list[TransparencyFinding] | None = None,
+        gpai_assessment: GPAIAssessment | None = None,
+        checklist: ComplianceChecklist | None = None,
     ) -> str:
         """Backward-compatible wrapper for JSON report generation."""
         return self.generate_report(
@@ -77,10 +77,10 @@ class ReportGenerator:
         self,
         descriptor: AISystemDescriptor,
         classification: RiskClassification,
-        compliance_report: Optional[ComplianceReport] = None,
-        transparency_findings: Optional[List[TransparencyFinding]] = None,
-        gpai_assessment: Optional[GPAIAssessment] = None,
-        checklist: Optional[ComplianceChecklist] = None,
+        compliance_report: ComplianceReport | None = None,
+        transparency_findings: list[TransparencyFinding] | None = None,
+        gpai_assessment: GPAIAssessment | None = None,
+        checklist: ComplianceChecklist | None = None,
     ) -> str:
         """Backward-compatible wrapper for Markdown report generation."""
         return self.generate_report(
@@ -97,10 +97,10 @@ class ReportGenerator:
         self,
         descriptor: AISystemDescriptor,
         classification: RiskClassification,
-        compliance_report: Optional[ComplianceReport] = None,
-        transparency_findings: Optional[List[TransparencyFinding]] = None,
-        gpai_assessment: Optional[GPAIAssessment] = None,
-        checklist: Optional[ComplianceChecklist] = None,
+        compliance_report: ComplianceReport | None = None,
+        transparency_findings: list[TransparencyFinding] | None = None,
+        gpai_assessment: GPAIAssessment | None = None,
+        checklist: ComplianceChecklist | None = None,
     ) -> str:
         """Backward-compatible wrapper for HTML report generation."""
         return self.generate_report(
@@ -117,10 +117,10 @@ class ReportGenerator:
         self,
         descriptor: AISystemDescriptor,
         classification: RiskClassification,
-        compliance_report: Optional[ComplianceReport] = None,
-        transparency_findings: Optional[List[TransparencyFinding]] = None,
-        gpai_assessment: Optional[GPAIAssessment] = None,
-        checklist: Optional[ComplianceChecklist] = None,
+        compliance_report: ComplianceReport | None = None,
+        transparency_findings: list[TransparencyFinding] | None = None,
+        gpai_assessment: GPAIAssessment | None = None,
+        checklist: ComplianceChecklist | None = None,
     ) -> bytes:
         """
         Generate PDF bytes.
@@ -130,7 +130,7 @@ class ReportGenerator:
         except Exception as exc:
             raise RuntimeError(
                 "PDF generation requires optional dependency 'weasyprint'. "
-                "Install reporting extras with: pip install -e \".[reporting]\""
+                'Install reporting extras with: pip install -e ".[reporting]"'
             ) from exc
 
         html_report = self.generate_html_report(
@@ -142,7 +142,8 @@ class ReportGenerator:
             checklist=checklist,
         )
         try:
-            return HTML(string=html_report).write_pdf()
+            pdf_bytes = HTML(string=html_report).write_pdf()
+            return cast(bytes, pdf_bytes)
         except Exception as exc:
             raise RuntimeError(
                 "Failed to generate PDF with WeasyPrint. Ensure WeasyPrint system dependencies "
@@ -153,11 +154,11 @@ class ReportGenerator:
         self,
         descriptor: AISystemDescriptor,
         classification: RiskClassification,
-        compliance_report: Optional[ComplianceReport],
-        transparency_findings: List[TransparencyFinding],
-        gpai_assessment: Optional[GPAIAssessment],
-        checklist: Optional[ComplianceChecklist],
-    ) -> Dict[str, Any]:
+        compliance_report: ComplianceReport | None,
+        transparency_findings: list[TransparencyFinding],
+        gpai_assessment: GPAIAssessment | None,
+        checklist: ComplianceChecklist | None,
+    ) -> dict[str, Any]:
         """Build shared report payload for all renderers."""
         generated_at = self._utc_timestamp()
 
@@ -170,8 +171,8 @@ class ReportGenerator:
                 "not_assessed_count": 0,
                 "compliance_percentage": 0.0,
             }
-            compliance_findings: Dict[str, Dict[str, Any]] = {}
-            audit_trail: List[str] = []
+            compliance_findings: dict[str, dict[str, Any]] = {}
+            audit_trail: list[str] = []
         else:
             compliance_summary = {
                 "total_requirements": compliance_report.summary.total_requirements,
@@ -192,7 +193,7 @@ class ReportGenerator:
         ]
 
         if gpai_assessment is None:
-            gpai_payload: Dict[str, Any] = {
+            gpai_payload: dict[str, Any] = {
                 "systemic_risk_flag": False,
                 "compliance_gaps": [],
                 "recommendations": [],
@@ -203,7 +204,9 @@ class ReportGenerator:
                 "systemic_risk_flag": gpai_assessment.systemic_risk_flag,
                 "compliance_gaps": gpai_assessment.compliance_gaps,
                 "recommendations": gpai_assessment.recommendations,
-                "findings": [self._serialize_gpai_finding(finding) for finding in gpai_assessment.findings],
+                "findings": [
+                    self._serialize_gpai_finding(finding) for finding in gpai_assessment.findings
+                ],
             }
 
         recommended_actions = (
@@ -228,7 +231,7 @@ class ReportGenerator:
             "recommended_action_count": len(recommended_actions),
         }
 
-    def _render_markdown(self, payload: Dict[str, Any]) -> str:
+    def _render_markdown(self, payload: dict[str, Any]) -> str:
         """Render report payload as Markdown."""
         lines = [
             f"# Compliance Report: {payload['system_name']}",
@@ -275,12 +278,14 @@ class ReportGenerator:
         else:
             lines.append("- No transparency findings generated.")
 
-        lines.extend([
-            "",
-            "## GPAI Assessment",
-            f"- Systemic Risk Flag: {'YES' if payload['gpai_assessment']['systemic_risk_flag'] else 'NO'}",
-            f"- Compliance Gaps: {len(payload['gpai_assessment']['compliance_gaps'])}",
-        ])
+        lines.extend(
+            [
+                "",
+                "## GPAI Assessment",
+                f"- Systemic Risk Flag: {'YES' if payload['gpai_assessment']['systemic_risk_flag'] else 'NO'}",
+                f"- Compliance Gaps: {len(payload['gpai_assessment']['compliance_gaps'])}",
+            ]
+        )
         if payload["gpai_assessment"]["compliance_gaps"]:
             for gap in payload["gpai_assessment"]["compliance_gaps"]:
                 lines.append(f"- {gap}")
@@ -308,10 +313,12 @@ class ReportGenerator:
         else:
             lines.append("- No audit trail entries available.")
 
-        lines.extend(["", "---", "Report generated from compliance, transparency, and GPAI signals."])
+        lines.extend(
+            ["", "---", "Report generated from compliance, transparency, and GPAI signals."]
+        )
         return "\n".join(lines)
 
-    def _render_html(self, payload: Dict[str, Any]) -> str:
+    def _render_html(self, payload: dict[str, Any]) -> str:
         """Render report payload as HTML."""
         tier_color = {
             "unacceptable": "#dc2626",
@@ -322,9 +329,13 @@ class ReportGenerator:
 
         compliance_rows = self._build_compliance_rows(payload)
         transparency_rows = self._build_transparency_rows(payload)
-        gpai_gap_rows = self._build_simple_list(payload["gpai_assessment"]["compliance_gaps"], "No GPAI compliance gaps detected.")
+        gpai_gap_rows = self._build_simple_list(
+            payload["gpai_assessment"]["compliance_gaps"], "No GPAI compliance gaps detected."
+        )
         action_rows = self._build_action_rows(payload)
-        audit_rows = self._build_simple_list(payload["audit_trail"], "No audit trail entries available.")
+        audit_rows = self._build_simple_list(
+            payload["audit_trail"], "No audit trail entries available."
+        )
 
         return f"""<!DOCTYPE html>
 <html lang=\"en\">
@@ -385,7 +396,7 @@ class ReportGenerator:
 </html>
 """
 
-    def _build_compliance_rows(self, payload: Dict[str, Any]) -> str:
+    def _build_compliance_rows(self, payload: dict[str, Any]) -> str:
         """Build HTML block for compliance findings."""
         if not payload["compliance_findings"]:
             return "<p>No compliance findings generated.</p>"
@@ -405,12 +416,10 @@ class ReportGenerator:
         return (
             "<table><thead><tr>"
             "<th>Requirement</th><th>Title</th><th>Status</th><th>Severity</th><th>Gap</th>"
-            "</tr></thead><tbody>"
-            + "".join(rows)
-            + "</tbody></table>"
+            "</tr></thead><tbody>" + "".join(rows) + "</tbody></table>"
         )
 
-    def _build_transparency_rows(self, payload: Dict[str, Any]) -> str:
+    def _build_transparency_rows(self, payload: dict[str, Any]) -> str:
         """Build HTML block for transparency findings."""
         findings = payload["transparency_findings"]
         if not findings:
@@ -431,12 +440,10 @@ class ReportGenerator:
         return (
             "<table><thead><tr>"
             "<th>Requirement</th><th>Title</th><th>Status</th><th>Severity</th><th>Gap</th>"
-            "</tr></thead><tbody>"
-            + "".join(rows)
-            + "</tbody></table>"
+            "</tr></thead><tbody>" + "".join(rows) + "</tbody></table>"
         )
 
-    def _build_action_rows(self, payload: Dict[str, Any]) -> str:
+    def _build_action_rows(self, payload: dict[str, Any]) -> str:
         """Build HTML block for checklist-driven recommended actions."""
         actions = payload["recommended_actions"]
         if not actions:
@@ -462,19 +469,17 @@ class ReportGenerator:
             "<table><thead><tr>"
             "<th>ID</th><th>Title</th><th>Article</th><th>Severity</th><th>Status</th>"
             "<th>Deadline (months)</th><th>Gap</th><th>Guidance</th><th>Success Criteria</th>"
-            "</tr></thead><tbody>"
-            + "".join(rows)
-            + "</tbody></table>"
+            "</tr></thead><tbody>" + "".join(rows) + "</tbody></table>"
         )
 
-    def _build_simple_list(self, values: List[str], empty_message: str) -> str:
+    def _build_simple_list(self, values: list[str], empty_message: str) -> str:
         """Render list values as HTML or return a fallback message."""
         if not values:
             return f"<p>{html.escape(empty_message)}</p>"
         items = "".join(f"<li>{html.escape(value)}</li>" for value in values)
         return f"<ul>{items}</ul>"
 
-    def _serialize_compliance_finding(self, finding: ComplianceFinding) -> Dict[str, Any]:
+    def _serialize_compliance_finding(self, finding: ComplianceFinding) -> dict[str, Any]:
         """Serialize compliance finding payload."""
         return {
             "title": finding.requirement_title,
@@ -485,7 +490,7 @@ class ReportGenerator:
             "severity": finding.severity,
         }
 
-    def _serialize_transparency_finding(self, finding: TransparencyFinding) -> Dict[str, Any]:
+    def _serialize_transparency_finding(self, finding: TransparencyFinding) -> dict[str, Any]:
         """Serialize transparency finding payload."""
         return {
             "requirement_id": finding.requirement_id,
@@ -497,7 +502,7 @@ class ReportGenerator:
             "recommendations": finding.recommendations,
         }
 
-    def _serialize_gpai_finding(self, finding) -> Dict[str, Any]:
+    def _serialize_gpai_finding(self, finding) -> dict[str, Any]:
         """Serialize GPAI finding payload."""
         return {
             "requirement_id": finding.requirement_id,
@@ -509,7 +514,7 @@ class ReportGenerator:
             "recommendations": finding.recommendations,
         }
 
-    def _serialize_checklist_item(self, item: ChecklistItem) -> Dict[str, Any]:
+    def _serialize_checklist_item(self, item: ChecklistItem) -> dict[str, Any]:
         """Serialize checklist action for report payload."""
         return {
             "id": item.id,
