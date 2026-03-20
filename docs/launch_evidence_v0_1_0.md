@@ -16,12 +16,12 @@ Talent-style impact documentation.
 - Tag: `v0.1.0`
 - Release workflow: <https://github.com/ogulcanaydogan/eu-ai-act-compliance-kit/actions/workflows/release.yml>
 - Latest run for `v0.1.0`: <https://github.com/ogulcanaydogan/eu-ai-act-compliance-kit/actions/runs/23296772746>
-- Run attempt (current): `7`
-- Latest failed publish job (`invalid-publisher`): <https://github.com/ogulcanaydogan/eu-ai-act-compliance-kit/actions/runs/23296772746/job/67806660875>
+- Run attempt (current): `8`
+- Latest failed publish job (`invalid-publisher`): <https://github.com/ogulcanaydogan/eu-ai-act-compliance-kit/actions/runs/23296772746/job/67886980389>
 - Last 3 failed TestPyPI publish jobs:
-  - Attempt 5: <https://github.com/ogulcanaydogan/eu-ai-act-compliance-kit/actions/runs/23296772746/job/67750646592>
   - Attempt 6: <https://github.com/ogulcanaydogan/eu-ai-act-compliance-kit/actions/runs/23296772746/job/67800631468>
   - Attempt 7: <https://github.com/ogulcanaydogan/eu-ai-act-compliance-kit/actions/runs/23296772746/job/67806660875>
+  - Attempt 8: <https://github.com/ogulcanaydogan/eu-ai-act-compliance-kit/actions/runs/23296772746/job/67886980389>
 
 ## Preflight Quality Signals
 
@@ -67,19 +67,19 @@ Trusted publishing policy:
 
 ## Escalation Snapshot (After Retry Limit)
 
-Retry policy target was max 3 reruns; current run is attempt 7 and still fails
+Retry policy target was max 3 reruns; current run is attempt 8 and still fails
 at TestPyPI trusted publishing with `invalid-publisher`.
 
 ### Last 3 attempt outcomes
 
-- Attempt 5 (`67750646592`): `Publish to TestPyPI` failed with
-  `invalid-publisher`.
 - Attempt 6 (`67800631468`): `Publish to TestPyPI` failed with
   `invalid-publisher`.
 - Attempt 7 (`67806660875`): `Publish to TestPyPI` failed with
   `invalid-publisher`.
+- Attempt 8 (`67886980389`): `Publish to TestPyPI` failed with
+  `invalid-publisher`.
 
-### Latest failed log excerpt (attempt 7)
+### Latest failed log excerpt (attempt 8)
 
 ```text
 Trusted publishing exchange failure
@@ -115,6 +115,8 @@ environment=testpypi
 - Root cause likelihood: missing or non-matching Trusted Publisher registration
   on TestPyPI (and/or PyPI).
 - Required fix owner: package index account admin (UI-side configuration).
+- Launch policy status: single rerun has been consumed; do not rerun again until
+  publisher registration is corrected and explicitly re-approved.
 
 ## Remaining One-Time Setup (External UIs)
 
@@ -150,9 +152,12 @@ Create a trusted publisher for project `eu-ai-act-compliance-kit` with:
 - Workflow: `.github/workflows/release.yml`
 - Environment: `pypi`
 
-### 3) Rerun release workflow and approve PyPI gate
+### 3) Support escalation packet (current active path)
 
-1. Rerun failed release run:
-   - `gh run rerun 23296772746`
-2. Approve `pypi` environment when prompt appears in Actions UI.
-3. Verify `publish-pypi` and `github-release` jobs complete successfully.
+1. Open support requests to TestPyPI/PyPI with:
+   - latest failed job URL
+   - claim set shown above
+   - confirmation that GitHub environments are configured (`testpypi`, `pypi`)
+2. Wait for publisher-registration confirmation from platform support or fix
+   completion in project settings.
+3. Only after confirmation, re-enable a new release run decision.
