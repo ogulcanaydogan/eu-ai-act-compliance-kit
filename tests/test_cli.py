@@ -307,3 +307,90 @@ class TestCLI:
         assert result.exit_code == 0
         assert output_path.exists()
         assert output_path.read_bytes().startswith(b"%PDF-1.7")
+
+    def test_export_check_json_contract(self):
+        """`export check --json` should emit canonical contract plus adapter payload."""
+        runner = CliRunner()
+        system_yaml = EXAMPLES_DIR / "medical_diagnosis.yaml"
+        result = runner.invoke(
+            main,
+            ["export", "check", str(system_yaml), "--target", "jira", "--json"],
+        )
+
+        assert result.exit_code == 0
+        payload = json.loads(result.output[result.output.find("{") :])
+        for key in [
+            "schema_version",
+            "generated_at",
+            "source_type",
+            "target",
+            "system_name",
+            "risk_tier",
+            "summary",
+            "items",
+            "adapter_payload",
+        ]:
+            assert key in payload
+        assert payload["source_type"] == "check"
+        assert payload["target"] == "jira"
+        assert payload["adapter_payload"]["format"] == "jira/issues/v1"
+
+    def test_export_history_json_contract(self):
+        """`export history --json` should include history metadata and adapter payload."""
+        runner = CliRunner()
+        system_yaml = EXAMPLES_DIR / "chatbot.yaml"
+        check_result = runner.invoke(main, ["check", str(system_yaml), "--json"])
+        assert check_result.exit_code == 0
+
+        list_result = runner.invoke(main, ["history", "list", "--event-type", "check", "--json"])
+        assert list_result.exit_code == 0
+        list_payload = json.loads(list_result.output[list_result.output.find("{") :])
+        event_id = list_payload["events"][0]["event_id"]
+
+        export_result = runner.invoke(
+            main,
+            ["export", "history", event_id, "--target", "servicenow", "--json"],
+        )
+        assert export_result.exit_code == 0
+        payload = json.loads(export_result.output[export_result.output.find("{") :])
+        assert payload["source_type"] == "history"
+        assert payload["event_id"] == event_id
+        assert "history_generated_at" in payload
+        assert payload["adapter_payload"]["format"] == "servicenow/records/v1"
+
+    def test_export_check_output_file(self, tmp_path):
+        """`export check -o` should write JSON artifact to file."""
+        runner = CliRunner()
+        system_yaml = EXAMPLES_DIR / "spam_filter.yaml"
+        output_path = tmp_path / "export.json"
+
+        result = runner.invoke(
+            main,
+            [
+                "export",
+                "check",
+                str(system_yaml),
+                "--target",
+                "generic",
+                "--output",
+                str(output_path),
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert output_path.exists()
+        payload = json.loads(output_path.read_text(encoding="utf-8"))
+        assert payload["target"] == "generic"
+        assert payload["adapter_payload"]["format"] == "generic/v1"
+
+    def test_export_history_invalid_event_fails(self):
+        """`export history` should fail deterministically for unknown event ids."""
+        runner = CliRunner()
+        result = runner.invoke(
+            main,
+            ["export", "history", "missing-event-id", "--target", "generic", "--json"],
+        )
+
+        assert result.exit_code != 0
+        output = result.output + getattr(result, "stderr", "")
+        assert "Error loading history event" in output

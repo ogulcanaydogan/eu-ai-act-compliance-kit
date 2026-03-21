@@ -20,6 +20,7 @@ from eu_ai_act.checker import ComplianceChecker
 from eu_ai_act.checklist import ChecklistGenerator
 from eu_ai_act.classifier import RiskClassifier
 from eu_ai_act.dashboard import DashboardGenerator
+from eu_ai_act.exporter import ExportGenerator, ExportTarget
 from eu_ai_act.gpai import (
     GPAIAssessment,
     GPAIAssessor,
@@ -913,6 +914,111 @@ def history_diff(
         console.print(removed_table)
     else:
         console.print("[yellow]No removed findings.[/yellow]")
+
+
+@main.group()
+def export() -> None:
+    """Generate payload-only external export artifacts."""
+    pass
+
+
+@export.command("check")
+@click.argument("system_yaml", type=click.Path(exists=True))
+@click.option(
+    "--target",
+    type=click.Choice(["jira", "servicenow", "generic"]),
+    required=True,
+    help="Export target adapter",
+)
+@click.option("--output", "-o", type=click.Path(), help="Write JSON payload to a file")
+@click.option(
+    "--history-path",
+    type=click.Path(),
+    help="Optional history path accepted for contract compatibility",
+)
+@click.option("--json", "output_json", is_flag=True, help="Output JSON payload (default behavior)")
+def export_check(
+    system_yaml: str,
+    target: str,
+    output: str | None,
+    history_path: str | None,
+    output_json: bool,
+) -> None:
+    """Export canonical + target-specific payload from live compliance check."""
+    _ = output_json  # JSON is the only export format in this phase.
+
+    try:
+        descriptor = load_system_descriptor_from_file(system_yaml)
+    except FileNotFoundError:
+        console.print(f"[red]Error: File not found: {system_yaml}[/red]")
+        sys.exit(1)
+    except Exception as e:
+        console.print(f"[red]Error loading system descriptor: {e}[/red]")
+        sys.exit(1)
+
+    if history_path:
+        # Validate path resolution early for deterministic CLI behavior.
+        resolve_history_path(history_path)
+
+    checker = ComplianceChecker()
+    exporter = ExportGenerator()
+
+    with Progress(transient=True) as progress:
+        progress.add_task("Generating export payload...", total=None)
+        compliance_report = checker.check(descriptor)
+        payload = exporter.from_check(
+            report=compliance_report,
+            target=cast(ExportTarget, target),
+        )
+
+    payload_json = exporter.to_json(payload)
+    _emit_export_output(payload_json, output)
+
+
+@export.command("history")
+@click.argument("event_id")
+@click.option(
+    "--target",
+    type=click.Choice(["jira", "servicenow", "generic"]),
+    required=True,
+    help="Export target adapter",
+)
+@click.option("--output", "-o", type=click.Path(), help="Write JSON payload to a file")
+@click.option("--history-path", type=click.Path(), help="Override history JSONL path")
+@click.option("--json", "output_json", is_flag=True, help="Output JSON payload (default behavior)")
+def export_history(
+    event_id: str,
+    target: str,
+    output: str | None,
+    history_path: str | None,
+    output_json: bool,
+) -> None:
+    """Export canonical + target-specific payload from a persisted history event."""
+    _ = output_json  # JSON is the only export format in this phase.
+
+    try:
+        event = get_event(event_id, history_path=history_path)
+    except Exception as e:
+        console.print(f"[red]Error loading history event: {e}[/red]")
+        sys.exit(1)
+
+    exporter = ExportGenerator()
+    payload = exporter.from_history(
+        event=event,
+        target=cast(ExportTarget, target),
+    )
+    payload_json = exporter.to_json(payload)
+    _emit_export_output(payload_json, output)
+
+
+def _emit_export_output(payload_json: str, output: str | None) -> None:
+    """Emit export payload either to stdout or to a file."""
+    if output:
+        output_path = Path(output)
+        output_path.write_text(payload_json, encoding="utf-8")
+        console.print(f"[green]Export payload saved to: {output_path}[/green]")
+        return
+    click.echo(payload_json)
 
 
 def _collect_transparency_findings(

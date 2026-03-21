@@ -10,6 +10,7 @@ checks transparency and GPAI obligations, and renders audit-oriented reports.
 - Run requirement checks for key articles (`Art. 5`, `Art. 10`, `Art. 11`, `Art. 13`, `Art. 14`, `Art. 15`, `Art. 43`, `Art. 50`)
 - Generate action-focused checklists (JSON, Markdown, HTML)
 - Produce compliance reports (JSON, Markdown, HTML, PDF)
+- Generate payload-first external export artifacts (`generic`, `jira`, `servicenow`)
 - Assess transparency obligations and GPAI signals (`Art. 50`, `Art. 51-55`)
 - Integrate checks into CI/CD using the repository's composite GitHub Action
 
@@ -28,6 +29,7 @@ checks transparency and GPAI obligations, and renders audit-oriented reports.
 - Phase 11: Multi-system dashboard core (JSON + static HTML) complete
 - Phase 12: Launch closure complete (RTD live, package channels live, evidence finalized)
 - Phase 13: Adoption hardening complete (quickstart reliability + onboarding)
+- Phase 14: External export core in progress (payload-first, no live API push)
 
 ## End-to-End Flow
 
