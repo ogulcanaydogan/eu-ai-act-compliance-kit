@@ -434,7 +434,9 @@ class ExportPusher:
                 try:
                     response = client.post(endpoint, json=payload)
                 except httpx.HTTPError as exc:
-                    raise RuntimeError(f"Jira push failed with HTTP transport error: {exc}") from exc
+                    raise RuntimeError(
+                        f"Jira push failed with HTTP transport error: {exc}"
+                    ) from exc
 
                 if response.status_code in {200, 201}:
                     pushed_count += 1

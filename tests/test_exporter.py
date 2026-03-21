@@ -158,7 +158,9 @@ def test_push_dry_run_for_jira_requires_no_credentials():
 
     assert result["target"] == "jira"
     assert result["dry_run"] is True
-    assert result["attempted_actionable_count"] == sum(1 for item in envelope.items if item.actionable)
+    assert result["attempted_actionable_count"] == sum(
+        1 for item in envelope.items if item.actionable
+    )
     assert result["pushed_count"] == 0
     assert result["failed_count"] == 0
 
@@ -177,7 +179,9 @@ def test_push_jira_missing_env_raises_value_error(monkeypatch):
     ]:
         monkeypatch.delenv(key, raising=False)
 
-    with pytest.raises(ValueError, match="Missing required environment variable: EU_AI_ACT_JIRA_BASE_URL"):
+    with pytest.raises(
+        ValueError, match="Missing required environment variable: EU_AI_ACT_JIRA_BASE_URL"
+    ):
         ExportPusher().push(envelope, dry_run=False)
 
 
