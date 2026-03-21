@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import httpx
 import pytest
 
-from eu_ai_act.checker import ComplianceChecker
-from eu_ai_act.exporter import ExportGenerator
+from eu_ai_act.checker import ComplianceChecker, ComplianceStatus
+from eu_ai_act.exporter import ExportGenerator, ExportPusher
 from eu_ai_act.history import build_event
 from eu_ai_act.schema import load_system_descriptor_from_file
 
@@ -135,3 +136,85 @@ def test_invalid_history_status_raises_value_error():
 
     with pytest.raises(ValueError, match="Unsupported status value"):
         ExportGenerator().from_history(event=event, target="generic")
+
+
+def test_push_rejects_generic_target():
+    """Live push should fail for generic target by contract."""
+    descriptor = load_system_descriptor_from_file(EXAMPLES_DIR / "spam_filter.yaml")
+    report = ComplianceChecker().check(descriptor)
+    envelope = ExportGenerator().from_check(report=report, target="generic")
+
+    with pytest.raises(ValueError, match="Live push is not supported for target 'generic'"):
+        ExportPusher().push(envelope)
+
+
+def test_push_dry_run_for_jira_requires_no_credentials():
+    """Dry-run should not require environment credentials and should return deterministic summary."""
+    descriptor = load_system_descriptor_from_file(EXAMPLES_DIR / "medical_diagnosis.yaml")
+    report = ComplianceChecker().check(descriptor)
+    envelope = ExportGenerator().from_check(report=report, target="jira")
+
+    result = ExportPusher().push(envelope, dry_run=True)
+
+    assert result["target"] == "jira"
+    assert result["dry_run"] is True
+    assert result["attempted_actionable_count"] == sum(
+        1 for item in envelope.items if item.actionable
+    )
+    assert result["pushed_count"] == 0
+    assert result["failed_count"] == 0
+
+
+def test_push_jira_missing_env_raises_value_error(monkeypatch):
+    """Live Jira push should fail-fast when required environment variables are missing."""
+    descriptor = load_system_descriptor_from_file(EXAMPLES_DIR / "medical_diagnosis.yaml")
+    report = ComplianceChecker().check(descriptor)
+    envelope = ExportGenerator().from_check(report=report, target="jira")
+
+    for key in [
+        "EU_AI_ACT_JIRA_BASE_URL",
+        "EU_AI_ACT_JIRA_EMAIL",
+        "EU_AI_ACT_JIRA_API_TOKEN",
+        "EU_AI_ACT_JIRA_PROJECT_KEY",
+    ]:
+        monkeypatch.delenv(key, raising=False)
+
+    with pytest.raises(
+        ValueError, match="Missing required environment variable: EU_AI_ACT_JIRA_BASE_URL"
+    ):
+        ExportPusher().push(envelope, dry_run=False)
+
+
+def test_push_jira_success_with_mock_transport(monkeypatch):
+    """Live Jira push should report success counts when remote API responds 201."""
+    descriptor = load_system_descriptor_from_file(EXAMPLES_DIR / "medical_diagnosis.yaml")
+    report = ComplianceChecker().check(descriptor)
+    envelope = ExportGenerator().from_check(report=report, target="jira")
+    for requirement_id in list(report.findings.keys()):
+        report.findings[requirement_id].status = ComplianceStatus.NON_COMPLIANT
+    envelope = ExportGenerator().from_check(report=report, target="jira")
+
+    monkeypatch.setenv("EU_AI_ACT_JIRA_BASE_URL", "https://example.atlassian.net")
+    monkeypatch.setenv("EU_AI_ACT_JIRA_EMAIL", "ops@example.com")
+    monkeypatch.setenv("EU_AI_ACT_JIRA_API_TOKEN", "secret")
+    monkeypatch.setenv("EU_AI_ACT_JIRA_PROJECT_KEY", "EUAI")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "POST"
+        assert str(request.url) == "https://example.atlassian.net/rest/api/3/issue"
+        return httpx.Response(status_code=201, json={"key": "EUAI-100"})
+
+    transport = httpx.MockTransport(handler)
+    original_client = httpx.Client
+
+    def _fake_client(*args, **kwargs):
+        return original_client(transport=transport)
+
+    monkeypatch.setattr("eu_ai_act.exporter.httpx.Client", _fake_client)
+
+    result = ExportPusher().push(envelope)
+    assert result["target"] == "jira"
+    assert result["dry_run"] is False
+    assert result["attempted_actionable_count"] == len(envelope.adapter_payload["issues"])
+    assert result["pushed_count"] == len(envelope.adapter_payload["issues"])
+    assert result["failed_count"] == 0

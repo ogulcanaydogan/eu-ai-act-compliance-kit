@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Literal
+
+import httpx
 
 from eu_ai_act.checker import ComplianceReport
 from eu_ai_act.history import HistoryEvent
@@ -340,3 +343,220 @@ class ExportGenerator:
             "LOW": "4",
         }
         return mapping.get(severity, "3")
+
+
+def _required_env(name: str) -> str:
+    value = os.getenv(name, "").strip()
+    if not value:
+        raise ValueError(f"Missing required environment variable: {name}")
+    return value
+
+
+def _trim_body_for_error(body: str, *, max_len: int = 300) -> str:
+    compact = " ".join(body.split())
+    if len(compact) <= max_len:
+        return compact
+    return compact[: max_len - 3] + "..."
+
+
+class ExportPusher:
+    """Optional live push helper for target systems."""
+
+    def __init__(self, *, timeout_seconds: float = 30.0):
+        self.timeout_seconds = timeout_seconds
+
+    def push(self, envelope: ExportEnvelope, *, dry_run: bool = False) -> dict[str, Any]:
+        if envelope.target == "generic":
+            raise ValueError("Live push is not supported for target 'generic'.")
+
+        adapter_payload = envelope.adapter_payload
+        if adapter_payload is None:
+            adapter_payload = ExportGenerator()._build_adapter_payload(envelope)  # noqa: SLF001
+
+        actionable_count = self._actionable_count(envelope)
+        if dry_run:
+            return {
+                "target": envelope.target,
+                "dry_run": True,
+                "attempted_actionable_count": actionable_count,
+                "pushed_count": 0,
+                "failed_count": 0,
+                "results": [],
+            }
+
+        if envelope.target == "jira":
+            return self._push_jira(adapter_payload, actionable_count=actionable_count)
+        if envelope.target == "servicenow":
+            return self._push_servicenow(adapter_payload, actionable_count=actionable_count)
+        raise ValueError(f"Unsupported export target: {envelope.target}")
+
+    def _actionable_count(self, envelope: ExportEnvelope) -> int:
+        return sum(1 for item in envelope.items if item.actionable)
+
+    def _push_jira(
+        self, adapter_payload: dict[str, Any], *, actionable_count: int
+    ) -> dict[str, Any]:
+        issues = adapter_payload.get("issues", [])
+        if not isinstance(issues, list):
+            raise ValueError("Invalid Jira adapter payload: 'issues' must be a list.")
+
+        if not issues:
+            return {
+                "target": "jira",
+                "dry_run": False,
+                "attempted_actionable_count": actionable_count,
+                "pushed_count": 0,
+                "failed_count": 0,
+                "results": [],
+            }
+
+        base_url = _required_env("EU_AI_ACT_JIRA_BASE_URL").rstrip("/")
+        user_email = _required_env("EU_AI_ACT_JIRA_EMAIL")
+        api_token = _required_env("EU_AI_ACT_JIRA_API_TOKEN")
+        project_key = _required_env("EU_AI_ACT_JIRA_PROJECT_KEY")
+        endpoint = f"{base_url}/rest/api/3/issue"
+
+        pushed_count = 0
+        failed_count = 0
+        results: list[dict[str, Any]] = []
+
+        with httpx.Client(timeout=self.timeout_seconds, auth=(user_email, api_token)) as client:
+            for issue in issues:
+                if not isinstance(issue, dict):
+                    raise ValueError("Invalid Jira issue payload item: expected object.")
+                fields = issue.get("fields")
+                if not isinstance(fields, dict):
+                    raise ValueError("Invalid Jira issue payload item: missing 'fields' object.")
+                fields = dict(fields)
+                fields.setdefault("project", {"key": project_key})
+                payload = {"fields": fields}
+
+                try:
+                    response = client.post(endpoint, json=payload)
+                except httpx.HTTPError as exc:
+                    raise RuntimeError(
+                        f"Jira push failed with HTTP transport error: {exc}"
+                    ) from exc
+
+                if response.status_code in {200, 201}:
+                    pushed_count += 1
+                    response_json = self._safe_json(response)
+                    results.append(
+                        {
+                            "status": "success",
+                            "http_status": response.status_code,
+                            "issue_key": response_json.get("key"),
+                        }
+                    )
+                    continue
+
+                failed_count += 1
+                results.append(
+                    {
+                        "status": "failed",
+                        "http_status": response.status_code,
+                        "error": _trim_body_for_error(response.text),
+                    }
+                )
+
+        if failed_count > 0:
+            raise RuntimeError(
+                f"Jira push failed for {failed_count} item(s). "
+                f"Successful: {pushed_count}, Failed: {failed_count}."
+            )
+
+        return {
+            "target": "jira",
+            "dry_run": False,
+            "attempted_actionable_count": actionable_count,
+            "pushed_count": pushed_count,
+            "failed_count": failed_count,
+            "results": results,
+        }
+
+    def _push_servicenow(
+        self, adapter_payload: dict[str, Any], *, actionable_count: int
+    ) -> dict[str, Any]:
+        records = adapter_payload.get("records", [])
+        if not isinstance(records, list):
+            raise ValueError("Invalid ServiceNow adapter payload: 'records' must be a list.")
+
+        if not records:
+            return {
+                "target": "servicenow",
+                "dry_run": False,
+                "attempted_actionable_count": actionable_count,
+                "pushed_count": 0,
+                "failed_count": 0,
+                "results": [],
+            }
+
+        instance_url = _required_env("EU_AI_ACT_SERVICENOW_INSTANCE_URL").rstrip("/")
+        username = _required_env("EU_AI_ACT_SERVICENOW_USERNAME")
+        password = _required_env("EU_AI_ACT_SERVICENOW_PASSWORD")
+        table_name = os.getenv("EU_AI_ACT_SERVICENOW_TABLE", "").strip() or adapter_payload.get(
+            "table", "u_ai_act_compliance"
+        )
+        endpoint = f"{instance_url}/api/now/table/{table_name}"
+
+        pushed_count = 0
+        failed_count = 0
+        results: list[dict[str, Any]] = []
+
+        with httpx.Client(timeout=self.timeout_seconds, auth=(username, password)) as client:
+            for record in records:
+                if not isinstance(record, dict):
+                    raise ValueError("Invalid ServiceNow record payload item: expected object.")
+                try:
+                    response = client.post(endpoint, json=record)
+                except httpx.HTTPError as exc:
+                    raise RuntimeError(
+                        f"ServiceNow push failed with HTTP transport error: {exc}"
+                    ) from exc
+
+                if response.status_code in {200, 201}:
+                    pushed_count += 1
+                    response_json = self._safe_json(response)
+                    result_obj = response_json.get("result", {})
+                    sys_id = result_obj.get("sys_id") if isinstance(result_obj, dict) else None
+                    results.append(
+                        {
+                            "status": "success",
+                            "http_status": response.status_code,
+                            "sys_id": sys_id,
+                        }
+                    )
+                    continue
+
+                failed_count += 1
+                results.append(
+                    {
+                        "status": "failed",
+                        "http_status": response.status_code,
+                        "error": _trim_body_for_error(response.text),
+                    }
+                )
+
+        if failed_count > 0:
+            raise RuntimeError(
+                f"ServiceNow push failed for {failed_count} item(s). "
+                f"Successful: {pushed_count}, Failed: {failed_count}."
+            )
+
+        return {
+            "target": "servicenow",
+            "dry_run": False,
+            "attempted_actionable_count": actionable_count,
+            "pushed_count": pushed_count,
+            "failed_count": failed_count,
+            "results": results,
+        }
+
+    def _safe_json(self, response: httpx.Response) -> dict[str, Any]:
+        try:
+            parsed = response.json()
+            if isinstance(parsed, dict):
+                return parsed
+        except ValueError:
+            pass
+        return {}

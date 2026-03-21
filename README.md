@@ -88,8 +88,8 @@ ai-act export check examples/medical_diagnosis.yaml --target generic --json
 - `ai-act articles [--tier minimal|limited|high_risk|unacceptable]`
 - `ai-act history list|show|diff`
 - `ai-act dashboard build <descriptor_dir> [--recursive] [--include-history]`
-- `ai-act export check <system.yaml> --target jira|servicenow|generic [--output PATH] [--history-path PATH] [--json]`
-- `ai-act export history <event_id> --target jira|servicenow|generic [--output PATH] [--history-path PATH] [--json]`
+- `ai-act export check <system.yaml> --target jira|servicenow|generic [--output PATH] [--history-path PATH] [--json] [--push] [--dry-run]`
+- `ai-act export history <event_id> --target jira|servicenow|generic [--output PATH] [--history-path PATH] [--json] [--push] [--dry-run]`
 
 Full reference: [docs/cli-reference.md](docs/cli-reference.md)
 
@@ -200,6 +200,7 @@ pre-commit run --hook-stage pre-push --all-files
 - Phase 13: adoption hardening completed
 - Phase 14: external export core completed (payload-first, no live API push)
 - Phase 15: CI/release runtime hardening completed (Node20 deprecation cleanup + security gate stabilization)
+- Phase 16: live export push kickoff in progress (optional `--push` with safe `--dry-run`)
 
 ## Disclaimer
 

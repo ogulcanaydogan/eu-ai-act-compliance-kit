@@ -133,12 +133,14 @@ Default history path is project-local `.eu_ai_act/history.jsonl`, resolved from 
 
 ## `export`
 
-Builds payload-first external artifacts for integration targets without making network calls.
+Builds payload-first external artifacts for integration targets.
+Default behavior is still payload-only; live push is opt-in via `--push`.
 
 ```bash
 ai-act export check <system.yaml> --target generic --json
 ai-act export check <system.yaml> --target jira -o export_jira.json
 ai-act export history <event_id> --target servicenow --history-path .eu_ai_act/history.jsonl --json
+ai-act export check <system.yaml> --target jira --push --dry-run --json
 ```
 
 Subcommands:
@@ -149,6 +151,8 @@ Subcommands:
     - `--target [jira|servicenow|generic]` (required)
     - `-o, --output PATH`
     - `--history-path PATH` (accepted for contract compatibility)
+    - `--push` (optional live push for `jira`/`servicenow`)
+    - `--dry-run` (simulated push summary, no network call)
     - `--json` (JSON is default output shape)
 - `export history`
   - source: existing history event (`event_id`)
@@ -156,6 +160,8 @@ Subcommands:
     - `--target [jira|servicenow|generic]` (required)
     - `-o, --output PATH`
     - `--history-path PATH`
+    - `--push` (optional live push for `jira`/`servicenow`)
+    - `--dry-run` (simulated push summary, no network call)
     - `--json` (JSON is default output shape)
 
 Output contract:
@@ -164,6 +170,20 @@ Output contract:
 - history-source extras: `event_id`, `event_type`, `descriptor_path`, `history_generated_at`
 - item fields: `requirement_id`, `title`, `status`, `severity`, `article`, `gap_analysis`, `guidance`, `success_criteria`, `actionable`
 - adapter payload emitted under `adapter_payload` (`generic`, `jira`, `servicenow`)
+- when `--push` or `--dry-run` is used, output may include `push_result`
+
+Live push environment variables:
+
+- Jira:
+  - `EU_AI_ACT_JIRA_BASE_URL`
+  - `EU_AI_ACT_JIRA_EMAIL`
+  - `EU_AI_ACT_JIRA_API_TOKEN`
+  - `EU_AI_ACT_JIRA_PROJECT_KEY`
+- ServiceNow:
+  - `EU_AI_ACT_SERVICENOW_INSTANCE_URL`
+  - `EU_AI_ACT_SERVICENOW_USERNAME`
+  - `EU_AI_ACT_SERVICENOW_PASSWORD`
+  - `EU_AI_ACT_SERVICENOW_TABLE` (optional; default adapter table)
 
 ## `transparency`
 
