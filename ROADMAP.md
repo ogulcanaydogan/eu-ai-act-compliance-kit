@@ -16,7 +16,7 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
 - Phase 10 audit history tracking completed
 - Phase 11 multi-system dashboard core completed
 - Phase 12 launch closure completed (v0.1.0 evidence finalized)
-- Phase 13 in progress (post-launch adoption hardening)
+- Phase 13 completed (post-launch adoption hardening)
 
 ## Phase 1: Risk Classification Engine (Weeks 1-2) ✅ Completed
 
@@ -341,7 +341,7 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
 - Phase 11: Multi-system dashboard build (JSON + static HTML) delivered
 - Phase 12: Public launch closure delivered (RTD live, package channels live, release evidence)
 
-## Phase 13: Adoption Hardening (In Progress)
+## Phase 13: Adoption Hardening ✅ Completed
 
 - One-command quickstart smoke script added for repeatable local validation.
 - CI includes a required quickstart smoke gate to protect contributor baseline flow.

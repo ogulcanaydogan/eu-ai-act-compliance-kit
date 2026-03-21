@@ -194,7 +194,7 @@ pre-commit run --hook-stage pre-push --all-files
 ## Roadmap Status
 
 - Phase 1-12: completed (including v0.1.0 launch closure)
-- Phase 13: adoption hardening in progress
+- Phase 13: adoption hardening completed
 
 ## Disclaimer
 
