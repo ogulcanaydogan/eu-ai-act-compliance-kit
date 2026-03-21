@@ -49,7 +49,7 @@ console = Console()
 
 
 @click.group()
-@click.version_option()
+@click.version_option(package_name="eu-ai-act-compliance-kit")
 def main() -> None:
     """
     EU AI Act Compliance Checker
