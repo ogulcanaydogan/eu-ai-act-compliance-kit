@@ -17,7 +17,7 @@ def _wrapper_env(tmp_path: Path) -> dict[str, str]:
     """Create a PATH wrapper so the script can resolve `ai-act` deterministically."""
     wrapper = tmp_path / "ai-act"
     wrapper.write_text(
-        f"#!/usr/bin/env bash\n\"{sys.executable}\" -m eu_ai_act.cli \"$@\"\n",
+        f'#!/usr/bin/env bash\n"{sys.executable}" -m eu_ai_act.cli "$@"\n',
         encoding="utf-8",
     )
     wrapper.chmod(0o755)
