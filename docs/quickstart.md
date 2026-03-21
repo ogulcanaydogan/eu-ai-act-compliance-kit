@@ -2,6 +2,27 @@
 
 This guide walks through the default workflow with repository examples.
 
+## 0. One-Command Smoke (Recommended)
+
+Use the quickstart smoke script to validate the full baseline flow in one run:
+
+```bash
+./scripts/quickstart_smoke.sh
+```
+
+This executes:
+- `validate`
+- `classify --json`
+- `check --json`
+- `report --format json`
+- `report --format html`
+
+Custom inputs are also supported:
+
+```bash
+./scripts/quickstart_smoke.sh examples/medical_diagnosis.yaml /tmp/quickstart-smoke
+```
+
 ## 1. Validate Descriptor
 
 ```bash

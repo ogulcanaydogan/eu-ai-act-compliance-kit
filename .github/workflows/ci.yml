@@ -63,10 +63,36 @@ jobs:
           fail_ci_if_error: false
           verbose: true
 
+  quickstart-smoke:
+    runs-on: ubuntu-latest
+    name: Quickstart Smoke
+    needs: [lint, test]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run one-command quickstart smoke
+        run: |
+          ./scripts/quickstart_smoke.sh examples/medical_diagnosis.yaml /tmp/quickstart-smoke
+          test -f /tmp/quickstart-smoke/classify.json
+          test -f /tmp/quickstart-smoke/check.json
+          test -f /tmp/quickstart-smoke/report.json
+          test -f /tmp/quickstart-smoke/report.html
+
   build:
     runs-on: ubuntu-latest
     name: Build
-    needs: [lint, test]
+    needs: [lint, test, quickstart-smoke]
     steps:
       - uses: actions/checkout@v4
 
@@ -93,7 +119,7 @@ jobs:
   docker:
     runs-on: ubuntu-latest
     name: Build Docker Image
-    needs: [lint, test]
+    needs: [lint, test, quickstart-smoke]
     permissions:
       contents: read
     steps:
@@ -156,7 +182,7 @@ jobs:
   action-smoke:
     runs-on: ubuntu-latest
     name: Action Smoke
-    needs: [lint, test]
+    needs: [lint, test, quickstart-smoke]
     steps:
       - uses: actions/checkout@v4
 
@@ -221,12 +247,12 @@ jobs:
   all-checks:
     runs-on: ubuntu-latest
     name: All Checks Passed
-    needs: [lint, test, build, docker, docs, security, action-smoke]
+    needs: [lint, test, quickstart-smoke, build, docker, docs, security, action-smoke]
     if: always()
     steps:
       - name: Check status
         run: |
-          if [[ "${{ needs.lint.result }}" == "failure" || "${{ needs.test.result }}" == "failure" || "${{ needs.build.result }}" == "failure" || "${{ needs.docker.result }}" == "failure" || "${{ needs.action-smoke.result }}" == "failure" ]]; then
+          if [[ "${{ needs.lint.result }}" == "failure" || "${{ needs.test.result }}" == "failure" || "${{ needs.quickstart-smoke.result }}" == "failure" || "${{ needs.build.result }}" == "failure" || "${{ needs.docker.result }}" == "failure" || "${{ needs.action-smoke.result }}" == "failure" ]]; then
             echo "One or more checks failed"
             exit 1
           fi
