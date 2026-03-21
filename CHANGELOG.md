@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- No unreleased changes yet.
+
+## [0.1.1] - 2026-03-21
+
+### Added
 - External export core module for payload-first integrations (`generic`, `jira`, `servicenow`).
 - New CLI commands:
   - `ai-act export check <system.yaml> --target ...`
