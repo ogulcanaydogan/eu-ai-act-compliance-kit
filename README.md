@@ -161,6 +161,18 @@ pytest -q
 mkdocs build --strict
 ```
 
+## First Contribution Path
+
+```bash
+pip install -e ".[dev,docs]"
+./scripts/quickstart_smoke.sh
+pre-commit install --hook-type pre-push
+pre-commit run --hook-stage pre-push --all-files
+```
+
+If all checks pass, pick a small docs or test issue, open a focused PR, and
+include command outputs in the PR description.
+
 Local pre-push gate:
 
 ```bash
@@ -177,11 +189,12 @@ pre-commit run --hook-stage pre-push --all-files
 - [API Reference](docs/api-reference.md)
 - [Custom Systems](docs/custom-systems.md)
 - [Examples](docs/examples.md)
+- [Adoption Evidence Template](docs/adoption_evidence_template.md)
 
 ## Roadmap Status
 
 - Phase 1-12: completed (including v0.1.0 launch closure)
-- Next: Phase 13 planning and post-launch adoption hardening
+- Phase 13: adoption hardening in progress
 
 ## Disclaimer
 

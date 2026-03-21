@@ -63,6 +63,20 @@ tests/
 └── fixtures/          # Test data and fixtures
 ```
 
+### First Contribution Path
+
+Use this minimal path before opening your first PR:
+
+```bash
+pip install -e ".[dev,docs]"
+./scripts/quickstart_smoke.sh
+pre-commit install --hook-type pre-push
+pre-commit run --hook-stage pre-push --all-files
+```
+
+If these steps pass, choose a small scoped change (docs/tests/bugfix), keep the
+PR focused, and include the command outputs in the PR description.
+
 ## Development Workflow
 
 ### 1. Create a branch
@@ -146,7 +160,7 @@ Then create a pull request on GitHub with:
 
 ## How to Release
 
-Release flow is tag-driven and staged through TestPyPI before PyPI.
+Release flow is tag-driven and publishes to PyPI through trusted publishing.
 
 1. Ensure `pyproject.toml` version is bumped and changelog is updated.
 2. Create and push a semver tag:
@@ -156,8 +170,6 @@ Release flow is tag-driven and staged through TestPyPI before PyPI.
    ```
 3. GitHub `release.yml` runs:
    - QA + build + artifact checks
-   - TestPyPI publish (trusted publishing)
-   - TestPyPI smoke install
    - PyPI publish (gated by `pypi` environment approval)
    - GitHub Release creation with attached artifacts
 

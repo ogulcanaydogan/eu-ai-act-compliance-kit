@@ -27,6 +27,7 @@ checks transparency and GPAI obligations, and renders audit-oriented reports.
 - Phase 10: Audit history tracking (JSONL) complete
 - Phase 11: Multi-system dashboard core (JSON + static HTML) complete
 - Phase 12: Launch closure complete (RTD live, package channels live, evidence finalized)
+- Phase 13: Adoption hardening in progress (quickstart reliability + onboarding)
 
 ## End-to-End Flow
 
@@ -50,6 +51,7 @@ For PDF generation, install reporting extras: `pip install -e ".[reporting]"`.
 - [API Reference](api-reference.md)
 - [Launch Post Draft](launch_post.md)
 - [Launch Evidence Pack (v0.1.0)](launch_evidence_v0_1_0.md)
+- [Adoption Evidence Update Template](adoption_evidence_template.md)
 
 ## Legal Note
 
