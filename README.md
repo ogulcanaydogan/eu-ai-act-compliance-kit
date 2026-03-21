@@ -198,7 +198,7 @@ pre-commit run --hook-stage pre-push --all-files
 
 - Phase 1-12: completed (including v0.1.0 launch closure)
 - Phase 13: adoption hardening completed
-- Phase 14: external export core in progress (payload-first)
+- Phase 14: external export core completed (payload-first, no live API push)
 
 ## Disclaimer
 

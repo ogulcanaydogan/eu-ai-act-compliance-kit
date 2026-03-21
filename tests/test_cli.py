@@ -21,6 +21,16 @@ class TestCLI:
     def _isolate_history_path(self, monkeypatch, tmp_path):
         monkeypatch.setenv("EU_AI_ACT_HISTORY_PATH", str(tmp_path / "history.jsonl"))
 
+    def test_cli_version_option_returns_version_string(self):
+        """`--version` should succeed without runtime metadata inference errors."""
+        runner = CliRunner()
+        result = runner.invoke(main, ["--version"])
+
+        assert result.exit_code == 0
+        assert "version" in result.output.lower()
+        assert "0.1.2" in result.output
+        assert "runtimeerror" not in result.output.lower()
+
     def test_articles_uses_normalized_mapping(self):
         """`articles --tier minimal` should use shared article mapping."""
         runner = CliRunner()
