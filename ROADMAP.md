@@ -17,6 +17,7 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
 - Phase 11 multi-system dashboard core completed
 - Phase 12 launch closure completed (v0.1.0 evidence finalized)
 - Phase 13 completed (post-launch adoption hardening)
+- Phase 14 in progress (external export core, payload-first)
 
 ## Phase 1: Risk Classification Engine (Weeks 1-2) ✅ Completed
 
@@ -346,6 +347,14 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
 - One-command quickstart smoke script added for repeatable local validation.
 - CI includes a required quickstart smoke gate to protect contributor baseline flow.
 - Onboarding docs include a first-contribution path and repeatable evidence update template.
+
+## Phase 14: External Export Core 🚧 In Progress
+
+- Add payload-first external export engine (no live network push).
+- Support export sources: check result and history event.
+- Support target adapters: generic, Jira payload, ServiceNow payload.
+- Add CLI surface: `ai-act export check` and `ai-act export history`.
+- Keep existing CLI/Python API contracts backward-compatible.
 
 ## Timeline Summary (Historical Plan)
 - **Week 1-2**: Risk Classification Engine (Phases 1.1-1.5)

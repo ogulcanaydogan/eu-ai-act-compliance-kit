@@ -131,6 +131,40 @@ Options:
 
 Default history path is project-local `.eu_ai_act/history.jsonl`, resolved from the nearest parent directory containing `pyproject.toml`. If no project root is found, the current working directory is used.
 
+## `export`
+
+Builds payload-first external artifacts for integration targets without making network calls.
+
+```bash
+ai-act export check <system.yaml> --target generic --json
+ai-act export check <system.yaml> --target jira -o export_jira.json
+ai-act export history <event_id> --target servicenow --history-path .eu_ai_act/history.jsonl --json
+```
+
+Subcommands:
+
+- `export check`
+  - source: fresh compliance check for descriptor
+  - options:
+    - `--target [jira|servicenow|generic]` (required)
+    - `-o, --output PATH`
+    - `--history-path PATH` (accepted for contract compatibility)
+    - `--json` (JSON is default output shape)
+- `export history`
+  - source: existing history event (`event_id`)
+  - options:
+    - `--target [jira|servicenow|generic]` (required)
+    - `-o, --output PATH`
+    - `--history-path PATH`
+    - `--json` (JSON is default output shape)
+
+Output contract:
+
+- top-level: `schema_version`, `generated_at`, `source_type`, `target`, `system_name`, `risk_tier`, `summary`, `items`
+- history-source extras: `event_id`, `event_type`, `descriptor_path`, `history_generated_at`
+- item fields: `requirement_id`, `title`, `status`, `severity`, `article`, `gap_analysis`, `guidance`, `success_criteria`, `actionable`
+- adapter payload emitted under `adapter_payload` (`generic`, `jira`, `servicenow`)
+
 ## `transparency`
 
 Evaluates transparency obligations from system descriptors.

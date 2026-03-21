@@ -73,6 +73,7 @@ ai-act classify examples/medical_diagnosis.yaml --json
 ai-act check examples/medical_diagnosis.yaml --json
 ai-act checklist examples/medical_diagnosis.yaml --format md -o checklist.md
 ai-act report examples/medical_diagnosis.yaml --format html -o report.html
+ai-act export check examples/medical_diagnosis.yaml --target generic --json
 ```
 
 ## CLI Surface
@@ -87,6 +88,8 @@ ai-act report examples/medical_diagnosis.yaml --format html -o report.html
 - `ai-act articles [--tier minimal|limited|high_risk|unacceptable]`
 - `ai-act history list|show|diff`
 - `ai-act dashboard build <descriptor_dir> [--recursive] [--include-history]`
+- `ai-act export check <system.yaml> --target jira|servicenow|generic [--output PATH] [--history-path PATH] [--json]`
+- `ai-act export history <event_id> --target jira|servicenow|generic [--output PATH] [--history-path PATH] [--json]`
 
 Full reference: [docs/cli-reference.md](docs/cli-reference.md)
 
@@ -195,6 +198,7 @@ pre-commit run --hook-stage pre-push --all-files
 
 - Phase 1-12: completed (including v0.1.0 launch closure)
 - Phase 13: adoption hardening completed
+- Phase 14: external export core in progress (payload-first)
 
 ## Disclaimer
 
