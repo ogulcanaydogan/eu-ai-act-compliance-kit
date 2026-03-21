@@ -3,12 +3,20 @@
 ## Vision
 Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifies AI systems by risk tier, generates compliance checklists, and produces audit-ready reports. The first open-source tool that makes EU AI Act compliance accessible to every AI team.
 
-## Status Snapshot (March 19, 2026)
+## Status Snapshot (March 21, 2026)
 - Phase 1 completed
 - Phase 2 completed
 - Phase 3 JSON/Markdown/HTML/PDF completed
 - Phase 4 CI/CD hardening completed
 - Phase 5 documentation and launch materials completed
+- Phase 6 PDF reporting completed
+- Phase 7 Pydantic v2 hardening completed
+- Phase 8 release-readiness pipeline completed
+- Phase 9 developer pre-push gate completed
+- Phase 10 audit history tracking completed
+- Phase 11 multi-system dashboard core completed
+- Phase 12 launch closure completed (v0.1.0 evidence finalized)
+- Phase 13 queued (post-launch adoption hardening)
 
 ## Phase 1: Risk Classification Engine (Weeks 1-2) ✅ Completed
 
@@ -322,6 +330,21 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
   - Acceptance Criteria:
     - ~1500 words, ready for publication
     - Includes code examples from repo
+
+## Phase 6-12: Post-Launch Delivery Stream ✅ Completed
+
+- Phase 6: Reporter PDF engine and CLI `report --format pdf` support enabled
+- Phase 7: Pydantic v2 hardening and timezone-aware defaults delivered
+- Phase 8: Tag-driven release readiness with package metadata alignment delivered
+- Phase 9: Developer workflow gate (`pre-commit` pre-push targeted checks) delivered
+- Phase 10: Audit history tracking core (`.eu_ai_act/history.jsonl`) delivered
+- Phase 11: Multi-system dashboard build (JSON + static HTML) delivered
+- Phase 12: Public launch closure delivered (RTD live, package channels live, release evidence)
+
+## Phase 13: Next Sprint (Planned)
+
+- Post-launch adoption hardening and contributor growth stream
+- Scope definition and delivery plan tracked after v0.1.0 closure baseline
 
 ## Timeline Summary (Historical Plan)
 - **Week 1-2**: Risk Classification Engine (Phases 1.1-1.5)

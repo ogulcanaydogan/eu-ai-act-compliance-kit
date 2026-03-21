@@ -13,13 +13,21 @@ checks transparency and GPAI obligations, and renders audit-oriented reports.
 - Assess transparency obligations and GPAI signals (`Art. 50`, `Art. 51-55`)
 - Integrate checks into CI/CD using the repository's composite GitHub Action
 
-## Current Delivery Status (March 19, 2026)
+## Current Delivery Status (March 21, 2026)
 
 - Phase 1: Risk classification complete
 - Phase 2: Compliance checker, checklist, transparency, GPAI complete
 - Phase 3: Reporter-centered JSON/MD/HTML/PDF complete
 - Phase 4: CI/CD hardening complete
 - Phase 5: Documentation and launch artifacts complete
+- Phase 6: PDF reporting enablement complete
+- Phase 7: Pydantic v2 hardening complete
+- Phase 8: Release-readiness pipeline complete
+- Phase 9: Developer pre-push gate complete
+- Phase 10: Audit history tracking (JSONL) complete
+- Phase 11: Multi-system dashboard core (JSON + static HTML) complete
+- Phase 12: Launch closure complete (RTD live, package channels live, evidence finalized)
+
 ## End-to-End Flow
 
 1. Provide a system descriptor (`*.yaml`) compliant with the schema.
