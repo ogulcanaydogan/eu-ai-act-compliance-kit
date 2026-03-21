@@ -10,6 +10,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - No unreleased changes yet.
 
+## [0.1.3] - 2026-03-21
+
+### Fixed
+- CI security gate no longer flags `assert` usage in CLI PDF output handling (Bandit-safe runtime guard).
+
+### Changed
+- GitHub workflow runtime hardening completed:
+  - `actions/checkout` upgraded to `v6`
+  - `actions/setup-python` upgraded to `v6`
+  - `actions/upload-artifact` upgraded to `v7`
+  - `actions/download-artifact` upgraded to `v8`
+- Release workflow now creates/updates GitHub releases through `gh` CLI flow instead of Node action dependency.
+- Phase 15 status synchronized as completed across README, docs index, and roadmap snapshot.
+
 ## [0.1.2] - 2026-03-21
 
 ### Fixed

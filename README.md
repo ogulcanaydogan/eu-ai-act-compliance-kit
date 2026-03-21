@@ -199,6 +199,7 @@ pre-commit run --hook-stage pre-push --all-files
 - Phase 1-12: completed (including v0.1.0 launch closure)
 - Phase 13: adoption hardening completed
 - Phase 14: external export core completed (payload-first, no live API push)
+- Phase 15: CI/release runtime hardening completed (Node20 deprecation cleanup + security gate stabilization)
 
 ## Disclaimer
 
