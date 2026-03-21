@@ -19,6 +19,7 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
 - Phase 13 completed (post-launch adoption hardening)
 - Phase 14 completed (external export core, payload-first)
 - Phase 15 completed (CI/release runtime hardening and security gate stabilization)
+- Phase 16 kickoff in progress (live export push with safe default payload mode)
 
 ## Phase 1: Risk Classification Engine (Weeks 1-2) ✅ Completed
 
@@ -362,6 +363,12 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
 - GitHub Actions runtime upgrades completed for CI and release workflows.
 - Security gate stabilized by removing assert-based control flow in CLI PDF output handling.
 - Required checks preserved with deterministic pass/fail behavior.
+
+## Phase 16: Live Export Push Kickoff 🚧 In Progress
+
+- Add optional live push path for `ai-act export` while preserving payload-only default behavior.
+- Targets for live push: Jira and ServiceNow (`generic` remains payload-only).
+- Add `--dry-run` support for deterministic no-network validation.
 
 ## Timeline Summary (Historical Plan)
 - **Week 1-2**: Risk Classification Engine (Phases 1.1-1.5)

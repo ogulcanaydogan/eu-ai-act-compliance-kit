@@ -404,3 +404,83 @@ class TestCLI:
         assert result.exit_code != 0
         output = result.output + getattr(result, "stderr", "")
         assert "Error loading history event" in output
+
+    def test_export_check_dry_run_without_push_emits_simulated_push_result(self):
+        """`--dry-run` without `--push` should keep payload-only behavior and include simulated summary."""
+        runner = CliRunner()
+        system_yaml = EXAMPLES_DIR / "medical_diagnosis.yaml"
+
+        result = runner.invoke(
+            main,
+            ["export", "check", str(system_yaml), "--target", "jira", "--dry-run", "--json"],
+        )
+
+        assert result.exit_code == 0
+        payload = json.loads(result.output[result.output.find("{") :])
+        assert "push_result" in payload
+        assert payload["push_result"]["dry_run"] is True
+        assert payload["push_result"]["pushed_count"] == 0
+        assert "no remote api call" in payload["push_result"]["message"].lower()
+
+    def test_export_push_generic_target_fails(self):
+        """`--push` should fail deterministically for unsupported generic target."""
+        runner = CliRunner()
+        system_yaml = EXAMPLES_DIR / "spam_filter.yaml"
+
+        result = runner.invoke(
+            main,
+            ["export", "check", str(system_yaml), "--target", "generic", "--push", "--json"],
+        )
+
+        assert result.exit_code != 0
+        output = result.output + getattr(result, "stderr", "")
+        assert "Live push is not supported for target 'generic'" in output
+
+    def test_export_push_calls_pusher_and_includes_push_result(self, monkeypatch):
+        """`--push` should include live push result in output payload when pusher succeeds."""
+        runner = CliRunner()
+        system_yaml = EXAMPLES_DIR / "medical_diagnosis.yaml"
+
+        def _fake_push(_self, _envelope, dry_run=False):
+            return {
+                "target": "jira",
+                "dry_run": dry_run,
+                "attempted_actionable_count": 2,
+                "pushed_count": 2,
+                "failed_count": 0,
+                "results": [{"status": "success", "issue_key": "EUAI-1"}],
+            }
+
+        monkeypatch.setattr(cli_module.ExportPusher, "push", _fake_push)
+
+        result = runner.invoke(
+            main,
+            ["export", "check", str(system_yaml), "--target", "jira", "--push", "--json"],
+        )
+
+        assert result.exit_code == 0
+        payload = json.loads(result.output[result.output.find("{") :])
+        assert payload["push_result"]["target"] == "jira"
+        assert payload["push_result"]["pushed_count"] == 2
+        assert payload["push_result"]["failed_count"] == 0
+
+    def test_export_push_failure_returns_nonzero_with_clear_error(self, monkeypatch):
+        """`--push` should return non-zero with deterministic error message on push failure."""
+        runner = CliRunner()
+        system_yaml = EXAMPLES_DIR / "medical_diagnosis.yaml"
+
+        def _raise_push_failure(_self, _envelope, dry_run=False):
+            raise RuntimeError("Jira push failed with HTTP transport error: timeout")
+
+        monkeypatch.setattr(cli_module.ExportPusher, "push", _raise_push_failure)
+
+        result = runner.invoke(
+            main,
+            ["export", "check", str(system_yaml), "--target", "jira", "--push", "--json"],
+        )
+
+        assert result.exit_code != 0
+        output = result.output + getattr(result, "stderr", "")
+        assert "Error pushing export payload" in output
+        assert "HTTP transport error" in output
+        assert "timeout" in output

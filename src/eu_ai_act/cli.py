@@ -20,7 +20,7 @@ from eu_ai_act.checker import ComplianceChecker
 from eu_ai_act.checklist import ChecklistGenerator
 from eu_ai_act.classifier import RiskClassifier
 from eu_ai_act.dashboard import DashboardGenerator
-from eu_ai_act.exporter import ExportGenerator, ExportTarget
+from eu_ai_act.exporter import ExportGenerator, ExportPusher, ExportTarget
 from eu_ai_act.gpai import (
     GPAIAssessment,
     GPAIAssessor,
@@ -941,12 +941,24 @@ def export() -> None:
     type=click.Path(),
     help="Optional history path accepted for contract compatibility",
 )
+@click.option(
+    "--push",
+    is_flag=True,
+    help="Push payload to target API (supported: jira, servicenow)",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Do not call remote APIs; return simulated push summary.",
+)
 @click.option("--json", "output_json", is_flag=True, help="Output JSON payload (default behavior)")
 def export_check(
     system_yaml: str,
     target: str,
     output: str | None,
     history_path: str | None,
+    push: bool,
+    dry_run: bool,
     output_json: bool,
 ) -> None:
     """Export canonical + target-specific payload from live compliance check."""
@@ -967,6 +979,7 @@ def export_check(
 
     checker = ComplianceChecker()
     exporter = ExportGenerator()
+    pusher = ExportPusher()
 
     with Progress(transient=True) as progress:
         progress.add_task("Generating export payload...", total=None)
@@ -976,7 +989,26 @@ def export_check(
             target=cast(ExportTarget, target),
         )
 
-    payload_json = exporter.to_json(payload)
+    payload_dict = payload.to_dict()
+    if push:
+        try:
+            push_result = pusher.push(payload, dry_run=dry_run)
+        except Exception as e:
+            console.print(f"[red]Error pushing export payload: {e}[/red]")
+            sys.exit(1)
+        payload_dict["push_result"] = push_result
+    elif dry_run:
+        payload_dict["push_result"] = {
+            "target": target,
+            "dry_run": True,
+            "attempted_actionable_count": sum(1 for item in payload.items if item.actionable),
+            "pushed_count": 0,
+            "failed_count": 0,
+            "results": [],
+            "message": "Dry-run requested without --push; no remote API call was made.",
+        }
+
+    payload_json = json.dumps(payload_dict, indent=2)
     _emit_export_output(payload_json, output)
 
 
@@ -990,12 +1022,24 @@ def export_check(
 )
 @click.option("--output", "-o", type=click.Path(), help="Write JSON payload to a file")
 @click.option("--history-path", type=click.Path(), help="Override history JSONL path")
+@click.option(
+    "--push",
+    is_flag=True,
+    help="Push payload to target API (supported: jira, servicenow)",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Do not call remote APIs; return simulated push summary.",
+)
 @click.option("--json", "output_json", is_flag=True, help="Output JSON payload (default behavior)")
 def export_history(
     event_id: str,
     target: str,
     output: str | None,
     history_path: str | None,
+    push: bool,
+    dry_run: bool,
     output_json: bool,
 ) -> None:
     """Export canonical + target-specific payload from a persisted history event."""
@@ -1008,11 +1052,31 @@ def export_history(
         sys.exit(1)
 
     exporter = ExportGenerator()
+    pusher = ExportPusher()
     payload = exporter.from_history(
         event=event,
         target=cast(ExportTarget, target),
     )
-    payload_json = exporter.to_json(payload)
+    payload_dict = payload.to_dict()
+    if push:
+        try:
+            push_result = pusher.push(payload, dry_run=dry_run)
+        except Exception as e:
+            console.print(f"[red]Error pushing export payload: {e}[/red]")
+            sys.exit(1)
+        payload_dict["push_result"] = push_result
+    elif dry_run:
+        payload_dict["push_result"] = {
+            "target": target,
+            "dry_run": True,
+            "attempted_actionable_count": sum(1 for item in payload.items if item.actionable),
+            "pushed_count": 0,
+            "failed_count": 0,
+            "results": [],
+            "message": "Dry-run requested without --push; no remote API call was made.",
+        }
+
+    payload_json = json.dumps(payload_dict, indent=2)
     _emit_export_output(payload_json, output)
 
 

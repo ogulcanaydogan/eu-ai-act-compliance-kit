@@ -28,6 +28,7 @@ __all__ = [
     "DashboardGenerator",
     "ReportGenerator",
     "ExportGenerator",
+    "ExportPusher",
     "ExportEnvelope",
     "ExportItem",
     "TransparencyFinding",
@@ -46,7 +47,7 @@ from eu_ai_act.checker import ComplianceChecker
 from eu_ai_act.checklist import ChecklistGenerator
 from eu_ai_act.classifier import RiskClassifier
 from eu_ai_act.dashboard import DashboardGenerator
-from eu_ai_act.exporter import ExportEnvelope, ExportGenerator, ExportItem
+from eu_ai_act.exporter import ExportEnvelope, ExportGenerator, ExportItem, ExportPusher
 from eu_ai_act.gpai import GPAIAssessment, GPAIAssessor, GPAIModelInfo
 from eu_ai_act.history import HistoryEvent, append_event, diff_events, get_event, list_events
 from eu_ai_act.reporter import ReportGenerator

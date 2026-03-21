@@ -8,7 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- No unreleased changes yet.
+- Optional live push path for `ai-act export check` and `ai-act export history` via `--push` (targets: Jira, ServiceNow).
+- Safe `--dry-run` mode for export commands to emit deterministic simulated push summaries without network calls.
+
+### Changed
+- Roadmap/docs status synchronized to mark Phase 16 kickoff as in progress.
 
 ## [0.1.3] - 2026-03-21
 
