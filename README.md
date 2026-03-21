@@ -125,7 +125,7 @@ Fail policy:
 This repository is structured to generate verifiable signals of technical impact:
 
 - **Measurable output artifacts**: compliance reports, checklist items, history events, static dashboards
-- **Release discipline**: semver tag-driven pipeline (`TestPyPI -> gated PyPI`)
+- **Release discipline**: semver tag-driven pipeline (`qa-build -> trusted PyPI publish -> GitHub Release`)
 - **Open contribution readiness**: CI, tests, docs, contribution guide, roadmap, changelog
 - **Public traceability**: issues, PRs, release notes, and workflow history
 
@@ -180,8 +180,8 @@ pre-commit run --hook-stage pre-push --all-files
 
 ## Roadmap Status
 
-- Phase 1-5: completed
-- Phase 6-11: implemented in repository roadmap stream
+- Phase 1-12: completed (including v0.1.0 launch closure)
+- Next: Phase 13 planning and post-launch adoption hardening
 
 ## Disclaimer
 
