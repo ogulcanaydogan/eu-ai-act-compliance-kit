@@ -578,7 +578,12 @@ def report(system_yaml: str, format: str, output: str | None) -> None:
         history_warning = str(e)
 
     if format == "pdf":
-        assert output is not None
+        if output is None:
+            console.print(
+                "[red]Error: --output/-o is required when --format pdf "
+                "(binary output is not written to stdout).[/red]"
+            )
+            sys.exit(1)
         output_path = Path(output)
         output_path.write_bytes(report_bytes)
         console.print(f"[green]PDF report saved to: {output_path}[/green]")
