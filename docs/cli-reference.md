@@ -156,6 +156,8 @@ Subcommands:
     - `--max-retries INT` (default: `3`, must be `>= 0`)
     - `--retry-backoff-seconds FLOAT` (default: `1.0`, must be `> 0`)
     - `--timeout-seconds FLOAT` (default: `30.0`, must be `> 0`)
+    - `--idempotency-path PATH` (override push ledger location)
+    - `--disable-idempotency` (disable duplicate-skip ledger checks)
     - `--json` (JSON is default output shape)
 - `export history`
   - source: existing history event (`event_id`)
@@ -168,6 +170,8 @@ Subcommands:
     - `--max-retries INT` (default: `3`, must be `>= 0`)
     - `--retry-backoff-seconds FLOAT` (default: `1.0`, must be `> 0`)
     - `--timeout-seconds FLOAT` (default: `30.0`, must be `> 0`)
+    - `--idempotency-path PATH` (override push ledger location)
+    - `--disable-idempotency` (disable duplicate-skip ledger checks)
     - `--json` (JSON is default output shape)
 
 Output contract:
@@ -177,13 +181,14 @@ Output contract:
 - item fields: `requirement_id`, `title`, `status`, `severity`, `article`, `gap_analysis`, `guidance`, `success_criteria`, `actionable`
 - adapter payload emitted under `adapter_payload` (`generic`, `jira`, `servicenow`)
 - when `--push` or `--dry-run` is used, output may include `push_result`
-  - includes diagnostics: `attempted_actionable_count`, `pushed_count`, `failed_count`, `failure_reason`, `max_retries`, `retry_backoff_seconds`, `timeout_seconds`
+  - includes diagnostics: `attempted_actionable_count`, `pushed_count`, `failed_count`, `skipped_duplicate_count`, `failure_reason`, `max_retries`, `retry_backoff_seconds`, `timeout_seconds`, `idempotency_enabled`, `idempotency_path`
 
 Push behavior policy:
 
 - strict fail-fast: push aborts at the first actionable item that still fails after retries
 - retries are attempted only for transport errors and HTTP `429`/`5xx`
 - non-retryable `4xx` responses fail immediately
+- when idempotency is enabled, duplicate actionable items are skipped before remote API call
 
 Live push environment variables:
 

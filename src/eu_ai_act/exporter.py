@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any, Literal
 
 import httpx
@@ -33,6 +35,38 @@ _ALLOWED_SEVERITIES = {"CRITICAL", "HIGH", "MEDIUM", "LOW"}
 
 def _utc_now_iso() -> str:
     return datetime.now(UTC).isoformat()
+
+
+def _find_project_root(start_path: Path) -> Path | None:
+    for candidate in [start_path, *start_path.parents]:
+        if (candidate / "pyproject.toml").exists():
+            return candidate
+    return None
+
+
+def resolve_export_push_ledger_path(
+    idempotency_path: str | Path | None = None,
+    *,
+    cwd: str | Path | None = None,
+) -> Path:
+    """Resolve explicit or default idempotency ledger path."""
+    current_dir = Path(cwd).resolve() if cwd else Path.cwd().resolve()
+    path_input: str | Path | None = idempotency_path
+
+    if path_input is None:
+        env_path = os.getenv("EU_AI_ACT_EXPORT_PUSH_LEDGER_PATH")
+        if env_path:
+            path_input = env_path
+
+    if path_input is not None:
+        candidate = Path(path_input).expanduser()
+        if not candidate.is_absolute():
+            candidate = (current_dir / candidate).resolve()
+        return candidate
+
+    project_root = _find_project_root(current_dir)
+    base_dir = project_root if project_root else current_dir
+    return base_dir / ".eu_ai_act" / "export_push_ledger.jsonl"
 
 
 def _normalize_status(status: str) -> str:
@@ -172,7 +206,13 @@ class ExportGenerator:
 
     schema_version = "1.0"
 
-    def from_check(self, *, report: ComplianceReport, target: ExportTarget) -> ExportEnvelope:
+    def from_check(
+        self,
+        *,
+        report: ComplianceReport,
+        target: ExportTarget,
+        descriptor_path: str | None = None,
+    ) -> ExportEnvelope:
         items = [
             self._item_from_check_finding(requirement_id, finding)
             for requirement_id, finding in sorted(report.findings.items(), key=lambda row: row[0])
@@ -187,6 +227,7 @@ class ExportGenerator:
             risk_tier=report.risk_tier.value,
             summary=_summary_from_compliance(report),
             items=items,
+            descriptor_path=descriptor_path,
         )
         envelope.adapter_payload = self._build_adapter_payload(envelope)
         return envelope
@@ -369,6 +410,9 @@ class ExportPusher:
         timeout_seconds: float = 30.0,
         max_retries: int = 3,
         retry_backoff_seconds: float = 1.0,
+        idempotency_path: str | Path | None = None,
+        idempotency_enabled: bool = True,
+        cwd: str | Path | None = None,
     ):
         if timeout_seconds <= 0:
             raise ValueError("timeout_seconds must be > 0.")
@@ -380,6 +424,12 @@ class ExportPusher:
         self.timeout_seconds = timeout_seconds
         self.max_retries = max_retries
         self.retry_backoff_seconds = retry_backoff_seconds
+        self.idempotency_enabled = idempotency_enabled
+        self.idempotency_path = (
+            resolve_export_push_ledger_path(idempotency_path, cwd=cwd)
+            if idempotency_enabled
+            else None
+        )
 
     def push(self, envelope: ExportEnvelope, *, dry_run: bool = False) -> dict[str, Any]:
         if envelope.target == "generic":
@@ -397,24 +447,39 @@ class ExportPusher:
                 "attempted_actionable_count": actionable_count,
                 "pushed_count": 0,
                 "failed_count": 0,
+                "skipped_duplicate_count": 0,
                 "failure_reason": None,
                 "max_retries": self.max_retries,
                 "retry_backoff_seconds": self.retry_backoff_seconds,
                 "timeout_seconds": self.timeout_seconds,
+                "idempotency_enabled": self.idempotency_enabled,
+                "idempotency_path": self._idempotency_path_display(),
                 "results": [],
             }
 
         if envelope.target == "jira":
-            return self._push_jira(adapter_payload, actionable_count=actionable_count)
+            return self._push_jira(
+                envelope,
+                adapter_payload,
+                actionable_count=actionable_count,
+            )
         if envelope.target == "servicenow":
-            return self._push_servicenow(adapter_payload, actionable_count=actionable_count)
+            return self._push_servicenow(
+                envelope,
+                adapter_payload,
+                actionable_count=actionable_count,
+            )
         raise ValueError(f"Unsupported export target: {envelope.target}")
 
     def _actionable_count(self, envelope: ExportEnvelope) -> int:
         return sum(1 for item in envelope.items if item.actionable)
 
     def _push_jira(
-        self, adapter_payload: dict[str, Any], *, actionable_count: int
+        self,
+        envelope: ExportEnvelope,
+        adapter_payload: dict[str, Any],
+        *,
+        actionable_count: int,
     ) -> dict[str, Any]:
         issues = adapter_payload.get("issues", [])
         if not isinstance(issues, list):
@@ -427,13 +492,23 @@ class ExportPusher:
                 "attempted_actionable_count": actionable_count,
                 "pushed_count": 0,
                 "failed_count": 0,
+                "skipped_duplicate_count": 0,
                 "failure_reason": None,
                 "max_retries": self.max_retries,
                 "retry_backoff_seconds": self.retry_backoff_seconds,
                 "timeout_seconds": self.timeout_seconds,
+                "idempotency_enabled": self.idempotency_enabled,
+                "idempotency_path": self._idempotency_path_display(),
                 "results": [],
             }
 
+        actionable_items = [item for item in envelope.items if item.actionable]
+        if len(actionable_items) != len(issues):
+            raise ValueError(
+                "Jira adapter payload/actionable item mismatch; regenerate export payload."
+            )
+
+        existing_idempotency_keys = self._load_existing_idempotency_keys()
         base_url = _required_env("EU_AI_ACT_JIRA_BASE_URL").rstrip("/")
         user_email = _required_env("EU_AI_ACT_JIRA_EMAIL")
         api_token = _required_env("EU_AI_ACT_JIRA_API_TOKEN")
@@ -441,10 +516,14 @@ class ExportPusher:
         endpoint = f"{base_url}/rest/api/3/issue"
 
         pushed_count = 0
+        skipped_duplicate_count = 0
         results: list[dict[str, Any]] = []
 
         with httpx.Client(timeout=self.timeout_seconds, auth=(user_email, api_token)) as client:
-            for issue_index, issue in enumerate(issues, start=1):
+            for issue_index, (issue, actionable_item) in enumerate(
+                zip(issues, actionable_items, strict=True),
+                start=1,
+            ):
                 if not isinstance(issue, dict):
                     raise ValueError("Invalid Jira issue payload item: expected object.")
                 fields = issue.get("fields")
@@ -453,6 +532,19 @@ class ExportPusher:
                 fields = dict(fields)
                 fields.setdefault("project", {"key": project_key})
                 payload = {"fields": fields}
+
+                idempotency_key = self._build_idempotency_key(envelope, actionable_item)
+                if self.idempotency_enabled and idempotency_key in existing_idempotency_keys:
+                    skipped_duplicate_count += 1
+                    results.append(
+                        {
+                            "status": "skipped_duplicate",
+                            "item_index": issue_index,
+                            "requirement_id": actionable_item.requirement_id,
+                            "idempotency_key": idempotency_key,
+                        }
+                    )
+                    continue
 
                 attempt_result = self._post_with_retry(
                     client=client,
@@ -465,15 +557,28 @@ class ExportPusher:
                     response = attempt_result["response"]
                     pushed_count += 1
                     response_json = self._safe_json(response)
-                    results.append(
-                        {
-                            "status": "success",
-                            "http_status": response.status_code,
-                            "attempts": attempt_result["attempts"],
-                            "retries_used": max(attempt_result["attempts"] - 1, 0),
-                            "issue_key": response_json.get("key"),
-                        }
-                    )
+                    success_entry = {
+                        "status": "success",
+                        "http_status": response.status_code,
+                        "attempts": attempt_result["attempts"],
+                        "retries_used": max(attempt_result["attempts"] - 1, 0),
+                        "requirement_id": actionable_item.requirement_id,
+                        "idempotency_key": idempotency_key,
+                        "issue_key": response_json.get("key"),
+                    }
+                    if self.idempotency_enabled:
+                        ledger_error = self._record_idempotency_success(
+                            envelope=envelope,
+                            item=actionable_item,
+                            existing_idempotency_keys=existing_idempotency_keys,
+                            idempotency_key=idempotency_key,
+                            remote_ref=response_json.get("key"),
+                            http_status=response.status_code,
+                        )
+                        success_entry["ledger_recorded"] = ledger_error is None
+                        if ledger_error is not None:
+                            success_entry["ledger_error"] = ledger_error
+                    results.append(success_entry)
                     continue
 
                 failure_reason = attempt_result["failure_reason"]
@@ -485,6 +590,8 @@ class ExportPusher:
                         "retries_used": max(attempt_result["attempts"] - 1, 0),
                         "failure_reason": failure_reason,
                         "item_index": issue_index,
+                        "requirement_id": actionable_item.requirement_id,
+                        "idempotency_key": idempotency_key,
                     }
                 )
                 push_result = {
@@ -493,10 +600,13 @@ class ExportPusher:
                     "attempted_actionable_count": actionable_count,
                     "pushed_count": pushed_count,
                     "failed_count": 1,
+                    "skipped_duplicate_count": skipped_duplicate_count,
                     "failure_reason": failure_reason,
                     "max_retries": self.max_retries,
                     "retry_backoff_seconds": self.retry_backoff_seconds,
                     "timeout_seconds": self.timeout_seconds,
+                    "idempotency_enabled": self.idempotency_enabled,
+                    "idempotency_path": self._idempotency_path_display(),
                     "results": results,
                 }
                 raise ExportPushError(
@@ -510,15 +620,22 @@ class ExportPusher:
             "attempted_actionable_count": actionable_count,
             "pushed_count": pushed_count,
             "failed_count": 0,
+            "skipped_duplicate_count": skipped_duplicate_count,
             "failure_reason": None,
             "max_retries": self.max_retries,
             "retry_backoff_seconds": self.retry_backoff_seconds,
             "timeout_seconds": self.timeout_seconds,
+            "idempotency_enabled": self.idempotency_enabled,
+            "idempotency_path": self._idempotency_path_display(),
             "results": results,
         }
 
     def _push_servicenow(
-        self, adapter_payload: dict[str, Any], *, actionable_count: int
+        self,
+        envelope: ExportEnvelope,
+        adapter_payload: dict[str, Any],
+        *,
+        actionable_count: int,
     ) -> dict[str, Any]:
         records = adapter_payload.get("records", [])
         if not isinstance(records, list):
@@ -531,13 +648,23 @@ class ExportPusher:
                 "attempted_actionable_count": actionable_count,
                 "pushed_count": 0,
                 "failed_count": 0,
+                "skipped_duplicate_count": 0,
                 "failure_reason": None,
                 "max_retries": self.max_retries,
                 "retry_backoff_seconds": self.retry_backoff_seconds,
                 "timeout_seconds": self.timeout_seconds,
+                "idempotency_enabled": self.idempotency_enabled,
+                "idempotency_path": self._idempotency_path_display(),
                 "results": [],
             }
 
+        actionable_items = [item for item in envelope.items if item.actionable]
+        if len(actionable_items) != len(records):
+            raise ValueError(
+                "ServiceNow adapter payload/actionable item mismatch; regenerate export payload."
+            )
+
+        existing_idempotency_keys = self._load_existing_idempotency_keys()
         instance_url = _required_env("EU_AI_ACT_SERVICENOW_INSTANCE_URL").rstrip("/")
         username = _required_env("EU_AI_ACT_SERVICENOW_USERNAME")
         password = _required_env("EU_AI_ACT_SERVICENOW_PASSWORD")
@@ -547,12 +674,30 @@ class ExportPusher:
         endpoint = f"{instance_url}/api/now/table/{table_name}"
 
         pushed_count = 0
+        skipped_duplicate_count = 0
         results: list[dict[str, Any]] = []
 
         with httpx.Client(timeout=self.timeout_seconds, auth=(username, password)) as client:
-            for record_index, record in enumerate(records, start=1):
+            for record_index, (record, actionable_item) in enumerate(
+                zip(records, actionable_items, strict=True),
+                start=1,
+            ):
                 if not isinstance(record, dict):
                     raise ValueError("Invalid ServiceNow record payload item: expected object.")
+
+                idempotency_key = self._build_idempotency_key(envelope, actionable_item)
+                if self.idempotency_enabled and idempotency_key in existing_idempotency_keys:
+                    skipped_duplicate_count += 1
+                    results.append(
+                        {
+                            "status": "skipped_duplicate",
+                            "item_index": record_index,
+                            "requirement_id": actionable_item.requirement_id,
+                            "idempotency_key": idempotency_key,
+                        }
+                    )
+                    continue
+
                 attempt_result = self._post_with_retry(
                     client=client,
                     endpoint=endpoint,
@@ -566,15 +711,28 @@ class ExportPusher:
                     response_json = self._safe_json(response)
                     result_obj = response_json.get("result", {})
                     sys_id = result_obj.get("sys_id") if isinstance(result_obj, dict) else None
-                    results.append(
-                        {
-                            "status": "success",
-                            "http_status": response.status_code,
-                            "attempts": attempt_result["attempts"],
-                            "retries_used": max(attempt_result["attempts"] - 1, 0),
-                            "sys_id": sys_id,
-                        }
-                    )
+                    success_entry = {
+                        "status": "success",
+                        "http_status": response.status_code,
+                        "attempts": attempt_result["attempts"],
+                        "retries_used": max(attempt_result["attempts"] - 1, 0),
+                        "requirement_id": actionable_item.requirement_id,
+                        "idempotency_key": idempotency_key,
+                        "sys_id": sys_id,
+                    }
+                    if self.idempotency_enabled:
+                        ledger_error = self._record_idempotency_success(
+                            envelope=envelope,
+                            item=actionable_item,
+                            existing_idempotency_keys=existing_idempotency_keys,
+                            idempotency_key=idempotency_key,
+                            remote_ref=sys_id,
+                            http_status=response.status_code,
+                        )
+                        success_entry["ledger_recorded"] = ledger_error is None
+                        if ledger_error is not None:
+                            success_entry["ledger_error"] = ledger_error
+                    results.append(success_entry)
                     continue
 
                 failure_reason = attempt_result["failure_reason"]
@@ -586,6 +744,8 @@ class ExportPusher:
                         "retries_used": max(attempt_result["attempts"] - 1, 0),
                         "failure_reason": failure_reason,
                         "item_index": record_index,
+                        "requirement_id": actionable_item.requirement_id,
+                        "idempotency_key": idempotency_key,
                     }
                 )
                 push_result = {
@@ -594,10 +754,13 @@ class ExportPusher:
                     "attempted_actionable_count": actionable_count,
                     "pushed_count": pushed_count,
                     "failed_count": 1,
+                    "skipped_duplicate_count": skipped_duplicate_count,
                     "failure_reason": failure_reason,
                     "max_retries": self.max_retries,
                     "retry_backoff_seconds": self.retry_backoff_seconds,
                     "timeout_seconds": self.timeout_seconds,
+                    "idempotency_enabled": self.idempotency_enabled,
+                    "idempotency_path": self._idempotency_path_display(),
                     "results": results,
                 }
                 raise ExportPushError(
@@ -611,10 +774,13 @@ class ExportPusher:
             "attempted_actionable_count": actionable_count,
             "pushed_count": pushed_count,
             "failed_count": 0,
+            "skipped_duplicate_count": skipped_duplicate_count,
             "failure_reason": None,
             "max_retries": self.max_retries,
             "retry_backoff_seconds": self.retry_backoff_seconds,
             "timeout_seconds": self.timeout_seconds,
+            "idempotency_enabled": self.idempotency_enabled,
+            "idempotency_path": self._idempotency_path_display(),
             "results": results,
         }
 
@@ -674,6 +840,117 @@ class ExportPusher:
 
     def _is_retryable_status(self, status_code: int) -> bool:
         return status_code == 429 or 500 <= status_code <= 599
+
+    def _idempotency_path_display(self) -> str | None:
+        return str(self.idempotency_path) if self.idempotency_path else None
+
+    def _load_existing_idempotency_keys(self) -> set[str]:
+        if not self.idempotency_enabled or self.idempotency_path is None:
+            return set()
+        if not self.idempotency_path.exists():
+            return set()
+
+        keys: set[str] = set()
+        with self.idempotency_path.open("r", encoding="utf-8") as handle:
+            for line_number, line in enumerate(handle, start=1):
+                payload_line = line.strip()
+                if not payload_line:
+                    continue
+                try:
+                    record = json.loads(payload_line)
+                except json.JSONDecodeError as exc:
+                    raise ValueError(
+                        f"Invalid JSON in export push ledger at line {line_number}: {exc.msg}"
+                    ) from exc
+                key = record.get("idempotency_key") if isinstance(record, dict) else None
+                if not isinstance(key, str) or not key:
+                    raise ValueError(
+                        f"Invalid export push ledger record at line {line_number}: "
+                        "missing 'idempotency_key'."
+                    )
+                keys.add(key)
+        return keys
+
+    def _build_idempotency_key(self, envelope: ExportEnvelope, item: ExportItem) -> str:
+        source_ref = envelope.descriptor_path or envelope.event_id or "unknown"
+        material = {
+            "target": envelope.target,
+            "source_type": envelope.source_type,
+            "system_name": envelope.system_name,
+            "source_ref": source_ref,
+            "requirement_id": item.requirement_id,
+            "status": item.status,
+            "article": item.article,
+        }
+        encoded = json.dumps(
+            material,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
+
+    def _build_ledger_record(
+        self,
+        envelope: ExportEnvelope,
+        item: ExportItem,
+        *,
+        idempotency_key: str,
+        remote_ref: str | None,
+        http_status: int,
+    ) -> dict[str, Any]:
+        return {
+            "idempotency_key": idempotency_key,
+            "target": envelope.target,
+            "source_type": envelope.source_type,
+            "system_name": envelope.system_name,
+            "descriptor_path": envelope.descriptor_path,
+            "event_id": envelope.event_id,
+            "requirement_id": item.requirement_id,
+            "status": item.status,
+            "article": item.article,
+            "remote_ref": remote_ref,
+            "http_status": http_status,
+            "pushed_at": _utc_now_iso(),
+        }
+
+    def _record_idempotency_success(
+        self,
+        *,
+        envelope: ExportEnvelope,
+        item: ExportItem,
+        existing_idempotency_keys: set[str],
+        idempotency_key: str,
+        remote_ref: str | None,
+        http_status: int,
+    ) -> str | None:
+        """Persist idempotency record after successful remote create.
+
+        Remote creates are authoritative: if local ledger write fails, we keep command success
+        and return a warning string instead of converting the whole push into a failure.
+        """
+        try:
+            self._append_ledger_record(
+                self._build_ledger_record(
+                    envelope,
+                    item,
+                    idempotency_key=idempotency_key,
+                    remote_ref=remote_ref,
+                    http_status=http_status,
+                )
+            )
+            existing_idempotency_keys.add(idempotency_key)
+            return None
+        except Exception as exc:
+            existing_idempotency_keys.add(idempotency_key)
+            return f"Failed to write idempotency ledger after successful remote create: {exc}"
+
+    def _append_ledger_record(self, record: dict[str, Any]) -> None:
+        if not self.idempotency_enabled or self.idempotency_path is None:
+            return
+        self.idempotency_path.parent.mkdir(parents=True, exist_ok=True)
+        with self.idempotency_path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(record, ensure_ascii=False) + "\n")
 
     def _safe_json(self, response: httpx.Response) -> dict[str, Any]:
         try:

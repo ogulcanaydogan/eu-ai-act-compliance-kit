@@ -32,6 +32,7 @@ checks transparency and GPAI obligations, and renders audit-oriented reports.
 - Phase 14: External export core completed (payload-first, no live API push)
 - Phase 15: CI/release runtime hardening complete (action runtime upgrades + security gate stabilization)
 - Phase 16: Live export push completed (strict fail-fast, deterministic retries/backoff, optional `--push`)
+- Phase 17: Export push production hardening in progress (create-only idempotency ledger + duplicate-safe push)
 
 ## End-to-End Flow
 
