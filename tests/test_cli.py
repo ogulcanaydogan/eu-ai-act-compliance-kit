@@ -29,7 +29,7 @@ class TestCLI:
 
         assert result.exit_code == 0
         assert "version" in result.output.lower()
-        assert "0.1.7" in result.output
+        assert "0.1.8" in result.output
         assert "runtimeerror" not in result.output.lower()
 
     def test_articles_uses_normalized_mapping(self):
@@ -654,6 +654,86 @@ class TestCLI:
         payload = json.loads(result.output[result.output.find("{") :])
         assert payload["push_result"]["push_mode"] == "upsert"
         assert payload["push_result"]["updated_count"] == 1
+
+    def test_export_push_mode_create_is_forwarded_to_pusher(self, monkeypatch):
+        """Explicit `--push-mode create` should be forwarded and reported deterministically."""
+        runner = CliRunner()
+        system_yaml = EXAMPLES_DIR / "medical_diagnosis.yaml"
+        captured: dict[str, object] = {}
+
+        def _fake_push(_self, _envelope, dry_run=False, push_mode="create"):
+            captured["push_mode"] = push_mode
+            return {
+                "target": "jira",
+                "dry_run": dry_run,
+                "push_mode": push_mode,
+                "attempted_actionable_count": 1,
+                "pushed_count": 1,
+                "created_count": 1,
+                "updated_count": 0,
+                "failed_count": 0,
+                "skipped_duplicate_count": 0,
+                "failure_reason": None,
+                "max_retries": 3,
+                "retry_backoff_seconds": 1.0,
+                "timeout_seconds": 30.0,
+                "idempotency_enabled": True,
+                "idempotency_path": None,
+                "results": [{"status": "success", "operation": "created", "issue_key": "EUAI-1"}],
+            }
+
+        monkeypatch.setattr(cli_module.ExportPusher, "push", _fake_push)
+
+        result = runner.invoke(
+            main,
+            [
+                "export",
+                "check",
+                str(system_yaml),
+                "--target",
+                "jira",
+                "--push",
+                "--push-mode",
+                "create",
+                "--json",
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert captured["push_mode"] == "create"
+        payload = json.loads(result.output[result.output.find("{") :])
+        assert payload["push_result"]["push_mode"] == "create"
+        assert payload["push_result"]["created_count"] == 1
+        assert payload["push_result"]["updated_count"] == 0
+
+    def test_export_check_dry_run_with_push_mode_upsert_reports_push_mode(self):
+        """Dry-run should keep no-network behavior and expose selected push-mode."""
+        runner = CliRunner()
+        system_yaml = EXAMPLES_DIR / "medical_diagnosis.yaml"
+
+        result = runner.invoke(
+            main,
+            [
+                "export",
+                "check",
+                str(system_yaml),
+                "--target",
+                "jira",
+                "--push",
+                "--dry-run",
+                "--push-mode",
+                "upsert",
+                "--json",
+            ],
+        )
+
+        assert result.exit_code == 0
+        payload = json.loads(result.output[result.output.find("{") :])
+        assert payload["push_result"]["dry_run"] is True
+        assert payload["push_result"]["push_mode"] == "upsert"
+        assert payload["push_result"]["pushed_count"] == 0
+        assert payload["push_result"]["created_count"] == 0
+        assert payload["push_result"]["updated_count"] == 0
 
     def test_export_push_generic_target_fails(self):
         """`--push` should fail deterministically for unsupported generic target."""

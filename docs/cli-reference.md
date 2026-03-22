@@ -208,8 +208,8 @@ Push behavior policy:
 - `--push-mode` is accepted only together with `--push`
 - retries are attempted only for transport errors and HTTP `429`/`5xx`
 - non-retryable `4xx` responses fail immediately
-- when idempotency is enabled, duplicate actionable items are skipped before remote API call
-- in `upsert` mode, Jira/ServiceNow first perform remote lookup then update existing records or create new ones
+- in `create` mode with idempotency enabled, duplicate actionable items are skipped before remote API call
+- in `upsert` mode, Jira/ServiceNow always perform lookup-first and then update existing records or create new ones
 
 Live push environment variables:
 

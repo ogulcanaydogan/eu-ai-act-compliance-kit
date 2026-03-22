@@ -10,6 +10,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - No changes yet.
 
+## [0.1.8] - 2026-03-22
+
+### Changed
+- Phase 18 status synchronized as completed across README, docs index, and roadmap snapshot.
+- Export push policy docs clarified:
+  - duplicate-skip applies to `create` mode with idempotency enabled
+  - `upsert` mode is always lookup-first create/update for Jira and ServiceNow
+
+### Tests
+- Added Jira upsert runtime coverage for:
+  - retryable lookup failure recovery (`5xx` -> success update)
+  - create-path retry exhaustion fail-fast
+  - update-path non-retryable `4xx` immediate fail
+- Added ServiceNow upsert runtime coverage for:
+  - retryable lookup failure recovery (`5xx` -> success update)
+  - create-path retry exhaustion fail-fast
+  - update-path non-retryable `4xx` immediate fail
+- Added CLI contract coverage for explicit `--push-mode create` forwarding and `--push --dry-run --push-mode upsert`.
+
 ## [0.1.7] - 2026-03-22
 
 ### Added
