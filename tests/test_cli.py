@@ -8,6 +8,7 @@ from click.testing import CliRunner
 
 import eu_ai_act.cli as cli_module
 from eu_ai_act.cli import main
+from eu_ai_act.exporter import ExportPushError
 from eu_ai_act.reporter import ReportGenerator
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -420,6 +421,11 @@ class TestCLI:
         assert "push_result" in payload
         assert payload["push_result"]["dry_run"] is True
         assert payload["push_result"]["pushed_count"] == 0
+        assert payload["push_result"]["failed_count"] == 0
+        assert payload["push_result"]["failure_reason"] is None
+        assert payload["push_result"]["max_retries"] == 3
+        assert payload["push_result"]["retry_backoff_seconds"] == 1.0
+        assert payload["push_result"]["timeout_seconds"] == 30.0
         assert "no remote api call" in payload["push_result"]["message"].lower()
 
     def test_export_push_generic_target_fails(self):
@@ -484,3 +490,92 @@ class TestCLI:
         assert "Error pushing export payload" in output
         assert "HTTP transport error" in output
         assert "timeout" in output
+
+    @pytest.mark.parametrize(
+        ("flag", "value", "expected_error"),
+        [
+            ("--max-retries", "-1", "--max-retries must be >= 0"),
+            ("--retry-backoff-seconds", "0", "--retry-backoff-seconds must be > 0"),
+            ("--timeout-seconds", "0", "--timeout-seconds must be > 0"),
+        ],
+    )
+    def test_export_check_invalid_push_tuning_flags_fail(
+        self, flag: str, value: str, expected_error: str
+    ):
+        """Invalid retry/backoff/timeout values should fail with deterministic CLI errors."""
+        runner = CliRunner()
+        system_yaml = EXAMPLES_DIR / "medical_diagnosis.yaml"
+
+        result = runner.invoke(
+            main,
+            ["export", "check", str(system_yaml), "--target", "jira", flag, value, "--json"],
+        )
+
+        assert result.exit_code != 0
+        output = result.output + getattr(result, "stderr", "")
+        assert expected_error in output
+
+    def test_export_history_invalid_timeout_flag_fails(self):
+        """History export should validate timeout tuning flags before push execution."""
+        runner = CliRunner()
+        system_yaml = EXAMPLES_DIR / "chatbot.yaml"
+        check_result = runner.invoke(main, ["check", str(system_yaml), "--json"])
+        assert check_result.exit_code == 0
+
+        list_result = runner.invoke(main, ["history", "list", "--event-type", "check", "--json"])
+        assert list_result.exit_code == 0
+        event_id = json.loads(list_result.output[list_result.output.find("{") :])["events"][0][
+            "event_id"
+        ]
+
+        result = runner.invoke(
+            main,
+            [
+                "export",
+                "history",
+                event_id,
+                "--target",
+                "jira",
+                "--timeout-seconds",
+                "-1",
+                "--json",
+            ],
+        )
+
+        assert result.exit_code != 0
+        output = result.output + getattr(result, "stderr", "")
+        assert "--timeout-seconds must be > 0" in output
+
+    def test_export_push_retry_exhaustion_error_is_reported(self, monkeypatch):
+        """Push retry exhaustion should surface fail-fast reason via deterministic error output."""
+        runner = CliRunner()
+        system_yaml = EXAMPLES_DIR / "medical_diagnosis.yaml"
+
+        def _raise_push_failure(_self, _envelope, dry_run=False):
+            raise ExportPushError(
+                "Jira push aborted on item 1: jira API returned HTTP 503: temporary outage",
+                push_result={
+                    "target": "jira",
+                    "dry_run": dry_run,
+                    "attempted_actionable_count": 1,
+                    "pushed_count": 0,
+                    "failed_count": 1,
+                    "failure_reason": "jira API returned HTTP 503: temporary outage",
+                    "max_retries": 3,
+                    "retry_backoff_seconds": 1.0,
+                    "timeout_seconds": 30.0,
+                    "results": [],
+                },
+            )
+
+        monkeypatch.setattr(cli_module.ExportPusher, "push", _raise_push_failure)
+
+        result = runner.invoke(
+            main,
+            ["export", "check", str(system_yaml), "--target", "jira", "--push", "--json"],
+        )
+
+        assert result.exit_code != 0
+        output = result.output + getattr(result, "stderr", "")
+        assert "Jira push aborted on item 1" in output
+        assert "HTTP 503" in output

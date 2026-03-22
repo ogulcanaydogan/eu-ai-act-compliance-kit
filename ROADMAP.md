@@ -19,7 +19,7 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
 - Phase 13 completed (post-launch adoption hardening)
 - Phase 14 completed (external export core, payload-first)
 - Phase 15 completed (CI/release runtime hardening and security gate stabilization)
-- Phase 16 kickoff in progress (live export push with safe default payload mode)
+- Phase 16 completed (live export push with strict fail-fast and retry/backoff tuning)
 
 ## Phase 1: Risk Classification Engine (Weeks 1-2) ✅ Completed
 
@@ -364,11 +364,20 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
 - Security gate stabilized by removing assert-based control flow in CLI PDF output handling.
 - Required checks preserved with deterministic pass/fail behavior.
 
-## Phase 16: Live Export Push Kickoff 🚧 In Progress
+## Phase 16: Live Export Push ✅ Completed
 
-- Add optional live push path for `ai-act export` while preserving payload-only default behavior.
-- Targets for live push: Jira and ServiceNow (`generic` remains payload-only).
-- Add `--dry-run` support for deterministic no-network validation.
+- Live push path completed for `ai-act export` with payload-only default behavior preserved.
+- Targets enabled for push: Jira and ServiceNow (`generic` remains payload-only).
+- Strict fail-fast behavior finalized: abort on first actionable item that fails after retries.
+- Deterministic retry policy delivered:
+  - defaults: `max_retries=3`, `retry_backoff_seconds=1.0`, `timeout_seconds=30.0`
+  - retry only for transport errors and HTTP `429`/`5xx`
+  - non-retryable `4xx` fails immediately
+- CLI tuning options delivered on both `export check` and `export history`:
+  - `--max-retries`
+  - `--retry-backoff-seconds`
+  - `--timeout-seconds`
+- `--dry-run` contract kept deterministic with no network calls and explicit `push_result` diagnostics.
 
 ## Timeline Summary (Historical Plan)
 - **Week 1-2**: Risk Classification Engine (Phases 1.1-1.5)

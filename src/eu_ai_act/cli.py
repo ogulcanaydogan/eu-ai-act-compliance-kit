@@ -20,7 +20,7 @@ from eu_ai_act.checker import ComplianceChecker
 from eu_ai_act.checklist import ChecklistGenerator
 from eu_ai_act.classifier import RiskClassifier
 from eu_ai_act.dashboard import DashboardGenerator
-from eu_ai_act.exporter import ExportGenerator, ExportPusher, ExportTarget
+from eu_ai_act.exporter import ExportGenerator, ExportPusher, ExportPushError, ExportTarget
 from eu_ai_act.gpai import (
     GPAIAssessment,
     GPAIAssessor,
@@ -951,6 +951,27 @@ def export() -> None:
     is_flag=True,
     help="Do not call remote APIs; return simulated push summary.",
 )
+@click.option(
+    "--max-retries",
+    type=int,
+    default=3,
+    show_default=True,
+    help="Maximum retry attempts for retryable push failures (429/5xx/transport).",
+)
+@click.option(
+    "--retry-backoff-seconds",
+    type=float,
+    default=1.0,
+    show_default=True,
+    help="Base backoff in seconds for exponential retry delay.",
+)
+@click.option(
+    "--timeout-seconds",
+    type=float,
+    default=30.0,
+    show_default=True,
+    help="HTTP request timeout in seconds for live push calls.",
+)
 @click.option("--json", "output_json", is_flag=True, help="Output JSON payload (default behavior)")
 def export_check(
     system_yaml: str,
@@ -959,6 +980,9 @@ def export_check(
     history_path: str | None,
     push: bool,
     dry_run: bool,
+    max_retries: int,
+    retry_backoff_seconds: float,
+    timeout_seconds: float,
     output_json: bool,
 ) -> None:
     """Export canonical + target-specific payload from live compliance check."""
@@ -977,9 +1001,23 @@ def export_check(
         # Validate path resolution early for deterministic CLI behavior.
         resolve_history_path(history_path)
 
+    if max_retries < 0:
+        console.print("[red]Error: --max-retries must be >= 0[/red]")
+        sys.exit(1)
+    if retry_backoff_seconds <= 0:
+        console.print("[red]Error: --retry-backoff-seconds must be > 0[/red]")
+        sys.exit(1)
+    if timeout_seconds <= 0:
+        console.print("[red]Error: --timeout-seconds must be > 0[/red]")
+        sys.exit(1)
+
     checker = ComplianceChecker()
     exporter = ExportGenerator()
-    pusher = ExportPusher()
+    pusher = ExportPusher(
+        timeout_seconds=timeout_seconds,
+        max_retries=max_retries,
+        retry_backoff_seconds=retry_backoff_seconds,
+    )
 
     with Progress(transient=True) as progress:
         progress.add_task("Generating export payload...", total=None)
@@ -993,6 +1031,9 @@ def export_check(
     if push:
         try:
             push_result = pusher.push(payload, dry_run=dry_run)
+        except ExportPushError as e:
+            console.print(f"[red]Error pushing export payload: {e}[/red]")
+            sys.exit(1)
         except Exception as e:
             console.print(f"[red]Error pushing export payload: {e}[/red]")
             sys.exit(1)
@@ -1004,6 +1045,10 @@ def export_check(
             "attempted_actionable_count": sum(1 for item in payload.items if item.actionable),
             "pushed_count": 0,
             "failed_count": 0,
+            "failure_reason": None,
+            "max_retries": max_retries,
+            "retry_backoff_seconds": retry_backoff_seconds,
+            "timeout_seconds": timeout_seconds,
             "results": [],
             "message": "Dry-run requested without --push; no remote API call was made.",
         }
@@ -1032,6 +1077,27 @@ def export_check(
     is_flag=True,
     help="Do not call remote APIs; return simulated push summary.",
 )
+@click.option(
+    "--max-retries",
+    type=int,
+    default=3,
+    show_default=True,
+    help="Maximum retry attempts for retryable push failures (429/5xx/transport).",
+)
+@click.option(
+    "--retry-backoff-seconds",
+    type=float,
+    default=1.0,
+    show_default=True,
+    help="Base backoff in seconds for exponential retry delay.",
+)
+@click.option(
+    "--timeout-seconds",
+    type=float,
+    default=30.0,
+    show_default=True,
+    help="HTTP request timeout in seconds for live push calls.",
+)
 @click.option("--json", "output_json", is_flag=True, help="Output JSON payload (default behavior)")
 def export_history(
     event_id: str,
@@ -1040,6 +1106,9 @@ def export_history(
     history_path: str | None,
     push: bool,
     dry_run: bool,
+    max_retries: int,
+    retry_backoff_seconds: float,
+    timeout_seconds: float,
     output_json: bool,
 ) -> None:
     """Export canonical + target-specific payload from a persisted history event."""
@@ -1051,8 +1120,22 @@ def export_history(
         console.print(f"[red]Error loading history event: {e}[/red]")
         sys.exit(1)
 
+    if max_retries < 0:
+        console.print("[red]Error: --max-retries must be >= 0[/red]")
+        sys.exit(1)
+    if retry_backoff_seconds <= 0:
+        console.print("[red]Error: --retry-backoff-seconds must be > 0[/red]")
+        sys.exit(1)
+    if timeout_seconds <= 0:
+        console.print("[red]Error: --timeout-seconds must be > 0[/red]")
+        sys.exit(1)
+
     exporter = ExportGenerator()
-    pusher = ExportPusher()
+    pusher = ExportPusher(
+        timeout_seconds=timeout_seconds,
+        max_retries=max_retries,
+        retry_backoff_seconds=retry_backoff_seconds,
+    )
     payload = exporter.from_history(
         event=event,
         target=cast(ExportTarget, target),
@@ -1061,6 +1144,9 @@ def export_history(
     if push:
         try:
             push_result = pusher.push(payload, dry_run=dry_run)
+        except ExportPushError as e:
+            console.print(f"[red]Error pushing export payload: {e}[/red]")
+            sys.exit(1)
         except Exception as e:
             console.print(f"[red]Error pushing export payload: {e}[/red]")
             sys.exit(1)
@@ -1072,6 +1158,10 @@ def export_history(
             "attempted_actionable_count": sum(1 for item in payload.items if item.actionable),
             "pushed_count": 0,
             "failed_count": 0,
+            "failure_reason": None,
+            "max_retries": max_retries,
+            "retry_backoff_seconds": retry_backoff_seconds,
+            "timeout_seconds": timeout_seconds,
             "results": [],
             "message": "Dry-run requested without --push; no remote API call was made.",
         }

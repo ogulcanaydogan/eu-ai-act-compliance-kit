@@ -8,7 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- No unreleased changes yet.
+- Export push reliability tuning flags for both export commands:
+  - `--max-retries`
+  - `--retry-backoff-seconds`
+  - `--timeout-seconds`
+
+### Changed
+- Phase 16 status synchronized to completed across roadmap/readme/docs status surfaces.
+- Live export push hardening finalized with strict fail-fast plus deterministic retry/backoff policy for transport errors and HTTP `429`/`5xx`.
+
+### Tests
+- Added retry contract coverage for export push (`429`, `5xx`, transport error, retry exhaustion, and non-retryable `4xx`).
+- Added CLI contract tests for export push tuning flags and fail-fast error reporting paths.
 
 ## [0.1.4] - 2026-03-21
 

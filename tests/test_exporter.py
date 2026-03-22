@@ -8,7 +8,7 @@ import httpx
 import pytest
 
 from eu_ai_act.checker import ComplianceChecker, ComplianceStatus
-from eu_ai_act.exporter import ExportGenerator, ExportPusher
+from eu_ai_act.exporter import ExportGenerator, ExportPusher, ExportPushError
 from eu_ai_act.history import build_event
 from eu_ai_act.schema import load_system_descriptor_from_file
 
@@ -218,3 +218,198 @@ def test_push_jira_success_with_mock_transport(monkeypatch):
     assert result["attempted_actionable_count"] == len(envelope.adapter_payload["issues"])
     assert result["pushed_count"] == len(envelope.adapter_payload["issues"])
     assert result["failed_count"] == 0
+    assert result["failure_reason"] is None
+
+
+def test_push_jira_retries_on_5xx_then_succeeds(monkeypatch):
+    """Retryable 5xx responses should be retried with eventual success."""
+    descriptor = load_system_descriptor_from_file(EXAMPLES_DIR / "medical_diagnosis.yaml")
+    report = ComplianceChecker().check(descriptor)
+    for requirement_id in list(report.findings.keys()):
+        report.findings[requirement_id].status = ComplianceStatus.NON_COMPLIANT
+    envelope = ExportGenerator().from_check(report=report, target="jira")
+
+    monkeypatch.setenv("EU_AI_ACT_JIRA_BASE_URL", "https://example.atlassian.net")
+    monkeypatch.setenv("EU_AI_ACT_JIRA_EMAIL", "ops@example.com")
+    monkeypatch.setenv("EU_AI_ACT_JIRA_API_TOKEN", "secret")
+    monkeypatch.setenv("EU_AI_ACT_JIRA_PROJECT_KEY", "EUAI")
+
+    call_counter = {"count": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        call_counter["count"] += 1
+        if call_counter["count"] == 1:
+            return httpx.Response(status_code=503, text="temporary outage")
+        return httpx.Response(status_code=201, json={"key": f"EUAI-{call_counter['count']}"})
+
+    transport = httpx.MockTransport(handler)
+    original_client = httpx.Client
+
+    def _fake_client(*args, **kwargs):
+        return original_client(transport=transport)
+
+    monkeypatch.setattr("eu_ai_act.exporter.httpx.Client", _fake_client)
+    monkeypatch.setattr(ExportPusher, "_sleep_before_retry", lambda _self, _attempts: None)
+
+    result = ExportPusher(max_retries=3).push(envelope)
+    issue_count = len(envelope.adapter_payload["issues"])
+    assert result["pushed_count"] == issue_count
+    assert result["failed_count"] == 0
+    assert result["results"][0]["attempts"] == 2
+    assert result["results"][0]["retries_used"] == 1
+    assert call_counter["count"] == issue_count + 1
+
+
+def test_push_jira_retries_on_429_then_succeeds(monkeypatch):
+    """Retryable 429 responses should be retried before succeeding."""
+    descriptor = load_system_descriptor_from_file(EXAMPLES_DIR / "medical_diagnosis.yaml")
+    report = ComplianceChecker().check(descriptor)
+    for requirement_id in list(report.findings.keys()):
+        report.findings[requirement_id].status = ComplianceStatus.NON_COMPLIANT
+    envelope = ExportGenerator().from_check(report=report, target="jira")
+
+    monkeypatch.setenv("EU_AI_ACT_JIRA_BASE_URL", "https://example.atlassian.net")
+    monkeypatch.setenv("EU_AI_ACT_JIRA_EMAIL", "ops@example.com")
+    monkeypatch.setenv("EU_AI_ACT_JIRA_API_TOKEN", "secret")
+    monkeypatch.setenv("EU_AI_ACT_JIRA_PROJECT_KEY", "EUAI")
+
+    call_counter = {"count": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        call_counter["count"] += 1
+        if call_counter["count"] == 1:
+            return httpx.Response(status_code=429, text="rate limit")
+        return httpx.Response(status_code=201, json={"key": f"EUAI-{call_counter['count']}"})
+
+    transport = httpx.MockTransport(handler)
+    original_client = httpx.Client
+
+    def _fake_client(*args, **kwargs):
+        return original_client(transport=transport)
+
+    monkeypatch.setattr("eu_ai_act.exporter.httpx.Client", _fake_client)
+    monkeypatch.setattr(ExportPusher, "_sleep_before_retry", lambda _self, _attempts: None)
+
+    result = ExportPusher(max_retries=3).push(envelope)
+    issue_count = len(envelope.adapter_payload["issues"])
+    assert result["pushed_count"] == issue_count
+    assert result["failed_count"] == 0
+    assert result["results"][0]["attempts"] == 2
+    assert result["results"][0]["retries_used"] == 1
+    assert call_counter["count"] == issue_count + 1
+
+
+def test_push_jira_retries_on_transport_error_then_succeeds(monkeypatch):
+    """Transport errors should be retried with backoff before eventual success."""
+    descriptor = load_system_descriptor_from_file(EXAMPLES_DIR / "medical_diagnosis.yaml")
+    report = ComplianceChecker().check(descriptor)
+    for requirement_id in list(report.findings.keys()):
+        report.findings[requirement_id].status = ComplianceStatus.NON_COMPLIANT
+    envelope = ExportGenerator().from_check(report=report, target="jira")
+
+    monkeypatch.setenv("EU_AI_ACT_JIRA_BASE_URL", "https://example.atlassian.net")
+    monkeypatch.setenv("EU_AI_ACT_JIRA_EMAIL", "ops@example.com")
+    monkeypatch.setenv("EU_AI_ACT_JIRA_API_TOKEN", "secret")
+    monkeypatch.setenv("EU_AI_ACT_JIRA_PROJECT_KEY", "EUAI")
+
+    call_counter = {"count": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        call_counter["count"] += 1
+        if call_counter["count"] == 1:
+            raise httpx.TransportError("connection reset by peer")
+        return httpx.Response(status_code=201, json={"key": f"EUAI-{call_counter['count']}"})
+
+    transport = httpx.MockTransport(handler)
+    original_client = httpx.Client
+
+    def _fake_client(*args, **kwargs):
+        return original_client(transport=transport)
+
+    monkeypatch.setattr("eu_ai_act.exporter.httpx.Client", _fake_client)
+    monkeypatch.setattr(ExportPusher, "_sleep_before_retry", lambda _self, _attempts: None)
+
+    result = ExportPusher(max_retries=3).push(envelope)
+    issue_count = len(envelope.adapter_payload["issues"])
+    assert result["pushed_count"] == issue_count
+    assert result["failed_count"] == 0
+    assert result["results"][0]["attempts"] == 2
+    assert result["results"][0]["retries_used"] == 1
+    assert call_counter["count"] == issue_count + 1
+
+
+def test_push_jira_retry_exhaustion_fails_fast(monkeypatch):
+    """Retryable failures should abort after retries are exhausted on first failing item."""
+    descriptor = load_system_descriptor_from_file(EXAMPLES_DIR / "medical_diagnosis.yaml")
+    report = ComplianceChecker().check(descriptor)
+    for requirement_id in list(report.findings.keys()):
+        report.findings[requirement_id].status = ComplianceStatus.NON_COMPLIANT
+    envelope = ExportGenerator().from_check(report=report, target="jira")
+
+    monkeypatch.setenv("EU_AI_ACT_JIRA_BASE_URL", "https://example.atlassian.net")
+    monkeypatch.setenv("EU_AI_ACT_JIRA_EMAIL", "ops@example.com")
+    monkeypatch.setenv("EU_AI_ACT_JIRA_API_TOKEN", "secret")
+    monkeypatch.setenv("EU_AI_ACT_JIRA_PROJECT_KEY", "EUAI")
+
+    call_counter = {"count": 0}
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        call_counter["count"] += 1
+        return httpx.Response(status_code=503, text="temporary outage")
+
+    transport = httpx.MockTransport(handler)
+    original_client = httpx.Client
+
+    def _fake_client(*args, **kwargs):
+        return original_client(transport=transport)
+
+    monkeypatch.setattr("eu_ai_act.exporter.httpx.Client", _fake_client)
+    monkeypatch.setattr(ExportPusher, "_sleep_before_retry", lambda _self, _attempts: None)
+
+    with pytest.raises(ExportPushError) as exc_info:
+        ExportPusher(max_retries=2).push(envelope)
+
+    push_result = exc_info.value.push_result
+    assert push_result["failed_count"] == 1
+    assert push_result["pushed_count"] == 0
+    assert "HTTP 503" in push_result["failure_reason"]
+    assert push_result["results"][0]["attempts"] == 3
+    assert call_counter["count"] == 3
+
+
+def test_push_jira_does_not_retry_non_retryable_4xx(monkeypatch):
+    """Non-retryable 4xx responses should fail immediately without retry loop."""
+    descriptor = load_system_descriptor_from_file(EXAMPLES_DIR / "medical_diagnosis.yaml")
+    report = ComplianceChecker().check(descriptor)
+    for requirement_id in list(report.findings.keys()):
+        report.findings[requirement_id].status = ComplianceStatus.NON_COMPLIANT
+    envelope = ExportGenerator().from_check(report=report, target="jira")
+
+    monkeypatch.setenv("EU_AI_ACT_JIRA_BASE_URL", "https://example.atlassian.net")
+    monkeypatch.setenv("EU_AI_ACT_JIRA_EMAIL", "ops@example.com")
+    monkeypatch.setenv("EU_AI_ACT_JIRA_API_TOKEN", "secret")
+    monkeypatch.setenv("EU_AI_ACT_JIRA_PROJECT_KEY", "EUAI")
+
+    call_counter = {"count": 0}
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        call_counter["count"] += 1
+        return httpx.Response(status_code=400, text="bad request")
+
+    transport = httpx.MockTransport(handler)
+    original_client = httpx.Client
+
+    def _fake_client(*args, **kwargs):
+        return original_client(transport=transport)
+
+    monkeypatch.setattr("eu_ai_act.exporter.httpx.Client", _fake_client)
+    monkeypatch.setattr(ExportPusher, "_sleep_before_retry", lambda _self, _attempts: None)
+
+    with pytest.raises(ExportPushError) as exc_info:
+        ExportPusher(max_retries=5).push(envelope)
+
+    push_result = exc_info.value.push_result
+    assert push_result["failed_count"] == 1
+    assert push_result["results"][0]["attempts"] == 1
+    assert "HTTP 400" in push_result["failure_reason"]
+    assert call_counter["count"] == 1
