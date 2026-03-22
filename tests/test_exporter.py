@@ -8,7 +8,7 @@ import httpx
 import pytest
 
 from eu_ai_act.checker import ComplianceChecker, ComplianceStatus
-from eu_ai_act.exporter import ExportGenerator, ExportPushError, ExportPusher
+from eu_ai_act.exporter import ExportGenerator, ExportPusher, ExportPushError
 from eu_ai_act.history import build_event
 from eu_ai_act.schema import load_system_descriptor_from_file
 

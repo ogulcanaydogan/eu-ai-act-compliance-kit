@@ -20,7 +20,7 @@ from eu_ai_act.checker import ComplianceChecker
 from eu_ai_act.checklist import ChecklistGenerator
 from eu_ai_act.classifier import RiskClassifier
 from eu_ai_act.dashboard import DashboardGenerator
-from eu_ai_act.exporter import ExportGenerator, ExportPushError, ExportPusher, ExportTarget
+from eu_ai_act.exporter import ExportGenerator, ExportPusher, ExportPushError, ExportTarget
 from eu_ai_act.gpai import (
     GPAIAssessment,
     GPAIAssessor,
