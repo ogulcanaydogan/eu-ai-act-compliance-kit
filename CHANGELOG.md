@@ -8,7 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- No changes yet.
+- New export operations CLI commands:
+  - `ai-act export batch`
+  - `ai-act export reconcile`
+
+### Changed
+- Phase 19 status synchronized as in progress across README, docs index, and roadmap snapshot.
+- Export docs expanded with batch/reconcile contracts and non-zero exit behavior.
+
+### Tests
+- Added exporter runtime coverage for:
+  - mixed valid/invalid batch processing with continue policy
+  - batch push continue-on-failure aggregation
+  - reconcile classification (`exists`, `missing`, `check_error`)
+  - reconcile retry (`5xx`) and non-retryable (`4xx`) behavior
+- Added CLI coverage for:
+  - `export batch` contract, generic push rejection, and non-zero aggregate behavior
+  - `export reconcile` contract, output file mode, and limit validation
 
 ## [0.1.8] - 2026-03-22
 

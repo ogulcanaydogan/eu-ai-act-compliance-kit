@@ -3,6 +3,7 @@
 import json
 from pathlib import Path
 
+import httpx
 import pytest
 from click.testing import CliRunner
 
@@ -406,6 +407,300 @@ class TestCLI:
         assert result.exit_code != 0
         output = result.output + getattr(result, "stderr", "")
         assert "Error loading history event" in output
+
+    def test_export_batch_json_contract_success(self, tmp_path):
+        """`export batch --json` should process all valid descriptors and return aggregate metrics."""
+        runner = CliRunner()
+        descriptor_dir = tmp_path / "descriptors"
+        descriptor_dir.mkdir(parents=True, exist_ok=True)
+        (descriptor_dir / "a.yaml").write_text(
+            (EXAMPLES_DIR / "spam_filter.yaml").read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+        (descriptor_dir / "b.yaml").write_text(
+            (EXAMPLES_DIR / "chatbot.yaml").read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+
+        result = runner.invoke(
+            main,
+            ["export", "batch", str(descriptor_dir), "--target", "generic", "--json"],
+        )
+
+        assert result.exit_code == 0
+        payload = json.loads(result.output[result.output.find("{") :])
+        assert payload["scan_root"] == str(descriptor_dir.resolve())
+        assert payload["target"] == "generic"
+        assert payload["total_files"] == 2
+        assert payload["processed_count"] == 2
+        assert payload["success_count"] == 2
+        assert payload["failure_count"] == 0
+        assert payload["invalid_count"] == 0
+        assert len(payload["results"]) == 2
+        assert all(item["status"] == "success" for item in payload["results"])
+
+    def test_export_batch_mixed_valid_invalid_returns_nonzero(self, tmp_path):
+        """Batch export should continue on invalid descriptors and return non-zero summary result."""
+        runner = CliRunner()
+        descriptor_dir = tmp_path / "descriptors"
+        descriptor_dir.mkdir(parents=True, exist_ok=True)
+        (descriptor_dir / "a_valid.yaml").write_text(
+            (EXAMPLES_DIR / "spam_filter.yaml").read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+        (descriptor_dir / "b_invalid.yaml").write_text(
+            "name: broken\nuse_cases: [\n",
+            encoding="utf-8",
+        )
+
+        result = runner.invoke(
+            main,
+            ["export", "batch", str(descriptor_dir), "--target", "generic", "--json"],
+        )
+
+        assert result.exit_code != 0
+        payload = json.loads(result.output[result.output.find("{") :])
+        assert payload["total_files"] == 2
+        assert payload["processed_count"] == 1
+        assert payload["success_count"] == 1
+        assert payload["failure_count"] == 0
+        assert payload["invalid_count"] == 1
+        statuses = [item["status"] for item in payload["results"]]
+        assert statuses == ["success", "invalid_descriptor"]
+
+    def test_export_batch_push_failure_continues_and_returns_nonzero(self, monkeypatch, tmp_path):
+        """Batch push should continue after push failures and surface non-zero aggregate status."""
+        runner = CliRunner()
+        descriptor_dir = tmp_path / "descriptors"
+        descriptor_dir.mkdir(parents=True, exist_ok=True)
+        (descriptor_dir / "a.yaml").write_text(
+            (EXAMPLES_DIR / "medical_diagnosis.yaml").read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+        (descriptor_dir / "b.yaml").write_text(
+            (EXAMPLES_DIR / "chatbot.yaml").read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+
+        call_counter = {"count": 0}
+
+        def _fake_push(_self, _envelope, dry_run=False, push_mode="create"):
+            call_counter["count"] += 1
+            if call_counter["count"] == 1:
+                raise ExportPushError(
+                    "simulated push failure",
+                    push_result={
+                        "target": "jira",
+                        "dry_run": dry_run,
+                        "push_mode": push_mode,
+                        "attempted_actionable_count": 1,
+                        "pushed_count": 0,
+                        "created_count": 0,
+                        "updated_count": 0,
+                        "failed_count": 1,
+                        "skipped_duplicate_count": 0,
+                        "failure_reason": "simulated push failure",
+                        "max_retries": 3,
+                        "retry_backoff_seconds": 1.0,
+                        "timeout_seconds": 30.0,
+                        "idempotency_enabled": True,
+                        "idempotency_path": None,
+                        "results": [],
+                    },
+                )
+            return {
+                "target": "jira",
+                "dry_run": dry_run,
+                "push_mode": push_mode,
+                "attempted_actionable_count": 1,
+                "pushed_count": 1,
+                "created_count": 1,
+                "updated_count": 0,
+                "failed_count": 0,
+                "skipped_duplicate_count": 0,
+                "failure_reason": None,
+                "max_retries": 3,
+                "retry_backoff_seconds": 1.0,
+                "timeout_seconds": 30.0,
+                "idempotency_enabled": True,
+                "idempotency_path": None,
+                "results": [],
+            }
+
+        monkeypatch.setattr(cli_module.ExportPusher, "push", _fake_push)
+
+        result = runner.invoke(
+            main,
+            [
+                "export",
+                "batch",
+                str(descriptor_dir),
+                "--target",
+                "jira",
+                "--push",
+                "--json",
+            ],
+        )
+
+        assert result.exit_code != 0
+        payload = json.loads(result.output[result.output.find("{") :])
+        assert payload["processed_count"] == 2
+        assert payload["success_count"] == 1
+        assert payload["failure_count"] == 1
+        assert payload["invalid_count"] == 0
+        assert call_counter["count"] == 2
+
+    def test_export_batch_push_generic_target_fails(self, tmp_path):
+        """Batch command should reject live push for generic target."""
+        runner = CliRunner()
+        descriptor_dir = tmp_path / "descriptors"
+        descriptor_dir.mkdir(parents=True, exist_ok=True)
+        (descriptor_dir / "a.yaml").write_text(
+            (EXAMPLES_DIR / "spam_filter.yaml").read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+
+        result = runner.invoke(
+            main,
+            [
+                "export",
+                "batch",
+                str(descriptor_dir),
+                "--target",
+                "generic",
+                "--push",
+                "--json",
+            ],
+        )
+
+        assert result.exit_code != 0
+        output = result.output + getattr(result, "stderr", "")
+        assert "Live push is not supported for target 'generic'" in output
+
+    def test_export_reconcile_json_contract_and_nonzero_on_missing(self, monkeypatch, tmp_path):
+        """Reconcile should return deterministic contract and non-zero exit on missing records."""
+        runner = CliRunner()
+        ledger_path = tmp_path / ".eu_ai_act" / "export_push_ledger.jsonl"
+        ledger_path.parent.mkdir(parents=True, exist_ok=True)
+        ledger_path.write_text(
+            "\n".join(
+                [
+                    json.dumps(
+                        {
+                            "idempotency_key": "k1",
+                            "target": "jira",
+                            "system_name": "System A",
+                            "requirement_id": "Art. 10",
+                            "remote_ref": "EUAI-1",
+                            "pushed_at": "2026-03-22T10:00:00+00:00",
+                        }
+                    ),
+                    json.dumps(
+                        {
+                            "idempotency_key": "k2",
+                            "target": "jira",
+                            "system_name": "System B",
+                            "requirement_id": "Art. 11",
+                            "remote_ref": "EUAI-404",
+                            "pushed_at": "2026-03-22T11:00:00+00:00",
+                        }
+                    ),
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        monkeypatch.setenv("EU_AI_ACT_JIRA_BASE_URL", "https://example.atlassian.net")
+        monkeypatch.setenv("EU_AI_ACT_JIRA_EMAIL", "ops@example.com")
+        monkeypatch.setenv("EU_AI_ACT_JIRA_API_TOKEN", "secret")
+
+        def handler(request):
+            if str(request.url).endswith("/EUAI-1"):
+                return httpx.Response(status_code=200, json={"key": "EUAI-1"})
+            return httpx.Response(status_code=404, text="not found")
+
+        transport = httpx.MockTransport(handler)
+        original_client = httpx.Client
+
+        def _fake_client(*args, **kwargs):
+            return original_client(transport=transport)
+
+        monkeypatch.setattr("eu_ai_act.exporter.httpx.Client", _fake_client)
+
+        result = runner.invoke(
+            main,
+            [
+                "export",
+                "reconcile",
+                "--target",
+                "jira",
+                "--idempotency-path",
+                str(ledger_path),
+                "--json",
+            ],
+        )
+
+        assert result.exit_code != 0
+        payload = json.loads(result.output[result.output.find("{") :])
+        assert payload["target"] == "jira"
+        assert payload["checked_count"] == 2
+        assert payload["exists_count"] == 1
+        assert payload["missing_count"] == 1
+        assert payload["error_count"] == 0
+
+    def test_export_reconcile_output_file(self, monkeypatch, tmp_path):
+        """Reconcile should support output file mode and preserve exit-zero success behavior."""
+        runner = CliRunner()
+        output_path = tmp_path / "reconcile.json"
+
+        monkeypatch.setattr(
+            cli_module,
+            "reconcile_export_push_records",
+            lambda **_kwargs: {
+                "generated_at": "2026-03-22T00:00:00+00:00",
+                "target": "jira",
+                "ledger_path": "/tmp/ledger.jsonl",
+                "filters": {"system_name": None, "requirement_id": None, "limit": 50},
+                "checked_count": 1,
+                "exists_count": 1,
+                "missing_count": 0,
+                "error_count": 0,
+                "results": [{"record_index": 1, "status": "exists"}],
+            },
+        )
+
+        result = runner.invoke(
+            main,
+            [
+                "export",
+                "reconcile",
+                "--target",
+                "jira",
+                "--output",
+                str(output_path),
+                "--json",
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert output_path.exists()
+        payload = json.loads(output_path.read_text(encoding="utf-8"))
+        assert payload["exists_count"] == 1
+        assert payload["missing_count"] == 0
+        assert payload["error_count"] == 0
+
+    def test_export_reconcile_invalid_limit_fails(self):
+        """Reconcile should validate non-positive limit values."""
+        runner = CliRunner()
+        result = runner.invoke(
+            main,
+            ["export", "reconcile", "--target", "jira", "--limit", "0", "--json"],
+        )
+
+        assert result.exit_code != 0
+        output = result.output + getattr(result, "stderr", "")
+        assert "--limit must be >= 1" in output
 
     def test_export_ledger_list_json_contract(self, tmp_path):
         """`export ledger list --json` should return deterministic filtered records payload."""

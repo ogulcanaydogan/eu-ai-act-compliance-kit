@@ -34,6 +34,7 @@ checks transparency and GPAI obligations, and renders audit-oriented reports.
 - Phase 16: Live export push completed (strict fail-fast, deterministic retries/backoff, optional `--push`)
 - Phase 17: Export push production hardening completed (create-only idempotency ledger + duplicate-safe push)
 - Phase 18: Export operator observability + upsert push completed (`export ledger list|stats` and lookup-first `--push-mode create|upsert`)
+- Phase 19: Export ops hardening in progress (`export batch` + `export reconcile` for multi-system operations)
 
 ## End-to-End Flow
 

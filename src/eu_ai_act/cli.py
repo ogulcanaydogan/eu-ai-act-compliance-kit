@@ -27,8 +27,11 @@ from eu_ai_act.exporter import (
     ExportPushError,
     ExportTarget,
     PushMode,
+    build_simulated_push_result,
     list_export_push_ledger_records,
+    reconcile_export_push_records,
     resolve_export_push_ledger_path,
+    run_export_batch,
     summarize_export_push_ledger,
 )
 from eu_ai_act.gpai import (
@@ -1084,25 +1087,17 @@ def export_check(
             sys.exit(1)
         payload_dict["push_result"] = push_result
     elif dry_run:
-        payload_dict["push_result"] = {
-            "target": target,
-            "dry_run": True,
-            "push_mode": cast(PushMode, push_mode),
-            "attempted_actionable_count": sum(1 for item in payload.items if item.actionable),
-            "pushed_count": 0,
-            "created_count": 0,
-            "updated_count": 0,
-            "failed_count": 0,
-            "skipped_duplicate_count": 0,
-            "failure_reason": None,
-            "max_retries": max_retries,
-            "retry_backoff_seconds": retry_backoff_seconds,
-            "timeout_seconds": timeout_seconds,
-            "idempotency_enabled": not disable_idempotency,
-            "idempotency_path": resolved_idempotency_path,
-            "results": [],
-            "message": "Dry-run requested without --push; no remote API call was made.",
-        }
+        payload_dict["push_result"] = build_simulated_push_result(
+            target=target,
+            push_mode=cast(PushMode, push_mode),
+            actionable_count=sum(1 for item in payload.items if item.actionable),
+            max_retries=max_retries,
+            retry_backoff_seconds=retry_backoff_seconds,
+            timeout_seconds=timeout_seconds,
+            idempotency_enabled=not disable_idempotency,
+            idempotency_path=resolved_idempotency_path,
+            message="Dry-run requested without --push; no remote API call was made.",
+        )
 
     payload_json = json.dumps(payload_dict, indent=2)
     _emit_export_output(payload_json, output)
@@ -1237,28 +1232,234 @@ def export_history(
             sys.exit(1)
         payload_dict["push_result"] = push_result
     elif dry_run:
-        payload_dict["push_result"] = {
-            "target": target,
-            "dry_run": True,
-            "push_mode": cast(PushMode, push_mode),
-            "attempted_actionable_count": sum(1 for item in payload.items if item.actionable),
-            "pushed_count": 0,
-            "created_count": 0,
-            "updated_count": 0,
-            "failed_count": 0,
-            "skipped_duplicate_count": 0,
-            "failure_reason": None,
-            "max_retries": max_retries,
-            "retry_backoff_seconds": retry_backoff_seconds,
-            "timeout_seconds": timeout_seconds,
-            "idempotency_enabled": not disable_idempotency,
-            "idempotency_path": resolved_idempotency_path,
-            "results": [],
-            "message": "Dry-run requested without --push; no remote API call was made.",
-        }
+        payload_dict["push_result"] = build_simulated_push_result(
+            target=target,
+            push_mode=cast(PushMode, push_mode),
+            actionable_count=sum(1 for item in payload.items if item.actionable),
+            max_retries=max_retries,
+            retry_backoff_seconds=retry_backoff_seconds,
+            timeout_seconds=timeout_seconds,
+            idempotency_enabled=not disable_idempotency,
+            idempotency_path=resolved_idempotency_path,
+            message="Dry-run requested without --push; no remote API call was made.",
+        )
 
     payload_json = json.dumps(payload_dict, indent=2)
     _emit_export_output(payload_json, output)
+
+
+@export.command("batch")
+@click.argument("descriptor_dir", type=click.Path(exists=True, file_okay=False))
+@click.option(
+    "--target",
+    type=click.Choice(["jira", "servicenow", "generic"]),
+    required=True,
+    help="Export target adapter",
+)
+@click.option("--recursive", is_flag=True, help="Recursively scan descriptor directory")
+@click.option("--output", "-o", type=click.Path(), help="Write JSON payload to a file")
+@click.option(
+    "--push",
+    is_flag=True,
+    help="Push payload to target API (supported: jira, servicenow)",
+)
+@click.option(
+    "--push-mode",
+    type=click.Choice(["create", "upsert"]),
+    default="create",
+    show_default=True,
+    help="Push strategy: create-only or upsert (lookup then update/create).",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Do not call remote APIs; return simulated push summary.",
+)
+@click.option(
+    "--max-retries",
+    type=int,
+    default=3,
+    show_default=True,
+    help="Maximum retry attempts for retryable push failures (429/5xx/transport).",
+)
+@click.option(
+    "--retry-backoff-seconds",
+    type=float,
+    default=1.0,
+    show_default=True,
+    help="Base backoff in seconds for exponential retry delay.",
+)
+@click.option(
+    "--timeout-seconds",
+    type=float,
+    default=30.0,
+    show_default=True,
+    help="HTTP request timeout in seconds for live push calls.",
+)
+@click.option(
+    "--idempotency-path",
+    type=click.Path(),
+    help="Override export push idempotency ledger path.",
+)
+@click.option(
+    "--disable-idempotency",
+    is_flag=True,
+    help="Disable duplicate-skip idempotency checks for live push.",
+)
+@click.option("--json", "output_json", is_flag=True, help="Output JSON payload (default behavior)")
+@click.pass_context
+def export_batch(
+    ctx: click.Context,
+    descriptor_dir: str,
+    target: str,
+    recursive: bool,
+    output: str | None,
+    push: bool,
+    push_mode: str,
+    dry_run: bool,
+    max_retries: int,
+    retry_backoff_seconds: float,
+    timeout_seconds: float,
+    idempotency_path: str | None,
+    disable_idempotency: bool,
+    output_json: bool,
+) -> None:
+    """Export payloads in batch from a descriptor directory."""
+    _ = output_json
+
+    if max_retries < 0:
+        console.print("[red]Error: --max-retries must be >= 0[/red]")
+        sys.exit(1)
+    if retry_backoff_seconds <= 0:
+        console.print("[red]Error: --retry-backoff-seconds must be > 0[/red]")
+        sys.exit(1)
+    if timeout_seconds <= 0:
+        console.print("[red]Error: --timeout-seconds must be > 0[/red]")
+        sys.exit(1)
+    if not push and ctx.get_parameter_source("push_mode") == ParameterSource.COMMANDLINE:
+        console.print("[red]Error: --push-mode can only be used together with --push[/red]")
+        sys.exit(1)
+    if push and target == "generic":
+        console.print("[red]Error: Live push is not supported for target 'generic'[/red]")
+        sys.exit(1)
+
+    try:
+        payload = run_export_batch(
+            descriptor_dir=descriptor_dir,
+            target=cast(ExportTarget, target),
+            recursive=recursive,
+            push=push,
+            push_mode=cast(PushMode, push_mode),
+            dry_run=dry_run,
+            max_retries=max_retries,
+            retry_backoff_seconds=retry_backoff_seconds,
+            timeout_seconds=timeout_seconds,
+            idempotency_path=idempotency_path,
+            idempotency_enabled=not disable_idempotency,
+        )
+    except Exception as e:
+        console.print(f"[red]Error running export batch: {e}[/red]")
+        sys.exit(1)
+
+    payload_json = json.dumps(payload, indent=2)
+    _emit_export_output(payload_json, output)
+
+    if (
+        payload["invalid_count"] > 0
+        or payload["failure_count"] > 0
+        or payload["success_count"] == 0
+    ):
+        sys.exit(1)
+
+
+@export.command("reconcile")
+@click.option(
+    "--target",
+    type=click.Choice(["jira", "servicenow"]),
+    required=True,
+    help="Export target adapter",
+)
+@click.option("--idempotency-path", type=click.Path(), help="Override ledger path")
+@click.option("--system", "system_name", help="Filter by system name")
+@click.option("--requirement-id", help="Filter by requirement id")
+@click.option(
+    "--limit",
+    type=int,
+    default=50,
+    show_default=True,
+    help="Maximum number of ledger records to reconcile",
+)
+@click.option(
+    "--max-retries",
+    type=int,
+    default=3,
+    show_default=True,
+    help="Maximum retry attempts for retryable reconcile checks (429/5xx/transport).",
+)
+@click.option(
+    "--retry-backoff-seconds",
+    type=float,
+    default=1.0,
+    show_default=True,
+    help="Base backoff in seconds for exponential retry delay.",
+)
+@click.option(
+    "--timeout-seconds",
+    type=float,
+    default=30.0,
+    show_default=True,
+    help="HTTP request timeout in seconds for reconcile calls.",
+)
+@click.option("--output", "-o", type=click.Path(), help="Write JSON payload to a file")
+@click.option("--json", "output_json", is_flag=True, help="Output JSON payload (default behavior)")
+def export_reconcile(
+    target: str,
+    idempotency_path: str | None,
+    system_name: str | None,
+    requirement_id: str | None,
+    limit: int,
+    max_retries: int,
+    retry_backoff_seconds: float,
+    timeout_seconds: float,
+    output: str | None,
+    output_json: bool,
+) -> None:
+    """Reconcile ledger push records against remote target status."""
+    _ = output_json
+
+    if limit < 1:
+        console.print("[red]Error: --limit must be >= 1[/red]")
+        sys.exit(1)
+    if max_retries < 0:
+        console.print("[red]Error: --max-retries must be >= 0[/red]")
+        sys.exit(1)
+    if retry_backoff_seconds <= 0:
+        console.print("[red]Error: --retry-backoff-seconds must be > 0[/red]")
+        sys.exit(1)
+    if timeout_seconds <= 0:
+        console.print("[red]Error: --timeout-seconds must be > 0[/red]")
+        sys.exit(1)
+
+    try:
+        payload = reconcile_export_push_records(
+            target=cast(ExportTarget, target),
+            idempotency_path=idempotency_path,
+            system_name=system_name,
+            requirement_id=requirement_id,
+            limit=limit,
+            max_retries=max_retries,
+            retry_backoff_seconds=retry_backoff_seconds,
+            timeout_seconds=timeout_seconds,
+        )
+    except Exception as e:
+        console.print(f"[red]Error running export reconcile: {e}[/red]")
+        sys.exit(1)
+
+    payload_json = json.dumps(payload, indent=2)
+    _emit_export_output(payload_json, output)
+
+    if payload["missing_count"] > 0 or payload["error_count"] > 0:
+        sys.exit(1)
 
 
 @export.group("ledger")
