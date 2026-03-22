@@ -344,6 +344,7 @@ class TestCLI:
             assert key in payload
         assert payload["source_type"] == "check"
         assert payload["target"] == "jira"
+        assert payload["descriptor_path"].endswith("examples/medical_diagnosis.yaml")
         assert payload["adapter_payload"]["format"] == "jira/issues/v1"
 
     def test_export_history_json_contract(self):

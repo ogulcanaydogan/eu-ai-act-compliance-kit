@@ -1048,6 +1048,7 @@ def export_check(
         payload = exporter.from_check(
             report=compliance_report,
             target=cast(ExportTarget, target),
+            descriptor_path=str(Path(system_yaml).resolve()),
         )
 
     payload_dict = payload.to_dict()

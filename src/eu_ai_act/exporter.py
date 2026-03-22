@@ -206,7 +206,13 @@ class ExportGenerator:
 
     schema_version = "1.0"
 
-    def from_check(self, *, report: ComplianceReport, target: ExportTarget) -> ExportEnvelope:
+    def from_check(
+        self,
+        *,
+        report: ComplianceReport,
+        target: ExportTarget,
+        descriptor_path: str | None = None,
+    ) -> ExportEnvelope:
         items = [
             self._item_from_check_finding(requirement_id, finding)
             for requirement_id, finding in sorted(report.findings.items(), key=lambda row: row[0])
@@ -221,6 +227,7 @@ class ExportGenerator:
             risk_tier=report.risk_tier.value,
             summary=_summary_from_compliance(report),
             items=items,
+            descriptor_path=descriptor_path,
         )
         envelope.adapter_payload = self._build_adapter_payload(envelope)
         return envelope
@@ -550,28 +557,28 @@ class ExportPusher:
                     response = attempt_result["response"]
                     pushed_count += 1
                     response_json = self._safe_json(response)
-                    results.append(
-                        {
-                            "status": "success",
-                            "http_status": response.status_code,
-                            "attempts": attempt_result["attempts"],
-                            "retries_used": max(attempt_result["attempts"] - 1, 0),
-                            "requirement_id": actionable_item.requirement_id,
-                            "idempotency_key": idempotency_key,
-                            "issue_key": response_json.get("key"),
-                        }
-                    )
+                    success_entry = {
+                        "status": "success",
+                        "http_status": response.status_code,
+                        "attempts": attempt_result["attempts"],
+                        "retries_used": max(attempt_result["attempts"] - 1, 0),
+                        "requirement_id": actionable_item.requirement_id,
+                        "idempotency_key": idempotency_key,
+                        "issue_key": response_json.get("key"),
+                    }
                     if self.idempotency_enabled:
-                        self._append_ledger_record(
-                            self._build_ledger_record(
-                                envelope,
-                                actionable_item,
-                                idempotency_key=idempotency_key,
-                                remote_ref=response_json.get("key"),
-                                http_status=response.status_code,
-                            )
+                        ledger_error = self._record_idempotency_success(
+                            envelope=envelope,
+                            item=actionable_item,
+                            existing_idempotency_keys=existing_idempotency_keys,
+                            idempotency_key=idempotency_key,
+                            remote_ref=response_json.get("key"),
+                            http_status=response.status_code,
                         )
-                        existing_idempotency_keys.add(idempotency_key)
+                        success_entry["ledger_recorded"] = ledger_error is None
+                        if ledger_error is not None:
+                            success_entry["ledger_error"] = ledger_error
+                    results.append(success_entry)
                     continue
 
                 failure_reason = attempt_result["failure_reason"]
@@ -704,28 +711,28 @@ class ExportPusher:
                     response_json = self._safe_json(response)
                     result_obj = response_json.get("result", {})
                     sys_id = result_obj.get("sys_id") if isinstance(result_obj, dict) else None
-                    results.append(
-                        {
-                            "status": "success",
-                            "http_status": response.status_code,
-                            "attempts": attempt_result["attempts"],
-                            "retries_used": max(attempt_result["attempts"] - 1, 0),
-                            "requirement_id": actionable_item.requirement_id,
-                            "idempotency_key": idempotency_key,
-                            "sys_id": sys_id,
-                        }
-                    )
+                    success_entry = {
+                        "status": "success",
+                        "http_status": response.status_code,
+                        "attempts": attempt_result["attempts"],
+                        "retries_used": max(attempt_result["attempts"] - 1, 0),
+                        "requirement_id": actionable_item.requirement_id,
+                        "idempotency_key": idempotency_key,
+                        "sys_id": sys_id,
+                    }
                     if self.idempotency_enabled:
-                        self._append_ledger_record(
-                            self._build_ledger_record(
-                                envelope,
-                                actionable_item,
-                                idempotency_key=idempotency_key,
-                                remote_ref=sys_id,
-                                http_status=response.status_code,
-                            )
+                        ledger_error = self._record_idempotency_success(
+                            envelope=envelope,
+                            item=actionable_item,
+                            existing_idempotency_keys=existing_idempotency_keys,
+                            idempotency_key=idempotency_key,
+                            remote_ref=sys_id,
+                            http_status=response.status_code,
                         )
-                        existing_idempotency_keys.add(idempotency_key)
+                        success_entry["ledger_recorded"] = ledger_error is None
+                        if ledger_error is not None:
+                            success_entry["ledger_error"] = ledger_error
+                    results.append(success_entry)
                     continue
 
                 failure_reason = attempt_result["failure_reason"]
@@ -906,6 +913,37 @@ class ExportPusher:
             "http_status": http_status,
             "pushed_at": _utc_now_iso(),
         }
+
+    def _record_idempotency_success(
+        self,
+        *,
+        envelope: ExportEnvelope,
+        item: ExportItem,
+        existing_idempotency_keys: set[str],
+        idempotency_key: str,
+        remote_ref: str | None,
+        http_status: int,
+    ) -> str | None:
+        """Persist idempotency record after successful remote create.
+
+        Remote creates are authoritative: if local ledger write fails, we keep command success
+        and return a warning string instead of converting the whole push into a failure.
+        """
+        try:
+            self._append_ledger_record(
+                self._build_ledger_record(
+                    envelope,
+                    item,
+                    idempotency_key=idempotency_key,
+                    remote_ref=remote_ref,
+                    http_status=http_status,
+                )
+            )
+            existing_idempotency_keys.add(idempotency_key)
+            return None
+        except Exception as exc:
+            existing_idempotency_keys.add(idempotency_key)
+            return f"Failed to write idempotency ledger after successful remote create: {exc}"
 
     def _append_ledger_record(self, record: dict[str, Any]) -> None:
         if not self.idempotency_enabled or self.idempotency_path is None:

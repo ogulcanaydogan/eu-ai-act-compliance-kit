@@ -48,6 +48,24 @@ def test_from_check_generic_contract_and_status_actionability():
     assert len(adapter_payload["records"]) == len(items)
 
 
+def test_from_check_can_include_descriptor_path_metadata():
+    """Check-source export should preserve descriptor identity when provided."""
+    descriptor = load_system_descriptor_from_file(EXAMPLES_DIR / "medical_diagnosis.yaml")
+    report = ComplianceChecker().check(descriptor)
+
+    payload = (
+        ExportGenerator()
+        .from_check(
+            report=report,
+            target="generic",
+            descriptor_path="/tmp/medical_diagnosis.yaml",
+        )
+        .to_dict()
+    )
+
+    assert payload["descriptor_path"] == "/tmp/medical_diagnosis.yaml"
+
+
 def test_from_check_jira_and_servicenow_adapters_only_include_actionable_items():
     """Jira and ServiceNow payloads should generate records only for actionable items."""
     descriptor = load_system_descriptor_from_file(EXAMPLES_DIR / "medical_diagnosis.yaml")
@@ -456,6 +474,97 @@ def test_push_jira_duplicate_items_are_skipped_via_idempotency_ledger(monkeypatc
     assert call_counter["count"] == actionable_count
     assert ledger_path.exists()
     assert len(ledger_path.read_text(encoding="utf-8").strip().splitlines()) == actionable_count
+
+
+def test_push_jira_check_source_idempotency_uses_descriptor_identity(monkeypatch, tmp_path):
+    """Different descriptor paths must produce different idempotency keys for check exports."""
+    descriptor = load_system_descriptor_from_file(EXAMPLES_DIR / "medical_diagnosis.yaml")
+    report = ComplianceChecker().check(descriptor)
+    for requirement_id in list(report.findings.keys()):
+        report.findings[requirement_id].status = ComplianceStatus.NON_COMPLIANT
+
+    envelope_a = ExportGenerator().from_check(
+        report=report,
+        target="jira",
+        descriptor_path="/tmp/system_a.yaml",
+    )
+    envelope_b = ExportGenerator().from_check(
+        report=report,
+        target="jira",
+        descriptor_path="/tmp/system_b.yaml",
+    )
+
+    monkeypatch.setenv("EU_AI_ACT_JIRA_BASE_URL", "https://example.atlassian.net")
+    monkeypatch.setenv("EU_AI_ACT_JIRA_EMAIL", "ops@example.com")
+    monkeypatch.setenv("EU_AI_ACT_JIRA_API_TOKEN", "secret")
+    monkeypatch.setenv("EU_AI_ACT_JIRA_PROJECT_KEY", "EUAI")
+
+    call_counter = {"count": 0}
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        call_counter["count"] += 1
+        return httpx.Response(status_code=201, json={"key": f"EUAI-{call_counter['count']}"})
+
+    transport = httpx.MockTransport(handler)
+    original_client = httpx.Client
+
+    def _fake_client(*args, **kwargs):
+        return original_client(transport=transport)
+
+    monkeypatch.setattr("eu_ai_act.exporter.httpx.Client", _fake_client)
+
+    ledger_path = tmp_path / "export_push_ledger.jsonl"
+    pusher = ExportPusher(idempotency_path=ledger_path, max_retries=0)
+
+    first = pusher.push(envelope_a)
+    second = pusher.push(envelope_b)
+
+    actionable_count = len(envelope_a.adapter_payload["issues"])
+    assert first["pushed_count"] == actionable_count
+    assert second["pushed_count"] == actionable_count
+    assert second["skipped_duplicate_count"] == 0
+    assert call_counter["count"] == actionable_count * 2
+
+
+def test_push_jira_success_with_ledger_write_error_keeps_success(monkeypatch, tmp_path):
+    """Ledger write failures after remote success should not flip the command to failed."""
+    descriptor = load_system_descriptor_from_file(EXAMPLES_DIR / "medical_diagnosis.yaml")
+    report = ComplianceChecker().check(descriptor)
+    for requirement_id in list(report.findings.keys()):
+        report.findings[requirement_id].status = ComplianceStatus.NON_COMPLIANT
+    envelope = ExportGenerator().from_check(report=report, target="jira")
+
+    monkeypatch.setenv("EU_AI_ACT_JIRA_BASE_URL", "https://example.atlassian.net")
+    monkeypatch.setenv("EU_AI_ACT_JIRA_EMAIL", "ops@example.com")
+    monkeypatch.setenv("EU_AI_ACT_JIRA_API_TOKEN", "secret")
+    monkeypatch.setenv("EU_AI_ACT_JIRA_PROJECT_KEY", "EUAI")
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(status_code=201, json={"key": "EUAI-100"})
+
+    transport = httpx.MockTransport(handler)
+    original_client = httpx.Client
+
+    def _fake_client(*args, **kwargs):
+        return original_client(transport=transport)
+
+    monkeypatch.setattr("eu_ai_act.exporter.httpx.Client", _fake_client)
+
+    pusher = ExportPusher(idempotency_path=tmp_path / "ledger.jsonl", max_retries=0)
+    monkeypatch.setattr(
+        pusher,
+        "_append_ledger_record",
+        lambda _record: (_ for _ in ()).throw(OSError("read-only filesystem")),
+    )
+
+    result = pusher.push(envelope)
+
+    actionable_count = len(envelope.adapter_payload["issues"])
+    assert result["pushed_count"] == actionable_count
+    assert result["failed_count"] == 0
+    assert all(item["status"] == "success" for item in result["results"])
+    assert all(item["ledger_recorded"] is False for item in result["results"])
+    assert all("read-only filesystem" in item["ledger_error"] for item in result["results"])
 
 
 def test_push_dry_run_does_not_write_idempotency_ledger(tmp_path):
