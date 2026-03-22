@@ -990,7 +990,9 @@ class ExportPusher:
                     if operation == "created":
                         created_count += 1
                         result_obj = response_json.get("result", {})
-                        parsed_sys_id = result_obj.get("sys_id") if isinstance(result_obj, dict) else None
+                        parsed_sys_id = (
+                            result_obj.get("sys_id") if isinstance(result_obj, dict) else None
+                        )
                         if isinstance(parsed_sys_id, str) and parsed_sys_id:
                             sys_id = parsed_sys_id
                     else:
