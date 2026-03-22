@@ -31,7 +31,7 @@ checks transparency and GPAI obligations, and renders audit-oriented reports.
 - Phase 13: Adoption hardening complete (quickstart reliability + onboarding)
 - Phase 14: External export core completed (payload-first, no live API push)
 - Phase 15: CI/release runtime hardening complete (action runtime upgrades + security gate stabilization)
-- Phase 16: Live export push kickoff in progress (optional `--push`, safe `--dry-run`)
+- Phase 16: Live export push completed (strict fail-fast, deterministic retries/backoff, optional `--push`)
 
 ## End-to-End Flow
 

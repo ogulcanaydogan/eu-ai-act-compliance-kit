@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Literal
@@ -362,8 +363,23 @@ def _trim_body_for_error(body: str, *, max_len: int = 300) -> str:
 class ExportPusher:
     """Optional live push helper for target systems."""
 
-    def __init__(self, *, timeout_seconds: float = 30.0):
+    def __init__(
+        self,
+        *,
+        timeout_seconds: float = 30.0,
+        max_retries: int = 3,
+        retry_backoff_seconds: float = 1.0,
+    ):
+        if timeout_seconds <= 0:
+            raise ValueError("timeout_seconds must be > 0.")
+        if max_retries < 0:
+            raise ValueError("max_retries must be >= 0.")
+        if retry_backoff_seconds <= 0:
+            raise ValueError("retry_backoff_seconds must be > 0.")
+
         self.timeout_seconds = timeout_seconds
+        self.max_retries = max_retries
+        self.retry_backoff_seconds = retry_backoff_seconds
 
     def push(self, envelope: ExportEnvelope, *, dry_run: bool = False) -> dict[str, Any]:
         if envelope.target == "generic":
@@ -381,6 +397,10 @@ class ExportPusher:
                 "attempted_actionable_count": actionable_count,
                 "pushed_count": 0,
                 "failed_count": 0,
+                "failure_reason": None,
+                "max_retries": self.max_retries,
+                "retry_backoff_seconds": self.retry_backoff_seconds,
+                "timeout_seconds": self.timeout_seconds,
                 "results": [],
             }
 
@@ -407,6 +427,10 @@ class ExportPusher:
                 "attempted_actionable_count": actionable_count,
                 "pushed_count": 0,
                 "failed_count": 0,
+                "failure_reason": None,
+                "max_retries": self.max_retries,
+                "retry_backoff_seconds": self.retry_backoff_seconds,
+                "timeout_seconds": self.timeout_seconds,
                 "results": [],
             }
 
@@ -417,11 +441,10 @@ class ExportPusher:
         endpoint = f"{base_url}/rest/api/3/issue"
 
         pushed_count = 0
-        failed_count = 0
         results: list[dict[str, Any]] = []
 
         with httpx.Client(timeout=self.timeout_seconds, auth=(user_email, api_token)) as client:
-            for issue in issues:
+            for issue_index, issue in enumerate(issues, start=1):
                 if not isinstance(issue, dict):
                     raise ValueError("Invalid Jira issue payload item: expected object.")
                 fields = issue.get("fields")
@@ -431,46 +454,66 @@ class ExportPusher:
                 fields.setdefault("project", {"key": project_key})
                 payload = {"fields": fields}
 
-                try:
-                    response = client.post(endpoint, json=payload)
-                except httpx.HTTPError as exc:
-                    raise RuntimeError(
-                        f"Jira push failed with HTTP transport error: {exc}"
-                    ) from exc
+                attempt_result = self._post_with_retry(
+                    client=client,
+                    endpoint=endpoint,
+                    payload=payload,
+                    target_name="jira",
+                )
 
-                if response.status_code in {200, 201}:
+                if attempt_result["ok"]:
+                    response = attempt_result["response"]
                     pushed_count += 1
                     response_json = self._safe_json(response)
                     results.append(
                         {
                             "status": "success",
                             "http_status": response.status_code,
+                            "attempts": attempt_result["attempts"],
+                            "retries_used": max(attempt_result["attempts"] - 1, 0),
                             "issue_key": response_json.get("key"),
                         }
                     )
                     continue
 
-                failed_count += 1
+                failure_reason = attempt_result["failure_reason"]
                 results.append(
                     {
                         "status": "failed",
-                        "http_status": response.status_code,
-                        "error": _trim_body_for_error(response.text),
+                        "http_status": attempt_result["http_status"],
+                        "attempts": attempt_result["attempts"],
+                        "retries_used": max(attempt_result["attempts"] - 1, 0),
+                        "failure_reason": failure_reason,
+                        "item_index": issue_index,
                     }
                 )
-
-        if failed_count > 0:
-            raise RuntimeError(
-                f"Jira push failed for {failed_count} item(s). "
-                f"Successful: {pushed_count}, Failed: {failed_count}."
-            )
+                push_result = {
+                    "target": "jira",
+                    "dry_run": False,
+                    "attempted_actionable_count": actionable_count,
+                    "pushed_count": pushed_count,
+                    "failed_count": 1,
+                    "failure_reason": failure_reason,
+                    "max_retries": self.max_retries,
+                    "retry_backoff_seconds": self.retry_backoff_seconds,
+                    "timeout_seconds": self.timeout_seconds,
+                    "results": results,
+                }
+                raise ExportPushError(
+                    f"Jira push aborted on item {issue_index}: {failure_reason}",
+                    push_result=push_result,
+                )
 
         return {
             "target": "jira",
             "dry_run": False,
             "attempted_actionable_count": actionable_count,
             "pushed_count": pushed_count,
-            "failed_count": failed_count,
+            "failed_count": 0,
+            "failure_reason": None,
+            "max_retries": self.max_retries,
+            "retry_backoff_seconds": self.retry_backoff_seconds,
+            "timeout_seconds": self.timeout_seconds,
             "results": results,
         }
 
@@ -488,6 +531,10 @@ class ExportPusher:
                 "attempted_actionable_count": actionable_count,
                 "pushed_count": 0,
                 "failed_count": 0,
+                "failure_reason": None,
+                "max_retries": self.max_retries,
+                "retry_backoff_seconds": self.retry_backoff_seconds,
+                "timeout_seconds": self.timeout_seconds,
                 "results": [],
             }
 
@@ -500,21 +547,21 @@ class ExportPusher:
         endpoint = f"{instance_url}/api/now/table/{table_name}"
 
         pushed_count = 0
-        failed_count = 0
         results: list[dict[str, Any]] = []
 
         with httpx.Client(timeout=self.timeout_seconds, auth=(username, password)) as client:
-            for record in records:
+            for record_index, record in enumerate(records, start=1):
                 if not isinstance(record, dict):
                     raise ValueError("Invalid ServiceNow record payload item: expected object.")
-                try:
-                    response = client.post(endpoint, json=record)
-                except httpx.HTTPError as exc:
-                    raise RuntimeError(
-                        f"ServiceNow push failed with HTTP transport error: {exc}"
-                    ) from exc
+                attempt_result = self._post_with_retry(
+                    client=client,
+                    endpoint=endpoint,
+                    payload=record,
+                    target_name="servicenow",
+                )
 
-                if response.status_code in {200, 201}:
+                if attempt_result["ok"]:
+                    response = attempt_result["response"]
                     pushed_count += 1
                     response_json = self._safe_json(response)
                     result_obj = response_json.get("result", {})
@@ -523,34 +570,110 @@ class ExportPusher:
                         {
                             "status": "success",
                             "http_status": response.status_code,
+                            "attempts": attempt_result["attempts"],
+                            "retries_used": max(attempt_result["attempts"] - 1, 0),
                             "sys_id": sys_id,
                         }
                     )
                     continue
 
-                failed_count += 1
+                failure_reason = attempt_result["failure_reason"]
                 results.append(
                     {
                         "status": "failed",
-                        "http_status": response.status_code,
-                        "error": _trim_body_for_error(response.text),
+                        "http_status": attempt_result["http_status"],
+                        "attempts": attempt_result["attempts"],
+                        "retries_used": max(attempt_result["attempts"] - 1, 0),
+                        "failure_reason": failure_reason,
+                        "item_index": record_index,
                     }
                 )
-
-        if failed_count > 0:
-            raise RuntimeError(
-                f"ServiceNow push failed for {failed_count} item(s). "
-                f"Successful: {pushed_count}, Failed: {failed_count}."
-            )
+                push_result = {
+                    "target": "servicenow",
+                    "dry_run": False,
+                    "attempted_actionable_count": actionable_count,
+                    "pushed_count": pushed_count,
+                    "failed_count": 1,
+                    "failure_reason": failure_reason,
+                    "max_retries": self.max_retries,
+                    "retry_backoff_seconds": self.retry_backoff_seconds,
+                    "timeout_seconds": self.timeout_seconds,
+                    "results": results,
+                }
+                raise ExportPushError(
+                    f"ServiceNow push aborted on item {record_index}: {failure_reason}",
+                    push_result=push_result,
+                )
 
         return {
             "target": "servicenow",
             "dry_run": False,
             "attempted_actionable_count": actionable_count,
             "pushed_count": pushed_count,
-            "failed_count": failed_count,
+            "failed_count": 0,
+            "failure_reason": None,
+            "max_retries": self.max_retries,
+            "retry_backoff_seconds": self.retry_backoff_seconds,
+            "timeout_seconds": self.timeout_seconds,
             "results": results,
         }
+
+    def _post_with_retry(
+        self,
+        *,
+        client: httpx.Client,
+        endpoint: str,
+        payload: dict[str, Any],
+        target_name: str,
+    ) -> dict[str, Any]:
+        attempts = 0
+        while attempts <= self.max_retries:
+            attempts += 1
+            try:
+                response = client.post(endpoint, json=payload)
+            except httpx.HTTPError as exc:
+                failure_reason = f"HTTP transport error: {exc}"
+                if attempts <= self.max_retries:
+                    self._sleep_before_retry(attempts)
+                    continue
+                return {
+                    "ok": False,
+                    "attempts": attempts,
+                    "http_status": None,
+                    "failure_reason": failure_reason,
+                }
+
+            if response.status_code in {200, 201}:
+                return {"ok": True, "attempts": attempts, "response": response}
+
+            if self._is_retryable_status(response.status_code) and attempts <= self.max_retries:
+                self._sleep_before_retry(attempts)
+                continue
+
+            failure_reason = (
+                f"{target_name} API returned HTTP {response.status_code}: "
+                f"{_trim_body_for_error(response.text)}"
+            )
+            return {
+                "ok": False,
+                "attempts": attempts,
+                "http_status": response.status_code,
+                "failure_reason": failure_reason,
+            }
+
+        return {
+            "ok": False,
+            "attempts": attempts,
+            "http_status": None,
+            "failure_reason": f"{target_name} push failed for unknown retry loop reason.",
+        }
+
+    def _sleep_before_retry(self, attempts: int) -> None:
+        delay_seconds = self.retry_backoff_seconds * (2 ** (attempts - 1))
+        time.sleep(delay_seconds)
+
+    def _is_retryable_status(self, status_code: int) -> bool:
+        return status_code == 429 or 500 <= status_code <= 599
 
     def _safe_json(self, response: httpx.Response) -> dict[str, Any]:
         try:
@@ -560,3 +683,11 @@ class ExportPusher:
         except ValueError:
             pass
         return {}
+
+
+class ExportPushError(RuntimeError):
+    """Raised when live push fails in strict fail-fast mode."""
+
+    def __init__(self, message: str, *, push_result: dict[str, Any]):
+        super().__init__(message)
+        self.push_result = push_result
