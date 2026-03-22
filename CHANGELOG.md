@@ -8,10 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- No changes yet.
+- New export ledger CLI surface:
+  - `ai-act export ledger list`
+  - `ai-act export ledger stats`
+- Exporter-side ledger query helpers for deterministic list filtering and aggregate summaries.
 
 ### Changed
 - Roadmap/docs/readme status synchronized to mark Phase 17 as completed after `v0.1.6`.
+- Roadmap/docs/readme status synchronized to start Phase 18 as in progress (operator observability).
+
+### Tests
+- Added unit coverage for ledger list/summary helpers, including invalid JSON error handling.
+- Added CLI coverage for `export ledger list|stats` JSON contracts and invalid `--limit` handling.
 
 ## [0.1.6] - 2026-03-22
 

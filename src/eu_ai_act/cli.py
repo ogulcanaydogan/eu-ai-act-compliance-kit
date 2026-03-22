@@ -25,7 +25,9 @@ from eu_ai_act.exporter import (
     ExportPusher,
     ExportPushError,
     ExportTarget,
+    list_export_push_ledger_records,
     resolve_export_push_ledger_path,
+    summarize_export_push_ledger,
 )
 from eu_ai_act.gpai import (
     GPAIAssessment,
@@ -1215,6 +1217,144 @@ def export_history(
 
     payload_json = json.dumps(payload_dict, indent=2)
     _emit_export_output(payload_json, output)
+
+
+@export.group("ledger")
+def export_ledger() -> None:
+    """Inspect persisted export push idempotency ledger records."""
+    pass
+
+
+@export_ledger.command("list")
+@click.option("--idempotency-path", type=click.Path(), help="Override ledger path")
+@click.option(
+    "--target",
+    type=click.Choice(["jira", "servicenow", "generic"]),
+    help="Filter by target adapter",
+)
+@click.option("--system", "system_name", help="Filter by system name")
+@click.option("--requirement-id", help="Filter by requirement id")
+@click.option(
+    "--limit",
+    type=int,
+    default=25,
+    show_default=True,
+    help="Maximum number of records to return",
+)
+@click.option("--json", "output_json", is_flag=True, help="Output JSON payload")
+def export_ledger_list(
+    idempotency_path: str | None,
+    target: str | None,
+    system_name: str | None,
+    requirement_id: str | None,
+    limit: int,
+    output_json: bool,
+) -> None:
+    """List export push ledger records."""
+    if limit < 1:
+        console.print("[red]Error: --limit must be >= 1[/red]")
+        sys.exit(1)
+
+    try:
+        ledger_path, records = list_export_push_ledger_records(
+            idempotency_path=idempotency_path,
+            target=cast(ExportTarget | None, target),
+            system_name=system_name,
+            requirement_id=requirement_id,
+            limit=limit,
+        )
+    except Exception as e:
+        console.print(f"[red]Error reading export ledger: {e}[/red]")
+        sys.exit(1)
+
+    payload = {
+        "path": str(ledger_path),
+        "count": len(records),
+        "filters": {
+            "target": target,
+            "system_name": system_name,
+            "requirement_id": requirement_id,
+            "limit": limit,
+        },
+        "records": records,
+    }
+
+    if output_json:
+        click.echo(json.dumps(payload, indent=2))
+        return
+
+    console.print(
+        Panel(
+            (f"[bold]Ledger:[/bold] {payload['path']}\n" f"[bold]Count:[/bold] {payload['count']}"),
+            title="Export Ledger Records",
+            border_style="blue",
+        )
+    )
+    if not records:
+        console.print("[yellow]No records found for the selected filters.[/yellow]")
+        return
+
+    table = Table(title="Latest Export Ledger Records")
+    table.add_column("Pushed At")
+    table.add_column("Target")
+    table.add_column("System")
+    table.add_column("Requirement")
+    table.add_column("Status")
+    table.add_column("Remote Ref")
+    for record in records:
+        table.add_row(
+            str(record.get("pushed_at") or ""),
+            str(record.get("target") or ""),
+            str(record.get("system_name") or ""),
+            str(record.get("requirement_id") or ""),
+            str(record.get("status") or ""),
+            str(record.get("remote_ref") or ""),
+        )
+    console.print(table)
+
+
+@export_ledger.command("stats")
+@click.option("--idempotency-path", type=click.Path(), help="Override ledger path")
+@click.option("--json", "output_json", is_flag=True, help="Output JSON payload")
+def export_ledger_stats(idempotency_path: str | None, output_json: bool) -> None:
+    """Show aggregate statistics for export push ledger."""
+    try:
+        summary = summarize_export_push_ledger(idempotency_path=idempotency_path)
+    except Exception as e:
+        console.print(f"[red]Error reading export ledger stats: {e}[/red]")
+        sys.exit(1)
+
+    if output_json:
+        click.echo(json.dumps(summary, indent=2))
+        return
+
+    console.print(
+        Panel(
+            (
+                f"[bold]Ledger:[/bold] {summary['path']}\n"
+                f"[bold]Total Records:[/bold] {summary['total_records']}\n"
+                f"[bold]Unique Keys:[/bold] {summary['unique_idempotency_key_count']}\n"
+                f"[bold]First Push:[/bold] {summary['first_pushed_at']}\n"
+                f"[bold]Last Push:[/bold] {summary['last_pushed_at']}"
+            ),
+            title="Export Ledger Stats",
+            border_style="green",
+        )
+    )
+
+    target_table = Table(title="Target Distribution")
+    target_table.add_column("Target")
+    target_table.add_column("Count", justify="right")
+    for key, value in summary["target_distribution"].items():
+        target_table.add_row(key, str(value))
+    console.print(target_table)
+
+    status_table = Table(title="Status Distribution")
+    status_table.add_column("Status")
+    status_table.add_column("Count", justify="right")
+    for key, value in summary["status_distribution"].items():
+        status_table.add_row(key, str(value))
+    console.print(status_table)
 
 
 def _emit_export_output(payload_json: str, output: str | None) -> None:

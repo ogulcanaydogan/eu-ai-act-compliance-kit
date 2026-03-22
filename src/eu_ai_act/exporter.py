@@ -69,6 +69,108 @@ def resolve_export_push_ledger_path(
     return base_dir / ".eu_ai_act" / "export_push_ledger.jsonl"
 
 
+def _read_export_push_ledger_records(ledger_path: Path) -> list[dict[str, Any]]:
+    if not ledger_path.exists():
+        return []
+
+    records: list[dict[str, Any]] = []
+    with ledger_path.open("r", encoding="utf-8") as handle:
+        for line_number, line in enumerate(handle, start=1):
+            payload_line = line.strip()
+            if not payload_line:
+                continue
+            try:
+                record = json.loads(payload_line)
+            except json.JSONDecodeError as exc:
+                raise ValueError(
+                    f"Invalid JSON in export push ledger at line {line_number}: {exc.msg}"
+                ) from exc
+            if not isinstance(record, dict):
+                raise ValueError(
+                    f"Invalid export push ledger record at line {line_number}: expected object."
+                )
+            records.append(record)
+    return records
+
+
+def list_export_push_ledger_records(
+    *,
+    idempotency_path: str | Path | None = None,
+    cwd: str | Path | None = None,
+    target: ExportTarget | None = None,
+    system_name: str | None = None,
+    requirement_id: str | None = None,
+    limit: int | None = None,
+) -> tuple[Path, list[dict[str, Any]]]:
+    """List export push ledger records with deterministic filtering."""
+    ledger_path = resolve_export_push_ledger_path(idempotency_path, cwd=cwd)
+    records = _read_export_push_ledger_records(ledger_path)
+
+    if target:
+        records = [record for record in records if record.get("target") == target]
+    if system_name:
+        records = [record for record in records if record.get("system_name") == system_name]
+    if requirement_id:
+        records = [record for record in records if record.get("requirement_id") == requirement_id]
+
+    records.sort(
+        key=lambda record: str(record.get("pushed_at") or ""),
+        reverse=True,
+    )
+    if limit is not None:
+        records = records[:limit]
+    return ledger_path, records
+
+
+def summarize_export_push_ledger(
+    *,
+    idempotency_path: str | Path | None = None,
+    cwd: str | Path | None = None,
+) -> dict[str, Any]:
+    """Build aggregate statistics for export push ledger records."""
+    ledger_path, records = list_export_push_ledger_records(
+        idempotency_path=idempotency_path,
+        cwd=cwd,
+    )
+    target_distribution: dict[str, int] = {}
+    status_distribution: dict[str, int] = {}
+    system_distribution: dict[str, int] = {}
+    requirement_distribution: dict[str, int] = {}
+    idempotency_keys: set[str] = set()
+
+    for record in records:
+        target_key = str(record.get("target") or "unknown")
+        status_key = str(record.get("status") or "unknown")
+        system_key = str(record.get("system_name") or "unknown")
+        requirement_key = str(record.get("requirement_id") or "unknown")
+        idempotency_key = record.get("idempotency_key")
+
+        target_distribution[target_key] = target_distribution.get(target_key, 0) + 1
+        status_distribution[status_key] = status_distribution.get(status_key, 0) + 1
+        system_distribution[system_key] = system_distribution.get(system_key, 0) + 1
+        requirement_distribution[requirement_key] = (
+            requirement_distribution.get(requirement_key, 0) + 1
+        )
+        if isinstance(idempotency_key, str) and idempotency_key:
+            idempotency_keys.add(idempotency_key)
+
+    pushed_values = [str(record.get("pushed_at")) for record in records if record.get("pushed_at")]
+    first_pushed_at = min(pushed_values) if pushed_values else None
+    last_pushed_at = max(pushed_values) if pushed_values else None
+
+    return {
+        "path": str(ledger_path),
+        "total_records": len(records),
+        "unique_idempotency_key_count": len(idempotency_keys),
+        "target_distribution": dict(sorted(target_distribution.items())),
+        "status_distribution": dict(sorted(status_distribution.items())),
+        "system_distribution": dict(sorted(system_distribution.items())),
+        "requirement_distribution": dict(sorted(requirement_distribution.items())),
+        "first_pushed_at": first_pushed_at,
+        "last_pushed_at": last_pushed_at,
+    }
+
+
 def _normalize_status(status: str) -> str:
     normalized_key = status.strip().lower().replace("-", "_").replace(" ", "_")
     if normalized_key not in _STATUS_NORMALIZATION_MAP:

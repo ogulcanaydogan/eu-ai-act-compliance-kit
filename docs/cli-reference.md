@@ -141,6 +141,8 @@ ai-act export check <system.yaml> --target generic --json
 ai-act export check <system.yaml> --target jira -o export_jira.json
 ai-act export history <event_id> --target servicenow --history-path .eu_ai_act/history.jsonl --json
 ai-act export check <system.yaml> --target jira --push --dry-run --json
+ai-act export ledger list --json
+ai-act export ledger stats --json
 ```
 
 Subcommands:
@@ -173,6 +175,20 @@ Subcommands:
     - `--idempotency-path PATH` (override push ledger location)
     - `--disable-idempotency` (disable duplicate-skip ledger checks)
     - `--json` (JSON is default output shape)
+- `export ledger list`
+  - source: persisted push idempotency ledger (`.eu_ai_act/export_push_ledger.jsonl`)
+  - options:
+    - `--idempotency-path PATH` (override ledger location)
+    - `--target [jira|servicenow|generic]`
+    - `--system <name>`
+    - `--requirement-id <id>`
+    - `--limit N` (default: `25`, must be `>= 1`)
+    - `--json`
+- `export ledger stats`
+  - source: persisted push idempotency ledger (`.eu_ai_act/export_push_ledger.jsonl`)
+  - options:
+    - `--idempotency-path PATH` (override ledger location)
+    - `--json`
 
 Output contract:
 

@@ -407,6 +407,121 @@ class TestCLI:
         output = result.output + getattr(result, "stderr", "")
         assert "Error loading history event" in output
 
+    def test_export_ledger_list_json_contract(self, tmp_path):
+        """`export ledger list --json` should return deterministic filtered records payload."""
+        runner = CliRunner()
+        ledger_path = tmp_path / ".eu_ai_act" / "export_push_ledger.jsonl"
+        ledger_path.parent.mkdir(parents=True, exist_ok=True)
+        ledger_path.write_text(
+            "\n".join(
+                [
+                    json.dumps(
+                        {
+                            "idempotency_key": "k1",
+                            "target": "jira",
+                            "system_name": "Medical Imaging Diagnosis AI",
+                            "requirement_id": "Art. 10",
+                            "status": "non_compliant",
+                            "pushed_at": "2026-03-22T10:00:00+00:00",
+                        }
+                    ),
+                    json.dumps(
+                        {
+                            "idempotency_key": "k2",
+                            "target": "servicenow",
+                            "system_name": "Customer Support Chatbot",
+                            "requirement_id": "Art. 50",
+                            "status": "partial",
+                            "pushed_at": "2026-03-22T11:00:00+00:00",
+                        }
+                    ),
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        result = runner.invoke(
+            main,
+            [
+                "export",
+                "ledger",
+                "list",
+                "--idempotency-path",
+                str(ledger_path),
+                "--target",
+                "jira",
+                "--json",
+            ],
+        )
+
+        assert result.exit_code == 0
+        payload = json.loads(result.output[result.output.find("{") :])
+        assert payload["path"] == str(ledger_path)
+        assert payload["count"] == 1
+        assert payload["filters"]["target"] == "jira"
+        assert payload["records"][0]["idempotency_key"] == "k1"
+
+    def test_export_ledger_stats_json_contract(self, tmp_path):
+        """`export ledger stats --json` should return aggregate counters and distributions."""
+        runner = CliRunner()
+        ledger_path = tmp_path / ".eu_ai_act" / "export_push_ledger.jsonl"
+        ledger_path.parent.mkdir(parents=True, exist_ok=True)
+        ledger_path.write_text(
+            "\n".join(
+                [
+                    json.dumps(
+                        {
+                            "idempotency_key": "k1",
+                            "target": "jira",
+                            "system_name": "System A",
+                            "requirement_id": "Art. 10",
+                            "status": "non_compliant",
+                            "pushed_at": "2026-03-22T10:00:00+00:00",
+                        }
+                    ),
+                    json.dumps(
+                        {
+                            "idempotency_key": "k2",
+                            "target": "jira",
+                            "system_name": "System A",
+                            "requirement_id": "Art. 11",
+                            "status": "partial",
+                            "pushed_at": "2026-03-22T11:00:00+00:00",
+                        }
+                    ),
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        result = runner.invoke(
+            main,
+            ["export", "ledger", "stats", "--idempotency-path", str(ledger_path), "--json"],
+        )
+
+        assert result.exit_code == 0
+        payload = json.loads(result.output[result.output.find("{") :])
+        assert payload["path"] == str(ledger_path)
+        assert payload["total_records"] == 2
+        assert payload["unique_idempotency_key_count"] == 2
+        assert payload["target_distribution"]["jira"] == 2
+        assert payload["status_distribution"]["non_compliant"] == 1
+        assert payload["status_distribution"]["partial"] == 1
+
+    def test_export_ledger_list_invalid_limit_fails(self):
+        """`export ledger list` should validate non-positive limit values."""
+        runner = CliRunner()
+        result = runner.invoke(
+            main,
+            ["export", "ledger", "list", "--limit", "0", "--json"],
+        )
+
+        assert result.exit_code != 0
+        output = result.output + getattr(result, "stderr", "")
+        assert "--limit must be >= 1" in output
+
     def test_export_check_dry_run_without_push_emits_simulated_push_result(self):
         """`--dry-run` without `--push` should keep payload-only behavior and include simulated summary."""
         runner = CliRunner()
