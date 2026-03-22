@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- No unreleased changes yet.
+
+## [0.1.5] - 2026-03-21
+
+### Added
 - Export push reliability tuning flags for both export commands:
   - `--max-retries`
   - `--retry-backoff-seconds`
