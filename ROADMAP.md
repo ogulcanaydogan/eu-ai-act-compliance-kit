@@ -20,6 +20,7 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
 - Phase 14 completed (external export core, payload-first)
 - Phase 15 completed (CI/release runtime hardening and security gate stabilization)
 - Phase 16 completed (live export push with strict fail-fast and retry/backoff tuning)
+- Phase 17 in progress (create-only export push idempotency and duplicate-safe runtime hardening)
 
 ## Phase 1: Risk Classification Engine (Weeks 1-2) ✅ Completed
 
@@ -378,6 +379,16 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
   - `--retry-backoff-seconds`
   - `--timeout-seconds`
 - `--dry-run` contract kept deterministic with no network calls and explicit `push_result` diagnostics.
+
+## Phase 17: Export Push Production Hardening 🚧 In Progress
+
+- Add project-local append-only idempotency ledger: `.eu_ai_act/export_push_ledger.jsonl`.
+- Skip duplicate actionable items before remote call when idempotency key already exists.
+- Keep strict fail-fast behavior and existing retry policy (`429`/`5xx`/transport only).
+- Extend export CLI with idempotency controls:
+  - `--idempotency-path`
+  - `--disable-idempotency`
+- Preserve create-only push scope (no update/upsert in this phase).
 
 ## Timeline Summary (Historical Plan)
 - **Week 1-2**: Risk Classification Engine (Phases 1.1-1.5)

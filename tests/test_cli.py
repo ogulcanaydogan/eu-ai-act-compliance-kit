@@ -422,10 +422,15 @@ class TestCLI:
         assert payload["push_result"]["dry_run"] is True
         assert payload["push_result"]["pushed_count"] == 0
         assert payload["push_result"]["failed_count"] == 0
+        assert payload["push_result"]["skipped_duplicate_count"] == 0
         assert payload["push_result"]["failure_reason"] is None
         assert payload["push_result"]["max_retries"] == 3
         assert payload["push_result"]["retry_backoff_seconds"] == 1.0
         assert payload["push_result"]["timeout_seconds"] == 30.0
+        assert payload["push_result"]["idempotency_enabled"] is True
+        assert payload["push_result"]["idempotency_path"].endswith(
+            ".eu_ai_act/export_push_ledger.jsonl"
+        )
         assert "no remote api call" in payload["push_result"]["message"].lower()
 
     def test_export_push_generic_target_fails(self):
@@ -469,6 +474,161 @@ class TestCLI:
         assert payload["push_result"]["target"] == "jira"
         assert payload["push_result"]["pushed_count"] == 2
         assert payload["push_result"]["failed_count"] == 0
+
+    def test_export_push_uses_custom_idempotency_path(self, monkeypatch, tmp_path):
+        """`--idempotency-path` should be wired to ExportPusher for live push mode."""
+        runner = CliRunner()
+        system_yaml = EXAMPLES_DIR / "medical_diagnosis.yaml"
+        custom_ledger = tmp_path / "custom-ledger.jsonl"
+        captured: dict[str, object] = {}
+
+        def _fake_push(self, _envelope, dry_run=False):
+            captured["idempotency_enabled"] = self.idempotency_enabled
+            captured["idempotency_path"] = self.idempotency_path
+            return {
+                "target": "jira",
+                "dry_run": dry_run,
+                "attempted_actionable_count": 2,
+                "pushed_count": 1,
+                "failed_count": 0,
+                "skipped_duplicate_count": 1,
+                "failure_reason": None,
+                "max_retries": 3,
+                "retry_backoff_seconds": 1.0,
+                "timeout_seconds": 30.0,
+                "idempotency_enabled": True,
+                "idempotency_path": str(custom_ledger),
+                "results": [
+                    {"status": "success", "issue_key": "EUAI-1"},
+                    {"status": "skipped_duplicate", "item_index": 2},
+                ],
+            }
+
+        monkeypatch.setattr(cli_module.ExportPusher, "push", _fake_push)
+
+        result = runner.invoke(
+            main,
+            [
+                "export",
+                "check",
+                str(system_yaml),
+                "--target",
+                "jira",
+                "--push",
+                "--idempotency-path",
+                str(custom_ledger),
+                "--json",
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert captured["idempotency_enabled"] is True
+        assert str(captured["idempotency_path"]) == str(custom_ledger)
+        payload = json.loads(result.output[result.output.find("{") :])
+        assert payload["push_result"]["skipped_duplicate_count"] == 1
+        assert payload["push_result"]["idempotency_path"] == str(custom_ledger)
+
+    def test_export_push_disable_idempotency_flag(self, monkeypatch):
+        """`--disable-idempotency` should disable duplicate-skip ledger behavior."""
+        runner = CliRunner()
+        system_yaml = EXAMPLES_DIR / "medical_diagnosis.yaml"
+        captured: dict[str, object] = {}
+
+        def _fake_push(self, _envelope, dry_run=False):
+            captured["idempotency_enabled"] = self.idempotency_enabled
+            captured["idempotency_path"] = self.idempotency_path
+            return {
+                "target": "jira",
+                "dry_run": dry_run,
+                "attempted_actionable_count": 2,
+                "pushed_count": 2,
+                "failed_count": 0,
+                "skipped_duplicate_count": 0,
+                "failure_reason": None,
+                "max_retries": 3,
+                "retry_backoff_seconds": 1.0,
+                "timeout_seconds": 30.0,
+                "idempotency_enabled": False,
+                "idempotency_path": None,
+                "results": [],
+            }
+
+        monkeypatch.setattr(cli_module.ExportPusher, "push", _fake_push)
+
+        result = runner.invoke(
+            main,
+            [
+                "export",
+                "check",
+                str(system_yaml),
+                "--target",
+                "jira",
+                "--push",
+                "--disable-idempotency",
+                "--json",
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert captured["idempotency_enabled"] is False
+        assert captured["idempotency_path"] is None
+        payload = json.loads(result.output[result.output.find("{") :])
+        assert payload["push_result"]["idempotency_enabled"] is False
+        assert payload["push_result"]["idempotency_path"] is None
+
+    def test_export_history_push_uses_custom_idempotency_path(self, monkeypatch, tmp_path):
+        """History export should pass custom idempotency path through to pusher."""
+        runner = CliRunner()
+        system_yaml = EXAMPLES_DIR / "chatbot.yaml"
+        check_result = runner.invoke(main, ["check", str(system_yaml), "--json"])
+        assert check_result.exit_code == 0
+        list_result = runner.invoke(main, ["history", "list", "--event-type", "check", "--json"])
+        assert list_result.exit_code == 0
+        event_id = json.loads(list_result.output[list_result.output.find("{") :])["events"][0][
+            "event_id"
+        ]
+        custom_ledger = tmp_path / "history-ledger.jsonl"
+        captured: dict[str, object] = {}
+
+        def _fake_push(self, _envelope, dry_run=False):
+            captured["idempotency_enabled"] = self.idempotency_enabled
+            captured["idempotency_path"] = self.idempotency_path
+            return {
+                "target": "servicenow",
+                "dry_run": dry_run,
+                "attempted_actionable_count": 1,
+                "pushed_count": 1,
+                "failed_count": 0,
+                "skipped_duplicate_count": 0,
+                "failure_reason": None,
+                "max_retries": 3,
+                "retry_backoff_seconds": 1.0,
+                "timeout_seconds": 30.0,
+                "idempotency_enabled": True,
+                "idempotency_path": str(custom_ledger),
+                "results": [{"status": "success", "sys_id": "SYS-1"}],
+            }
+
+        monkeypatch.setattr(cli_module.ExportPusher, "push", _fake_push)
+
+        result = runner.invoke(
+            main,
+            [
+                "export",
+                "history",
+                event_id,
+                "--target",
+                "servicenow",
+                "--push",
+                "--idempotency-path",
+                str(custom_ledger),
+                "--json",
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert captured["idempotency_enabled"] is True
+        assert str(captured["idempotency_path"]) == str(custom_ledger)
 
     def test_export_push_failure_returns_nonzero_with_clear_error(self, monkeypatch):
         """`--push` should return non-zero with deterministic error message on push failure."""

@@ -20,7 +20,13 @@ from eu_ai_act.checker import ComplianceChecker
 from eu_ai_act.checklist import ChecklistGenerator
 from eu_ai_act.classifier import RiskClassifier
 from eu_ai_act.dashboard import DashboardGenerator
-from eu_ai_act.exporter import ExportGenerator, ExportPusher, ExportPushError, ExportTarget
+from eu_ai_act.exporter import (
+    ExportGenerator,
+    ExportPusher,
+    ExportPushError,
+    ExportTarget,
+    resolve_export_push_ledger_path,
+)
 from eu_ai_act.gpai import (
     GPAIAssessment,
     GPAIAssessor,
@@ -972,6 +978,16 @@ def export() -> None:
     show_default=True,
     help="HTTP request timeout in seconds for live push calls.",
 )
+@click.option(
+    "--idempotency-path",
+    type=click.Path(),
+    help="Override export push idempotency ledger path.",
+)
+@click.option(
+    "--disable-idempotency",
+    is_flag=True,
+    help="Disable duplicate-skip idempotency checks for live push.",
+)
 @click.option("--json", "output_json", is_flag=True, help="Output JSON payload (default behavior)")
 def export_check(
     system_yaml: str,
@@ -983,6 +999,8 @@ def export_check(
     max_retries: int,
     retry_backoff_seconds: float,
     timeout_seconds: float,
+    idempotency_path: str | None,
+    disable_idempotency: bool,
     output_json: bool,
 ) -> None:
     """Export canonical + target-specific payload from live compliance check."""
@@ -1013,10 +1031,17 @@ def export_check(
 
     checker = ComplianceChecker()
     exporter = ExportGenerator()
+    resolved_idempotency_path = (
+        str(resolve_export_push_ledger_path(idempotency_path))
+        if not disable_idempotency
+        else None
+    )
     pusher = ExportPusher(
         timeout_seconds=timeout_seconds,
         max_retries=max_retries,
         retry_backoff_seconds=retry_backoff_seconds,
+        idempotency_path=idempotency_path,
+        idempotency_enabled=not disable_idempotency,
     )
 
     with Progress(transient=True) as progress:
@@ -1045,10 +1070,13 @@ def export_check(
             "attempted_actionable_count": sum(1 for item in payload.items if item.actionable),
             "pushed_count": 0,
             "failed_count": 0,
+            "skipped_duplicate_count": 0,
             "failure_reason": None,
             "max_retries": max_retries,
             "retry_backoff_seconds": retry_backoff_seconds,
             "timeout_seconds": timeout_seconds,
+            "idempotency_enabled": not disable_idempotency,
+            "idempotency_path": resolved_idempotency_path,
             "results": [],
             "message": "Dry-run requested without --push; no remote API call was made.",
         }
@@ -1098,6 +1126,16 @@ def export_check(
     show_default=True,
     help="HTTP request timeout in seconds for live push calls.",
 )
+@click.option(
+    "--idempotency-path",
+    type=click.Path(),
+    help="Override export push idempotency ledger path.",
+)
+@click.option(
+    "--disable-idempotency",
+    is_flag=True,
+    help="Disable duplicate-skip idempotency checks for live push.",
+)
 @click.option("--json", "output_json", is_flag=True, help="Output JSON payload (default behavior)")
 def export_history(
     event_id: str,
@@ -1109,6 +1147,8 @@ def export_history(
     max_retries: int,
     retry_backoff_seconds: float,
     timeout_seconds: float,
+    idempotency_path: str | None,
+    disable_idempotency: bool,
     output_json: bool,
 ) -> None:
     """Export canonical + target-specific payload from a persisted history event."""
@@ -1131,10 +1171,17 @@ def export_history(
         sys.exit(1)
 
     exporter = ExportGenerator()
+    resolved_idempotency_path = (
+        str(resolve_export_push_ledger_path(idempotency_path))
+        if not disable_idempotency
+        else None
+    )
     pusher = ExportPusher(
         timeout_seconds=timeout_seconds,
         max_retries=max_retries,
         retry_backoff_seconds=retry_backoff_seconds,
+        idempotency_path=idempotency_path,
+        idempotency_enabled=not disable_idempotency,
     )
     payload = exporter.from_history(
         event=event,
@@ -1158,10 +1205,13 @@ def export_history(
             "attempted_actionable_count": sum(1 for item in payload.items if item.actionable),
             "pushed_count": 0,
             "failed_count": 0,
+            "skipped_duplicate_count": 0,
             "failure_reason": None,
             "max_retries": max_retries,
             "retry_backoff_seconds": retry_backoff_seconds,
             "timeout_seconds": timeout_seconds,
+            "idempotency_enabled": not disable_idempotency,
+            "idempotency_path": resolved_idempotency_path,
             "results": [],
             "message": "Dry-run requested without --push; no remote API call was made.",
         }

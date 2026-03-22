@@ -8,7 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- No unreleased changes yet.
+- Export push idempotency controls:
+  - `--idempotency-path`
+  - `--disable-idempotency`
+
+### Changed
+- Export live push now supports deterministic duplicate-skip via project-local idempotency ledger (`.eu_ai_act/export_push_ledger.jsonl`).
+- `push_result` contract extended with `skipped_duplicate_count`, `idempotency_enabled`, and `idempotency_path`.
+- Roadmap/docs status synchronized to start Phase 17 as in progress.
+
+### Tests
+- Added exporter unit coverage for duplicate skip, idempotency disable path, and dry-run no-ledger-write behavior.
+- Added CLI contract coverage for idempotency flags and extended `push_result` assertions.
 
 ## [0.1.5] - 2026-03-21
 
