@@ -29,7 +29,7 @@ class TestCLI:
 
         assert result.exit_code == 0
         assert "version" in result.output.lower()
-        assert "0.1.5" in result.output
+        assert "0.1.6" in result.output
         assert "runtimeerror" not in result.output.lower()
 
     def test_articles_uses_normalized_mapping(self):
