@@ -21,7 +21,7 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
 - Phase 15 completed (CI/release runtime hardening and security gate stabilization)
 - Phase 16 completed (live export push with strict fail-fast and retry/backoff tuning)
 - Phase 17 completed (create-only export push idempotency and duplicate-safe runtime hardening)
-- Phase 18 in progress (export operator observability + push upsert kickoff)
+- Phase 18 completed (export operator observability + lookup-first push upsert mode)
 
 ## Phase 1: Risk Classification Engine (Weeks 1-2) ✅ Completed
 
@@ -393,23 +393,24 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
 - Ledger write failures after successful remote create now surface diagnostics (`ledger_recorded`, `ledger_error`) without turning the command into a false negative.
 - Create-only push scope preserved (no update/upsert in this phase).
 
-## Phase 18: Export Operator Observability 🚧 In Progress
+## Phase 18: Export Operator Observability + Upsert Push ✅ Completed
 
-- Add CLI operator commands for idempotency ledger introspection:
+- Added CLI operator commands for idempotency ledger introspection:
   - `ai-act export ledger list`
   - `ai-act export ledger stats`
-- Provide deterministic filter contract for ledger listing:
+- Added deterministic filter contract for ledger listing:
   - target/system/requirement filters
   - stable `limit` behavior and JSON output
-- Provide aggregate ledger analytics contract:
+- Added aggregate ledger analytics contract:
   - total records
   - target/status/system/requirement distributions
   - first/last push timestamps
-- Start controlled upsert push behavior behind optional mode flag:
+- Added controlled upsert push behavior behind optional mode flag:
   - `--push-mode create|upsert` (default `create`)
   - `create` keeps duplicate-skip create-only behavior
-  - `upsert` performs lookup-first create/update for Jira and ServiceNow
-- Preserve non-breaking behavior for existing `export check|history` commands.
+  - `upsert` performs lookup-first create/update for Jira and ServiceNow (no ledger-first skip)
+- Preserved non-breaking behavior for existing `export check|history` commands.
+- Strengthened test coverage for upsert retry and fail-fast behavior in lookup/create/update paths.
 
 ## Timeline Summary (Historical Plan)
 - **Week 1-2**: Risk Classification Engine (Phases 1.1-1.5)

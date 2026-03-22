@@ -589,6 +589,164 @@ def test_push_jira_upsert_lookup_non_retryable_4xx_fails_fast(monkeypatch):
     assert call_counter["update"] == 0
 
 
+def test_push_jira_upsert_lookup_retries_on_5xx_then_updates(monkeypatch):
+    """Retryable lookup failures in upsert mode should retry, then update on match."""
+    descriptor = load_system_descriptor_from_file(EXAMPLES_DIR / "medical_diagnosis.yaml")
+    report = ComplianceChecker().check(descriptor)
+    for finding in report.findings.values():
+        finding.status = ComplianceStatus.COMPLIANT
+    first_requirement = next(iter(report.findings.keys()))
+    report.findings[first_requirement].status = ComplianceStatus.NON_COMPLIANT
+    envelope = ExportGenerator().from_check(report=report, target="jira")
+
+    monkeypatch.setenv("EU_AI_ACT_JIRA_BASE_URL", "https://example.atlassian.net")
+    monkeypatch.setenv("EU_AI_ACT_JIRA_EMAIL", "ops@example.com")
+    monkeypatch.setenv("EU_AI_ACT_JIRA_API_TOKEN", "secret")
+    monkeypatch.setenv("EU_AI_ACT_JIRA_PROJECT_KEY", "EUAI")
+
+    call_counter = {"search": 0, "create": 0, "update": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET":
+            call_counter["search"] += 1
+            if call_counter["search"] == 1:
+                return httpx.Response(status_code=503, text="temporary search outage")
+            return httpx.Response(status_code=200, json={"issues": [{"key": "EUAI-42"}]})
+        if request.method == "PUT":
+            call_counter["update"] += 1
+            return httpx.Response(status_code=204, text="")
+        call_counter["create"] += 1
+        return httpx.Response(status_code=500, text="unexpected method")
+
+    transport = httpx.MockTransport(handler)
+    original_client = httpx.Client
+
+    def _fake_client(*args, **kwargs):
+        return original_client(transport=transport)
+
+    monkeypatch.setattr("eu_ai_act.exporter.httpx.Client", _fake_client)
+    monkeypatch.setattr(ExportPusher, "_sleep_before_retry", lambda _self, _attempts: None)
+
+    result = ExportPusher(idempotency_enabled=False, max_retries=3).push(
+        envelope,
+        push_mode="upsert",
+    )
+    assert result["pushed_count"] == 1
+    assert result["created_count"] == 0
+    assert result["updated_count"] == 1
+    assert call_counter["search"] == 2
+    assert call_counter["update"] == 1
+    assert call_counter["create"] == 0
+    assert result["results"][0]["operation"] == "updated"
+
+
+def test_push_jira_upsert_create_retry_exhaustion_fails_fast(monkeypatch):
+    """Upsert create branch should fail-fast after retry exhaustion."""
+    descriptor = load_system_descriptor_from_file(EXAMPLES_DIR / "medical_diagnosis.yaml")
+    report = ComplianceChecker().check(descriptor)
+    for finding in report.findings.values():
+        finding.status = ComplianceStatus.COMPLIANT
+    first_requirement = next(iter(report.findings.keys()))
+    report.findings[first_requirement].status = ComplianceStatus.NON_COMPLIANT
+    envelope = ExportGenerator().from_check(report=report, target="jira")
+
+    monkeypatch.setenv("EU_AI_ACT_JIRA_BASE_URL", "https://example.atlassian.net")
+    monkeypatch.setenv("EU_AI_ACT_JIRA_EMAIL", "ops@example.com")
+    monkeypatch.setenv("EU_AI_ACT_JIRA_API_TOKEN", "secret")
+    monkeypatch.setenv("EU_AI_ACT_JIRA_PROJECT_KEY", "EUAI")
+
+    call_counter = {"search": 0, "create": 0, "update": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET":
+            call_counter["search"] += 1
+            return httpx.Response(status_code=200, json={"issues": []})
+        if request.method == "POST":
+            call_counter["create"] += 1
+            return httpx.Response(status_code=503, text="temporary create outage")
+        call_counter["update"] += 1
+        return httpx.Response(status_code=500, text="unexpected method")
+
+    transport = httpx.MockTransport(handler)
+    original_client = httpx.Client
+
+    def _fake_client(*args, **kwargs):
+        return original_client(transport=transport)
+
+    monkeypatch.setattr("eu_ai_act.exporter.httpx.Client", _fake_client)
+    monkeypatch.setattr(ExportPusher, "_sleep_before_retry", lambda _self, _attempts: None)
+
+    with pytest.raises(ExportPushError) as exc_info:
+        ExportPusher(idempotency_enabled=False, max_retries=2).push(
+            envelope,
+            push_mode="upsert",
+        )
+
+    push_result = exc_info.value.push_result
+    assert push_result["failed_count"] == 1
+    assert push_result["pushed_count"] == 0
+    assert push_result["created_count"] == 0
+    assert push_result["updated_count"] == 0
+    assert push_result["results"][0]["operation"] == "created"
+    assert push_result["results"][0]["attempts"] == 3
+    assert "HTTP 503" in push_result["failure_reason"]
+    assert call_counter["search"] == 1
+    assert call_counter["create"] == 3
+    assert call_counter["update"] == 0
+
+
+def test_push_jira_upsert_update_non_retryable_4xx_fails_immediately(monkeypatch):
+    """Upsert update branch should not retry non-retryable 4xx responses."""
+    descriptor = load_system_descriptor_from_file(EXAMPLES_DIR / "medical_diagnosis.yaml")
+    report = ComplianceChecker().check(descriptor)
+    for finding in report.findings.values():
+        finding.status = ComplianceStatus.COMPLIANT
+    first_requirement = next(iter(report.findings.keys()))
+    report.findings[first_requirement].status = ComplianceStatus.NON_COMPLIANT
+    envelope = ExportGenerator().from_check(report=report, target="jira")
+
+    monkeypatch.setenv("EU_AI_ACT_JIRA_BASE_URL", "https://example.atlassian.net")
+    monkeypatch.setenv("EU_AI_ACT_JIRA_EMAIL", "ops@example.com")
+    monkeypatch.setenv("EU_AI_ACT_JIRA_API_TOKEN", "secret")
+    monkeypatch.setenv("EU_AI_ACT_JIRA_PROJECT_KEY", "EUAI")
+
+    call_counter = {"search": 0, "create": 0, "update": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET":
+            call_counter["search"] += 1
+            return httpx.Response(status_code=200, json={"issues": [{"key": "EUAI-42"}]})
+        if request.method == "PUT":
+            call_counter["update"] += 1
+            return httpx.Response(status_code=400, text="invalid update request")
+        call_counter["create"] += 1
+        return httpx.Response(status_code=500, text="unexpected method")
+
+    transport = httpx.MockTransport(handler)
+    original_client = httpx.Client
+
+    def _fake_client(*args, **kwargs):
+        return original_client(transport=transport)
+
+    monkeypatch.setattr("eu_ai_act.exporter.httpx.Client", _fake_client)
+    monkeypatch.setattr(ExportPusher, "_sleep_before_retry", lambda _self, _attempts: None)
+
+    with pytest.raises(ExportPushError) as exc_info:
+        ExportPusher(idempotency_enabled=False, max_retries=3).push(
+            envelope,
+            push_mode="upsert",
+        )
+
+    push_result = exc_info.value.push_result
+    assert push_result["failed_count"] == 1
+    assert push_result["results"][0]["operation"] == "updated"
+    assert push_result["results"][0]["attempts"] == 1
+    assert "HTTP 400" in push_result["failure_reason"]
+    assert call_counter["search"] == 1
+    assert call_counter["update"] == 1
+    assert call_counter["create"] == 0
+
+
 def test_push_jira_duplicate_items_are_skipped_via_idempotency_ledger(monkeypatch, tmp_path):
     """Second push with same payload should skip duplicates and avoid remote calls."""
     descriptor = load_system_descriptor_from_file(EXAMPLES_DIR / "medical_diagnosis.yaml")
@@ -630,6 +788,57 @@ def test_push_jira_duplicate_items_are_skipped_via_idempotency_ledger(monkeypatc
     assert call_counter["count"] == actionable_count
     assert ledger_path.exists()
     assert len(ledger_path.read_text(encoding="utf-8").strip().splitlines()) == actionable_count
+
+
+def test_push_jira_upsert_ignores_ledger_duplicate_skip(monkeypatch, tmp_path):
+    """Upsert mode should still perform lookup/update even when ledger keys already exist."""
+    descriptor = load_system_descriptor_from_file(EXAMPLES_DIR / "medical_diagnosis.yaml")
+    report = ComplianceChecker().check(descriptor)
+    for requirement_id in list(report.findings.keys()):
+        report.findings[requirement_id].status = ComplianceStatus.NON_COMPLIANT
+    envelope = ExportGenerator().from_check(report=report, target="jira")
+
+    monkeypatch.setenv("EU_AI_ACT_JIRA_BASE_URL", "https://example.atlassian.net")
+    monkeypatch.setenv("EU_AI_ACT_JIRA_EMAIL", "ops@example.com")
+    monkeypatch.setenv("EU_AI_ACT_JIRA_API_TOKEN", "secret")
+    monkeypatch.setenv("EU_AI_ACT_JIRA_PROJECT_KEY", "EUAI")
+
+    call_counter = {"search": 0, "create": 0, "update": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET":
+            call_counter["search"] += 1
+            return httpx.Response(
+                status_code=200,
+                json={"issues": [{"key": f"EUAI-{call_counter['search']}"}]},
+            )
+        if request.method == "PUT":
+            call_counter["update"] += 1
+            return httpx.Response(status_code=204, text="")
+        call_counter["create"] += 1
+        return httpx.Response(status_code=500, text="unexpected method")
+
+    transport = httpx.MockTransport(handler)
+    original_client = httpx.Client
+
+    def _fake_client(*args, **kwargs):
+        return original_client(transport=transport)
+
+    monkeypatch.setattr("eu_ai_act.exporter.httpx.Client", _fake_client)
+
+    ledger_path = tmp_path / "export_push_ledger.jsonl"
+    pusher = ExportPusher(idempotency_path=ledger_path, max_retries=0)
+    first = pusher.push(envelope, push_mode="upsert")
+    second = pusher.push(envelope, push_mode="upsert")
+
+    actionable_count = len(envelope.adapter_payload["issues"])
+    assert first["updated_count"] == actionable_count
+    assert second["updated_count"] == actionable_count
+    assert second["skipped_duplicate_count"] == 0
+    assert all(item["status"] == "success" for item in second["results"])
+    assert call_counter["search"] == actionable_count * 2
+    assert call_counter["update"] == actionable_count * 2
+    assert call_counter["create"] == 0
 
 
 def test_push_jira_check_source_idempotency_uses_descriptor_identity(monkeypatch, tmp_path):
@@ -932,3 +1141,158 @@ def test_push_servicenow_upsert_lookup_hit_updates_with_custom_lookup_field(monk
     assert call_counter["update"] == record_count
     assert call_counter["create"] == 0
     assert all(item["operation"] == "updated" for item in result["results"])
+
+
+def test_push_servicenow_upsert_lookup_retries_on_5xx_then_updates(monkeypatch):
+    """Retryable lookup errors in upsert mode should retry and then update."""
+    descriptor = load_system_descriptor_from_file(EXAMPLES_DIR / "medical_diagnosis.yaml")
+    report = ComplianceChecker().check(descriptor)
+    for finding in report.findings.values():
+        finding.status = ComplianceStatus.COMPLIANT
+    first_requirement = next(iter(report.findings.keys()))
+    report.findings[first_requirement].status = ComplianceStatus.NON_COMPLIANT
+    envelope = ExportGenerator().from_check(report=report, target="servicenow")
+
+    monkeypatch.setenv("EU_AI_ACT_SERVICENOW_INSTANCE_URL", "https://snow.example.com")
+    monkeypatch.setenv("EU_AI_ACT_SERVICENOW_USERNAME", "ops")
+    monkeypatch.setenv("EU_AI_ACT_SERVICENOW_PASSWORD", "secret")
+
+    call_counter = {"lookup": 0, "create": 0, "update": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET":
+            call_counter["lookup"] += 1
+            if call_counter["lookup"] == 1:
+                return httpx.Response(status_code=503, text="temporary lookup outage")
+            return httpx.Response(status_code=200, json={"result": [{"sys_id": "SYS-42"}]})
+        if request.method == "PATCH":
+            call_counter["update"] += 1
+            return httpx.Response(status_code=200, json={"result": {"sys_id": "SYS-42"}})
+        call_counter["create"] += 1
+        return httpx.Response(status_code=500, text="unexpected method")
+
+    transport = httpx.MockTransport(handler)
+    original_client = httpx.Client
+
+    def _fake_client(*args, **kwargs):
+        return original_client(transport=transport)
+
+    monkeypatch.setattr("eu_ai_act.exporter.httpx.Client", _fake_client)
+    monkeypatch.setattr(ExportPusher, "_sleep_before_retry", lambda _self, _attempts: None)
+
+    result = ExportPusher(idempotency_enabled=False, max_retries=3).push(
+        envelope,
+        push_mode="upsert",
+    )
+    assert result["pushed_count"] == 1
+    assert result["created_count"] == 0
+    assert result["updated_count"] == 1
+    assert call_counter["lookup"] == 2
+    assert call_counter["update"] == 1
+    assert call_counter["create"] == 0
+    assert result["results"][0]["operation"] == "updated"
+
+
+def test_push_servicenow_upsert_create_retry_exhaustion_fails_fast(monkeypatch):
+    """Upsert create branch should fail-fast when retries are exhausted."""
+    descriptor = load_system_descriptor_from_file(EXAMPLES_DIR / "medical_diagnosis.yaml")
+    report = ComplianceChecker().check(descriptor)
+    for finding in report.findings.values():
+        finding.status = ComplianceStatus.COMPLIANT
+    first_requirement = next(iter(report.findings.keys()))
+    report.findings[first_requirement].status = ComplianceStatus.NON_COMPLIANT
+    envelope = ExportGenerator().from_check(report=report, target="servicenow")
+
+    monkeypatch.setenv("EU_AI_ACT_SERVICENOW_INSTANCE_URL", "https://snow.example.com")
+    monkeypatch.setenv("EU_AI_ACT_SERVICENOW_USERNAME", "ops")
+    monkeypatch.setenv("EU_AI_ACT_SERVICENOW_PASSWORD", "secret")
+
+    call_counter = {"lookup": 0, "create": 0, "update": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET":
+            call_counter["lookup"] += 1
+            return httpx.Response(status_code=200, json={"result": []})
+        if request.method == "POST":
+            call_counter["create"] += 1
+            return httpx.Response(status_code=503, text="temporary create outage")
+        call_counter["update"] += 1
+        return httpx.Response(status_code=500, text="unexpected method")
+
+    transport = httpx.MockTransport(handler)
+    original_client = httpx.Client
+
+    def _fake_client(*args, **kwargs):
+        return original_client(transport=transport)
+
+    monkeypatch.setattr("eu_ai_act.exporter.httpx.Client", _fake_client)
+    monkeypatch.setattr(ExportPusher, "_sleep_before_retry", lambda _self, _attempts: None)
+
+    with pytest.raises(ExportPushError) as exc_info:
+        ExportPusher(idempotency_enabled=False, max_retries=2).push(
+            envelope,
+            push_mode="upsert",
+        )
+
+    push_result = exc_info.value.push_result
+    assert push_result["failed_count"] == 1
+    assert push_result["pushed_count"] == 0
+    assert push_result["created_count"] == 0
+    assert push_result["updated_count"] == 0
+    assert push_result["results"][0]["operation"] == "created"
+    assert push_result["results"][0]["attempts"] == 3
+    assert "HTTP 503" in push_result["failure_reason"]
+    assert call_counter["lookup"] == 1
+    assert call_counter["create"] == 3
+    assert call_counter["update"] == 0
+
+
+def test_push_servicenow_upsert_update_non_retryable_4xx_fails_immediately(monkeypatch):
+    """Upsert update branch should fail immediately on non-retryable 4xx."""
+    descriptor = load_system_descriptor_from_file(EXAMPLES_DIR / "medical_diagnosis.yaml")
+    report = ComplianceChecker().check(descriptor)
+    for finding in report.findings.values():
+        finding.status = ComplianceStatus.COMPLIANT
+    first_requirement = next(iter(report.findings.keys()))
+    report.findings[first_requirement].status = ComplianceStatus.NON_COMPLIANT
+    envelope = ExportGenerator().from_check(report=report, target="servicenow")
+
+    monkeypatch.setenv("EU_AI_ACT_SERVICENOW_INSTANCE_URL", "https://snow.example.com")
+    monkeypatch.setenv("EU_AI_ACT_SERVICENOW_USERNAME", "ops")
+    monkeypatch.setenv("EU_AI_ACT_SERVICENOW_PASSWORD", "secret")
+
+    call_counter = {"lookup": 0, "create": 0, "update": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET":
+            call_counter["lookup"] += 1
+            return httpx.Response(status_code=200, json={"result": [{"sys_id": "SYS-42"}]})
+        if request.method == "PATCH":
+            call_counter["update"] += 1
+            return httpx.Response(status_code=400, text="invalid update request")
+        call_counter["create"] += 1
+        return httpx.Response(status_code=500, text="unexpected method")
+
+    transport = httpx.MockTransport(handler)
+    original_client = httpx.Client
+
+    def _fake_client(*args, **kwargs):
+        return original_client(transport=transport)
+
+    monkeypatch.setattr("eu_ai_act.exporter.httpx.Client", _fake_client)
+    monkeypatch.setattr(ExportPusher, "_sleep_before_retry", lambda _self, _attempts: None)
+
+    with pytest.raises(ExportPushError) as exc_info:
+        ExportPusher(idempotency_enabled=False, max_retries=3).push(
+            envelope,
+            push_mode="upsert",
+        )
+
+    push_result = exc_info.value.push_result
+    assert push_result["failed_count"] == 1
+    assert push_result["results"][0]["operation"] == "updated"
+    assert push_result["results"][0]["attempts"] == 1
+    assert "HTTP 400" in push_result["failure_reason"]
+    assert call_counter["lookup"] == 1
+    assert call_counter["update"] == 1
+    assert call_counter["create"] == 0
