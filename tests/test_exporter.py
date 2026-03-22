@@ -9,7 +9,13 @@ import httpx
 import pytest
 
 from eu_ai_act.checker import ComplianceChecker, ComplianceStatus
-from eu_ai_act.exporter import ExportGenerator, ExportPusher, ExportPushError
+from eu_ai_act.exporter import (
+    ExportGenerator,
+    ExportPusher,
+    ExportPushError,
+    reconcile_export_push_records,
+    run_export_batch,
+)
 from eu_ai_act.history import build_event
 from eu_ai_act.schema import load_system_descriptor_from_file
 
@@ -1296,3 +1302,296 @@ def test_push_servicenow_upsert_update_non_retryable_4xx_fails_immediately(monke
     assert call_counter["lookup"] == 1
     assert call_counter["update"] == 1
     assert call_counter["create"] == 0
+
+
+def test_run_export_batch_mixed_valid_invalid_continues(tmp_path):
+    """Batch runner should continue on invalid descriptor files and return aggregate counts."""
+    valid_path = tmp_path / "a_valid.yaml"
+    valid_path.write_text((EXAMPLES_DIR / "spam_filter.yaml").read_text(encoding="utf-8"))
+    invalid_path = tmp_path / "b_invalid.yaml"
+    invalid_path.write_text("name: broken\nuse_cases: [\n", encoding="utf-8")
+
+    payload = run_export_batch(
+        descriptor_dir=tmp_path,
+        target="generic",
+        recursive=False,
+        push=False,
+    )
+
+    assert payload["total_files"] == 2
+    assert payload["processed_count"] == 1
+    assert payload["success_count"] == 1
+    assert payload["failure_count"] == 0
+    assert payload["invalid_count"] == 1
+    assert [item["descriptor_path"] for item in payload["results"]] == [
+        str(valid_path.resolve()),
+        str(invalid_path.resolve()),
+    ]
+    statuses = [item["status"] for item in payload["results"]]
+    assert statuses == ["success", "invalid_descriptor"]
+
+
+def test_run_export_batch_push_continues_on_failed_descriptor(monkeypatch, tmp_path):
+    """Batch push should continue processing and aggregate failed/successful descriptors."""
+    first = tmp_path / "a_first.yaml"
+    second = tmp_path / "b_second.yaml"
+    first.write_text((EXAMPLES_DIR / "medical_diagnosis.yaml").read_text(encoding="utf-8"))
+    second.write_text((EXAMPLES_DIR / "chatbot.yaml").read_text(encoding="utf-8"))
+
+    call_counter = {"count": 0}
+
+    def _fake_push(_self, envelope, dry_run=False, push_mode="create"):
+        call_counter["count"] += 1
+        if call_counter["count"] == 1:
+            raise ExportPushError(
+                "simulated push failure",
+                push_result={
+                    "target": envelope.target,
+                    "dry_run": dry_run,
+                    "push_mode": push_mode,
+                    "attempted_actionable_count": 1,
+                    "pushed_count": 0,
+                    "created_count": 0,
+                    "updated_count": 0,
+                    "failed_count": 1,
+                    "skipped_duplicate_count": 0,
+                    "failure_reason": "simulated push failure",
+                    "max_retries": 3,
+                    "retry_backoff_seconds": 1.0,
+                    "timeout_seconds": 30.0,
+                    "idempotency_enabled": True,
+                    "idempotency_path": None,
+                    "results": [],
+                },
+            )
+        return {
+            "target": envelope.target,
+            "dry_run": dry_run,
+            "push_mode": push_mode,
+            "attempted_actionable_count": 1,
+            "pushed_count": 1,
+            "created_count": 1,
+            "updated_count": 0,
+            "failed_count": 0,
+            "skipped_duplicate_count": 0,
+            "failure_reason": None,
+            "max_retries": 3,
+            "retry_backoff_seconds": 1.0,
+            "timeout_seconds": 30.0,
+            "idempotency_enabled": True,
+            "idempotency_path": None,
+            "results": [],
+        }
+
+    monkeypatch.setattr("eu_ai_act.exporter.ExportPusher.push", _fake_push)
+
+    payload = run_export_batch(
+        descriptor_dir=tmp_path,
+        target="jira",
+        recursive=False,
+        push=True,
+    )
+
+    assert payload["total_files"] == 2
+    assert payload["processed_count"] == 2
+    assert payload["success_count"] == 1
+    assert payload["failure_count"] == 1
+    assert payload["invalid_count"] == 0
+    assert call_counter["count"] == 2
+    statuses = [item["status"] for item in payload["results"]]
+    assert statuses == ["failed", "success"]
+
+
+def test_reconcile_export_push_records_classifies_exists_missing_and_error(monkeypatch, tmp_path):
+    """Reconcile should classify ledger records into exists/missing/check_error statuses."""
+    ledger_path = tmp_path / ".eu_ai_act" / "export_push_ledger.jsonl"
+    ledger_path.parent.mkdir(parents=True, exist_ok=True)
+    ledger_path.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "idempotency_key": "k1",
+                        "target": "jira",
+                        "system_name": "System A",
+                        "descriptor_path": "/tmp/a.yaml",
+                        "requirement_id": "Art. 10",
+                        "status": "non_compliant",
+                        "remote_ref": "EUAI-1",
+                        "pushed_at": "2026-03-22T10:00:00+00:00",
+                    }
+                ),
+                json.dumps(
+                    {
+                        "idempotency_key": "k2",
+                        "target": "jira",
+                        "system_name": "System B",
+                        "descriptor_path": "/tmp/b.yaml",
+                        "requirement_id": "Art. 11",
+                        "status": "partial",
+                        "remote_ref": "EUAI-404",
+                        "pushed_at": "2026-03-22T11:00:00+00:00",
+                    }
+                ),
+                json.dumps(
+                    {
+                        "idempotency_key": "k3",
+                        "target": "jira",
+                        "system_name": "System C",
+                        "descriptor_path": "/tmp/c.yaml",
+                        "requirement_id": "Art. 13",
+                        "status": "not_assessed",
+                        "remote_ref": None,
+                        "pushed_at": "2026-03-22T12:00:00+00:00",
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("EU_AI_ACT_JIRA_BASE_URL", "https://example.atlassian.net")
+    monkeypatch.setenv("EU_AI_ACT_JIRA_EMAIL", "ops@example.com")
+    monkeypatch.setenv("EU_AI_ACT_JIRA_API_TOKEN", "secret")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if str(request.url).endswith("/EUAI-1"):
+            return httpx.Response(status_code=200, json={"key": "EUAI-1"})
+        if str(request.url).endswith("/EUAI-404"):
+            return httpx.Response(status_code=404, text="not found")
+        return httpx.Response(status_code=500, text="unexpected path")
+
+    transport = httpx.MockTransport(handler)
+    original_client = httpx.Client
+
+    def _fake_client(*args, **kwargs):
+        return original_client(transport=transport)
+
+    monkeypatch.setattr("eu_ai_act.exporter.httpx.Client", _fake_client)
+
+    payload = reconcile_export_push_records(
+        target="jira",
+        idempotency_path=ledger_path,
+        max_retries=0,
+    )
+
+    assert payload["checked_count"] == 3
+    assert payload["exists_count"] == 1
+    assert payload["missing_count"] == 1
+    assert payload["error_count"] == 1
+    statuses = sorted(item["status"] for item in payload["results"])
+    assert statuses == ["check_error", "exists", "missing"]
+
+
+def test_reconcile_export_push_records_retries_on_5xx_then_exists(monkeypatch, tmp_path):
+    """Reconcile read checks should retry transient failures and then succeed."""
+    ledger_path = tmp_path / ".eu_ai_act" / "export_push_ledger.jsonl"
+    ledger_path.parent.mkdir(parents=True, exist_ok=True)
+    ledger_path.write_text(
+        json.dumps(
+            {
+                "idempotency_key": "k1",
+                "target": "jira",
+                "system_name": "System A",
+                "descriptor_path": "/tmp/a.yaml",
+                "requirement_id": "Art. 10",
+                "status": "non_compliant",
+                "remote_ref": "EUAI-1",
+                "pushed_at": "2026-03-22T10:00:00+00:00",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("EU_AI_ACT_JIRA_BASE_URL", "https://example.atlassian.net")
+    monkeypatch.setenv("EU_AI_ACT_JIRA_EMAIL", "ops@example.com")
+    monkeypatch.setenv("EU_AI_ACT_JIRA_API_TOKEN", "secret")
+
+    call_counter = {"count": 0}
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        call_counter["count"] += 1
+        if call_counter["count"] == 1:
+            return httpx.Response(status_code=503, text="temporary outage")
+        return httpx.Response(status_code=200, json={"key": "EUAI-1"})
+
+    transport = httpx.MockTransport(handler)
+    original_client = httpx.Client
+
+    def _fake_client(*args, **kwargs):
+        return original_client(transport=transport)
+
+    monkeypatch.setattr("eu_ai_act.exporter.httpx.Client", _fake_client)
+    monkeypatch.setattr(ExportPusher, "_sleep_before_retry", lambda _self, _attempts: None)
+
+    payload = reconcile_export_push_records(
+        target="jira",
+        idempotency_path=ledger_path,
+        max_retries=3,
+    )
+
+    assert payload["checked_count"] == 1
+    assert payload["exists_count"] == 1
+    assert payload["missing_count"] == 0
+    assert payload["error_count"] == 0
+    assert payload["results"][0]["attempts"] == 2
+    assert payload["results"][0]["retries_used"] == 1
+    assert call_counter["count"] == 2
+
+
+def test_reconcile_export_push_records_non_retryable_4xx_is_check_error(monkeypatch, tmp_path):
+    """Non-retryable 4xx reconcile responses should fail immediately as check_error."""
+    ledger_path = tmp_path / ".eu_ai_act" / "export_push_ledger.jsonl"
+    ledger_path.parent.mkdir(parents=True, exist_ok=True)
+    ledger_path.write_text(
+        json.dumps(
+            {
+                "idempotency_key": "k1",
+                "target": "jira",
+                "system_name": "System A",
+                "descriptor_path": "/tmp/a.yaml",
+                "requirement_id": "Art. 10",
+                "status": "non_compliant",
+                "remote_ref": "EUAI-1",
+                "pushed_at": "2026-03-22T10:00:00+00:00",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("EU_AI_ACT_JIRA_BASE_URL", "https://example.atlassian.net")
+    monkeypatch.setenv("EU_AI_ACT_JIRA_EMAIL", "ops@example.com")
+    monkeypatch.setenv("EU_AI_ACT_JIRA_API_TOKEN", "secret")
+
+    call_counter = {"count": 0}
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        call_counter["count"] += 1
+        return httpx.Response(status_code=400, text="bad request")
+
+    transport = httpx.MockTransport(handler)
+    original_client = httpx.Client
+
+    def _fake_client(*args, **kwargs):
+        return original_client(transport=transport)
+
+    monkeypatch.setattr("eu_ai_act.exporter.httpx.Client", _fake_client)
+    monkeypatch.setattr(ExportPusher, "_sleep_before_retry", lambda _self, _attempts: None)
+
+    payload = reconcile_export_push_records(
+        target="jira",
+        idempotency_path=ledger_path,
+        max_retries=5,
+    )
+
+    assert payload["checked_count"] == 1
+    assert payload["exists_count"] == 0
+    assert payload["missing_count"] == 0
+    assert payload["error_count"] == 1
+    assert payload["results"][0]["status"] == "check_error"
+    assert payload["results"][0]["attempts"] == 1
+    assert "HTTP 400" in payload["results"][0]["failure_reason"]
+    assert call_counter["count"] == 1

@@ -14,8 +14,9 @@ from typing import Any, Literal
 
 import httpx
 
-from eu_ai_act.checker import ComplianceReport
+from eu_ai_act.checker import ComplianceChecker, ComplianceReport
 from eu_ai_act.history import HistoryEvent
+from eu_ai_act.schema import load_system_descriptor_from_file
 
 ExportTarget = Literal["generic", "jira", "servicenow"]
 SourceType = Literal["check", "history"]
@@ -32,6 +33,7 @@ _STATUS_NORMALIZATION_MAP: dict[str, str] = {
 
 _ACTIONABLE_STATUSES = {"non_compliant", "partial", "not_assessed"}
 _ALLOWED_SEVERITIES = {"CRITICAL", "HIGH", "MEDIUM", "LOW"}
+_DESCRIPTOR_SUFFIXES = {".yaml", ".yml"}
 
 
 def _utc_now_iso() -> str:
@@ -169,6 +171,311 @@ def summarize_export_push_ledger(
         "requirement_distribution": dict(sorted(requirement_distribution.items())),
         "first_pushed_at": first_pushed_at,
         "last_pushed_at": last_pushed_at,
+    }
+
+
+def discover_descriptor_files(
+    descriptor_dir: str | Path,
+    *,
+    recursive: bool = False,
+) -> list[Path]:
+    """Discover descriptor YAML files in deterministic order."""
+    scan_root = Path(descriptor_dir).expanduser().resolve()
+    if not scan_root.exists():
+        raise ValueError(f"Descriptor directory not found: {scan_root}")
+    if not scan_root.is_dir():
+        raise ValueError(f"Descriptor path is not a directory: {scan_root}")
+
+    glob_pattern = "**/*" if recursive else "*"
+    descriptor_files = [
+        file_path.resolve()
+        for file_path in scan_root.glob(glob_pattern)
+        if file_path.is_file() and file_path.suffix.lower() in _DESCRIPTOR_SUFFIXES
+    ]
+    descriptor_files.sort(key=lambda file_path: str(file_path))
+    return descriptor_files
+
+
+def build_simulated_push_result(
+    *,
+    target: str,
+    push_mode: PushMode,
+    actionable_count: int,
+    max_retries: int,
+    retry_backoff_seconds: float,
+    timeout_seconds: float,
+    idempotency_enabled: bool,
+    idempotency_path: str | None,
+    message: str,
+) -> dict[str, Any]:
+    """Build deterministic dry-run push summary payload."""
+    return {
+        "target": target,
+        "dry_run": True,
+        "push_mode": push_mode,
+        "attempted_actionable_count": actionable_count,
+        "pushed_count": 0,
+        "created_count": 0,
+        "updated_count": 0,
+        "failed_count": 0,
+        "skipped_duplicate_count": 0,
+        "failure_reason": None,
+        "max_retries": max_retries,
+        "retry_backoff_seconds": retry_backoff_seconds,
+        "timeout_seconds": timeout_seconds,
+        "idempotency_enabled": idempotency_enabled,
+        "idempotency_path": idempotency_path,
+        "results": [],
+        "message": message,
+    }
+
+
+def run_export_batch(
+    *,
+    descriptor_dir: str | Path,
+    target: ExportTarget,
+    recursive: bool = False,
+    push: bool = False,
+    push_mode: PushMode = "create",
+    dry_run: bool = False,
+    max_retries: int = 3,
+    retry_backoff_seconds: float = 1.0,
+    timeout_seconds: float = 30.0,
+    idempotency_path: str | Path | None = None,
+    idempotency_enabled: bool = True,
+    cwd: str | Path | None = None,
+) -> dict[str, Any]:
+    """Run export generation for all descriptors in a directory."""
+    if push and target == "generic":
+        raise ValueError("Live push is not supported for target 'generic'.")
+
+    scan_root = Path(descriptor_dir).expanduser().resolve()
+    descriptor_files = discover_descriptor_files(scan_root, recursive=recursive)
+    checker = ComplianceChecker()
+    exporter = ExportGenerator()
+    pusher = ExportPusher(
+        timeout_seconds=timeout_seconds,
+        max_retries=max_retries,
+        retry_backoff_seconds=retry_backoff_seconds,
+        idempotency_path=idempotency_path,
+        idempotency_enabled=idempotency_enabled,
+        cwd=cwd,
+    )
+    resolved_idempotency_path = (
+        str(resolve_export_push_ledger_path(idempotency_path, cwd=cwd))
+        if idempotency_enabled
+        else None
+    )
+
+    processed_count = 0
+    success_count = 0
+    failure_count = 0
+    invalid_count = 0
+    results: list[dict[str, Any]] = []
+
+    for descriptor_file in descriptor_files:
+        descriptor_path = str(descriptor_file)
+        try:
+            descriptor = load_system_descriptor_from_file(descriptor_path)
+        except Exception as exc:
+            invalid_count += 1
+            results.append(
+                {
+                    "descriptor_path": descriptor_path,
+                    "status": "invalid_descriptor",
+                    "error": str(exc),
+                }
+            )
+            continue
+
+        processed_count += 1
+        report = checker.check(descriptor)
+        envelope = exporter.from_check(
+            report=report,
+            target=target,
+            descriptor_path=descriptor_path,
+        )
+        result_entry: dict[str, Any] = {
+            "descriptor_path": descriptor_path,
+            "system_name": report.system_name,
+            "risk_tier": report.risk_tier.value,
+            "summary": _summary_from_compliance(report),
+            "status": "success",
+        }
+
+        if push:
+            try:
+                result_entry["push_result"] = pusher.push(
+                    envelope,
+                    dry_run=dry_run,
+                    push_mode=push_mode,
+                )
+            except ExportPushError as exc:
+                failure_count += 1
+                result_entry["status"] = "failed"
+                result_entry["error"] = str(exc)
+                result_entry["push_result"] = exc.push_result
+                results.append(result_entry)
+                continue
+            except Exception as exc:
+                failure_count += 1
+                result_entry["status"] = "failed"
+                result_entry["error"] = str(exc)
+                results.append(result_entry)
+                continue
+        elif dry_run:
+            result_entry["push_result"] = build_simulated_push_result(
+                target=target,
+                push_mode=push_mode,
+                actionable_count=sum(1 for item in envelope.items if item.actionable),
+                max_retries=max_retries,
+                retry_backoff_seconds=retry_backoff_seconds,
+                timeout_seconds=timeout_seconds,
+                idempotency_enabled=idempotency_enabled,
+                idempotency_path=resolved_idempotency_path,
+                message="Dry-run requested without --push; no remote API call was made.",
+            )
+
+        success_count += 1
+        results.append(result_entry)
+
+    return {
+        "generated_at": _utc_now_iso(),
+        "scan_root": str(scan_root),
+        "target": target,
+        "recursive": recursive,
+        "total_files": len(descriptor_files),
+        "processed_count": processed_count,
+        "success_count": success_count,
+        "failure_count": failure_count,
+        "invalid_count": invalid_count,
+        "results": results,
+    }
+
+
+def reconcile_export_push_records(
+    *,
+    target: ExportTarget,
+    idempotency_path: str | Path | None = None,
+    system_name: str | None = None,
+    requirement_id: str | None = None,
+    limit: int | None = None,
+    max_retries: int = 3,
+    retry_backoff_seconds: float = 1.0,
+    timeout_seconds: float = 30.0,
+    cwd: str | Path | None = None,
+) -> dict[str, Any]:
+    """Reconcile ledger entries against remote target existence/status."""
+    if target == "generic":
+        raise ValueError("Reconcile is not supported for target 'generic'.")
+    if limit is not None and limit < 1:
+        raise ValueError("limit must be >= 1.")
+
+    ledger_path, records = list_export_push_ledger_records(
+        idempotency_path=idempotency_path,
+        cwd=cwd,
+        target=target,
+        system_name=system_name,
+        requirement_id=requirement_id,
+        limit=limit,
+    )
+
+    pusher = ExportPusher(
+        timeout_seconds=timeout_seconds,
+        max_retries=max_retries,
+        retry_backoff_seconds=retry_backoff_seconds,
+        idempotency_enabled=False,
+        cwd=cwd,
+    )
+
+    exists_count = 0
+    missing_count = 0
+    error_count = 0
+    results: list[dict[str, Any]] = []
+
+    if target == "jira":
+        base_url = _required_env("EU_AI_ACT_JIRA_BASE_URL").rstrip("/")
+        user_email = _required_env("EU_AI_ACT_JIRA_EMAIL")
+        api_token = _required_env("EU_AI_ACT_JIRA_API_TOKEN")
+        endpoint_template = f"{base_url}/rest/api/3/issue/{{remote_ref}}"
+        auth = (user_email, api_token)
+    else:
+        instance_url = _required_env("EU_AI_ACT_SERVICENOW_INSTANCE_URL").rstrip("/")
+        username = _required_env("EU_AI_ACT_SERVICENOW_USERNAME")
+        password = _required_env("EU_AI_ACT_SERVICENOW_PASSWORD")
+        table_name = os.getenv("EU_AI_ACT_SERVICENOW_TABLE", "").strip() or "u_ai_act_compliance"
+        endpoint_template = f"{instance_url}/api/now/table/{table_name}/{{remote_ref}}"
+        auth = (username, password)
+
+    with httpx.Client(timeout=timeout_seconds, auth=auth) as client:
+        for index, record in enumerate(records, start=1):
+            remote_ref_raw = record.get("remote_ref")
+            remote_ref = str(remote_ref_raw).strip() if remote_ref_raw is not None else ""
+            result_entry = {
+                "record_index": index,
+                "status": "exists",
+                "idempotency_key": record.get("idempotency_key"),
+                "descriptor_path": record.get("descriptor_path"),
+                "system_name": record.get("system_name"),
+                "requirement_id": record.get("requirement_id"),
+                "remote_ref": remote_ref_raw,
+            }
+
+            if not remote_ref:
+                error_count += 1
+                result_entry["status"] = "check_error"
+                result_entry["failure_reason"] = "Ledger record missing remote_ref."
+                result_entry["attempts"] = 0
+                result_entry["retries_used"] = 0
+                result_entry["http_status"] = None
+                results.append(result_entry)
+                continue
+
+            attempt = pusher._request_with_retry(
+                client=client,
+                method="GET",
+                endpoint=endpoint_template.format(remote_ref=remote_ref),
+                target_name=target,
+                success_status_codes={200},
+            )
+
+            if attempt["ok"]:
+                response = attempt["response"]
+                exists_count += 1
+                result_entry["status"] = "exists"
+                result_entry["http_status"] = response.status_code
+                result_entry["attempts"] = attempt["attempts"]
+                result_entry["retries_used"] = max(attempt["attempts"] - 1, 0)
+                results.append(result_entry)
+                continue
+
+            http_status = attempt["http_status"]
+            result_entry["http_status"] = http_status
+            result_entry["attempts"] = attempt["attempts"]
+            result_entry["retries_used"] = max(attempt["attempts"] - 1, 0)
+            result_entry["failure_reason"] = attempt["failure_reason"]
+            if http_status == 404:
+                missing_count += 1
+                result_entry["status"] = "missing"
+            else:
+                error_count += 1
+                result_entry["status"] = "check_error"
+            results.append(result_entry)
+
+    return {
+        "generated_at": _utc_now_iso(),
+        "target": target,
+        "ledger_path": str(ledger_path),
+        "filters": {
+            "system_name": system_name,
+            "requirement_id": requirement_id,
+            "limit": limit,
+        },
+        "checked_count": len(records),
+        "exists_count": exists_count,
+        "missing_count": missing_count,
+        "error_count": error_count,
+        "results": results,
     }
 
 

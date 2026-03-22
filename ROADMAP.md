@@ -22,6 +22,7 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
 - Phase 16 completed (live export push with strict fail-fast and retry/backoff tuning)
 - Phase 17 completed (create-only export push idempotency and duplicate-safe runtime hardening)
 - Phase 18 completed (export operator observability + lookup-first push upsert mode)
+- Phase 19 in progress (batch export orchestration + reconcile checks for live push operations)
 
 ## Phase 1: Risk Classification Engine (Weeks 1-2) ✅ Completed
 
@@ -411,6 +412,20 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
   - `upsert` performs lookup-first create/update for Jira and ServiceNow (no ledger-first skip)
 - Preserved non-breaking behavior for existing `export check|history` commands.
 - Strengthened test coverage for upsert retry and fail-fast behavior in lookup/create/update paths.
+
+## Phase 19: Export Ops Hardening 🚧 In Progress
+
+- Add directory-driven batch export orchestration:
+  - `ai-act export batch <descriptor_dir>`
+  - deterministic descriptor scan with continue-on-error aggregation
+  - optional push path (`--push`, `--push-mode create|upsert`, retry tuning, idempotency controls)
+- Add ledger-to-remote reconcile checks:
+  - `ai-act export reconcile --target jira|servicenow`
+  - existence/status verification for ledger `remote_ref` values
+  - classify outcomes as `exists`, `missing`, `check_error`
+- Preserve strict operational contracts:
+  - batch continues across systems and returns non-zero when any invalid/push failure exists
+  - reconcile remains read-only and returns non-zero when `missing_count` or `error_count` is non-zero
 
 ## Timeline Summary (Historical Plan)
 - **Week 1-2**: Risk Classification Engine (Phases 1.1-1.5)

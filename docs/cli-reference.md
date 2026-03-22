@@ -142,6 +142,9 @@ ai-act export check <system.yaml> --target jira -o export_jira.json
 ai-act export history <event_id> --target servicenow --history-path .eu_ai_act/history.jsonl --json
 ai-act export check <system.yaml> --target jira --push --dry-run --json
 ai-act export check <system.yaml> --target jira --push --push-mode upsert --json
+ai-act export batch examples --target generic --json
+ai-act export batch examples --target jira --push --push-mode upsert --json
+ai-act export reconcile --target jira --json
 ai-act export ledger list --json
 ai-act export ledger stats --json
 ```
@@ -178,6 +181,34 @@ Subcommands:
     - `--idempotency-path PATH` (override push ledger location)
     - `--disable-idempotency` (disable duplicate-skip ledger checks)
     - `--json` (JSON is default output shape)
+- `export batch`
+  - source: descriptor directory scan (`*.yaml|*.yml`, deterministic order)
+  - options:
+    - `--target [jira|servicenow|generic]` (required)
+    - `--recursive` (scan nested directories)
+    - `-o, --output PATH`
+    - `--push` (optional live push for `jira`/`servicenow`)
+    - `--push-mode [create|upsert]` (default: `create`, requires `--push`)
+    - `--dry-run` (simulated push summaries, no network call)
+    - `--max-retries INT` (default: `3`, must be `>= 0`)
+    - `--retry-backoff-seconds FLOAT` (default: `1.0`, must be `> 0`)
+    - `--timeout-seconds FLOAT` (default: `30.0`, must be `> 0`)
+    - `--idempotency-path PATH` (override push ledger location)
+    - `--disable-idempotency` (disable duplicate-skip ledger checks)
+    - `--json` (JSON is default output shape)
+- `export reconcile`
+  - source: persisted push ledger records (`.eu_ai_act/export_push_ledger.jsonl`)
+  - options:
+    - `--target [jira|servicenow]` (required)
+    - `--idempotency-path PATH` (override ledger location)
+    - `--system <name>`
+    - `--requirement-id <id>`
+    - `--limit N` (default: `50`, must be `>= 1`)
+    - `--max-retries INT` (default: `3`, must be `>= 0`)
+    - `--retry-backoff-seconds FLOAT` (default: `1.0`, must be `> 0`)
+    - `--timeout-seconds FLOAT` (default: `30.0`, must be `> 0`)
+    - `-o, --output PATH`
+    - `--json` (JSON is default output shape)
 - `export ledger list`
   - source: persisted push idempotency ledger (`.eu_ai_act/export_push_ledger.jsonl`)
   - options:
@@ -201,6 +232,10 @@ Output contract:
 - adapter payload emitted under `adapter_payload` (`generic`, `jira`, `servicenow`)
 - when `--push` or `--dry-run` is used, output may include `push_result`
   - includes diagnostics: `push_mode`, `attempted_actionable_count`, `pushed_count`, `created_count`, `updated_count`, `failed_count`, `skipped_duplicate_count`, `failure_reason`, `max_retries`, `retry_backoff_seconds`, `timeout_seconds`, `idempotency_enabled`, `idempotency_path`
+- `export batch` top-level contract:
+  - `generated_at`, `scan_root`, `target`, `recursive`, `total_files`, `processed_count`, `success_count`, `failure_count`, `invalid_count`, `results`
+- `export reconcile` top-level contract:
+  - `generated_at`, `target`, `ledger_path`, `filters`, `checked_count`, `exists_count`, `missing_count`, `error_count`, `results`
 
 Push behavior policy:
 
@@ -210,6 +245,8 @@ Push behavior policy:
 - non-retryable `4xx` responses fail immediately
 - in `create` mode with idempotency enabled, duplicate actionable items are skipped before remote API call
 - in `upsert` mode, Jira/ServiceNow always perform lookup-first and then update existing records or create new ones
+- `export batch` continues processing after invalid descriptor/push failures and exits non-zero when any invalid/failure exists
+- `export reconcile` is read-only and exits non-zero when `missing_count > 0` or `error_count > 0`
 
 Live push environment variables:
 
