@@ -3,7 +3,7 @@
 ## Vision
 Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifies AI systems by risk tier, generates compliance checklists, and produces audit-ready reports. The first open-source tool that makes EU AI Act compliance accessible to every AI team.
 
-## Status Snapshot (March 21, 2026)
+## Status Snapshot (March 22, 2026)
 - Phase 1 completed
 - Phase 2 completed
 - Phase 3 JSON/Markdown/HTML/PDF completed
@@ -20,7 +20,7 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
 - Phase 14 completed (external export core, payload-first)
 - Phase 15 completed (CI/release runtime hardening and security gate stabilization)
 - Phase 16 completed (live export push with strict fail-fast and retry/backoff tuning)
-- Phase 17 in progress (create-only export push idempotency and duplicate-safe runtime hardening)
+- Phase 17 completed (create-only export push idempotency and duplicate-safe runtime hardening)
 
 ## Phase 1: Risk Classification Engine (Weeks 1-2) ✅ Completed
 
@@ -380,15 +380,17 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
   - `--timeout-seconds`
 - `--dry-run` contract kept deterministic with no network calls and explicit `push_result` diagnostics.
 
-## Phase 17: Export Push Production Hardening 🚧 In Progress
+## Phase 17: Export Push Production Hardening ✅ Completed
 
-- Add project-local append-only idempotency ledger: `.eu_ai_act/export_push_ledger.jsonl`.
-- Skip duplicate actionable items before remote call when idempotency key already exists.
-- Keep strict fail-fast behavior and existing retry policy (`429`/`5xx`/transport only).
-- Extend export CLI with idempotency controls:
+- Added project-local append-only idempotency ledger: `.eu_ai_act/export_push_ledger.jsonl`.
+- Duplicate actionable items are skipped before remote call when idempotency key already exists.
+- Strict fail-fast behavior and existing retry policy preserved (`429`/`5xx`/transport only).
+- Export CLI extended with idempotency controls:
   - `--idempotency-path`
   - `--disable-idempotency`
-- Preserve create-only push scope (no update/upsert in this phase).
+- Check-source payloads now include `descriptor_path` so idempotency keys remain stable and source-specific.
+- Ledger write failures after successful remote create now surface diagnostics (`ledger_recorded`, `ledger_error`) without turning the command into a false negative.
+- Create-only push scope preserved (no update/upsert in this phase).
 
 ## Timeline Summary (Historical Plan)
 - **Week 1-2**: Risk Classification Engine (Phases 1.1-1.5)

@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - No changes yet.
 
+### Changed
+- Roadmap/docs/readme status synchronized to mark Phase 17 as completed after `v0.1.6`.
+
 ## [0.1.6] - 2026-03-22
 
 ### Added

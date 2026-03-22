@@ -201,7 +201,7 @@ pre-commit run --hook-stage pre-push --all-files
 - Phase 14: external export core completed (payload-first, no live API push)
 - Phase 15: CI/release runtime hardening completed (Node20 deprecation cleanup + security gate stabilization)
 - Phase 16: live export push completed (strict fail-fast + retry/backoff controls for `--push`)
-- Phase 17: export push production hardening in progress (create-only idempotency ledger + duplicate-safe push)
+- Phase 17: export push production hardening completed (create-only idempotency ledger + duplicate-safe push)
 
 ## Disclaimer
 
