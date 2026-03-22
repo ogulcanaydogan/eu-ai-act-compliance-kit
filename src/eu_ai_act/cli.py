@@ -1032,9 +1032,7 @@ def export_check(
     checker = ComplianceChecker()
     exporter = ExportGenerator()
     resolved_idempotency_path = (
-        str(resolve_export_push_ledger_path(idempotency_path))
-        if not disable_idempotency
-        else None
+        str(resolve_export_push_ledger_path(idempotency_path)) if not disable_idempotency else None
     )
     pusher = ExportPusher(
         timeout_seconds=timeout_seconds,
@@ -1172,9 +1170,7 @@ def export_history(
 
     exporter = ExportGenerator()
     resolved_idempotency_path = (
-        str(resolve_export_push_ledger_path(idempotency_path))
-        if not disable_idempotency
-        else None
+        str(resolve_export_push_ledger_path(idempotency_path)) if not disable_idempotency else None
     )
     pusher = ExportPusher(
         timeout_seconds=timeout_seconds,

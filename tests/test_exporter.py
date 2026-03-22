@@ -531,10 +531,7 @@ def test_push_servicenow_duplicate_items_are_skipped_via_idempotency_ledger(monk
 
     def handler(request: httpx.Request) -> httpx.Response:
         call_counter["count"] += 1
-        assert (
-            str(request.url)
-            == "https://snow.example.com/api/now/table/u_ai_act_compliance"
-        )
+        assert str(request.url) == "https://snow.example.com/api/now/table/u_ai_act_compliance"
         return httpx.Response(
             status_code=201,
             json={"result": {"sys_id": f"SYS-{call_counter['count']}"}},
