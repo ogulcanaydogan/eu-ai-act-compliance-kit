@@ -19,6 +19,7 @@ from eu_ai_act.history import HistoryEvent
 
 ExportTarget = Literal["generic", "jira", "servicenow"]
 SourceType = Literal["check", "history"]
+PushMode = Literal["create", "upsert"]
 
 _STATUS_NORMALIZATION_MAP: dict[str, str] = {
     "compliant": "compliant",
@@ -533,9 +534,17 @@ class ExportPusher:
             else None
         )
 
-    def push(self, envelope: ExportEnvelope, *, dry_run: bool = False) -> dict[str, Any]:
+    def push(
+        self,
+        envelope: ExportEnvelope,
+        *,
+        dry_run: bool = False,
+        push_mode: PushMode = "create",
+    ) -> dict[str, Any]:
         if envelope.target == "generic":
             raise ValueError("Live push is not supported for target 'generic'.")
+        if push_mode not in {"create", "upsert"}:
+            raise ValueError("Unsupported push mode. Expected one of: create, upsert.")
 
         adapter_payload = envelope.adapter_payload
         if adapter_payload is None:
@@ -546,8 +555,11 @@ class ExportPusher:
             return {
                 "target": envelope.target,
                 "dry_run": True,
+                "push_mode": push_mode,
                 "attempted_actionable_count": actionable_count,
                 "pushed_count": 0,
+                "created_count": 0,
+                "updated_count": 0,
                 "failed_count": 0,
                 "skipped_duplicate_count": 0,
                 "failure_reason": None,
@@ -564,12 +576,14 @@ class ExportPusher:
                 envelope,
                 adapter_payload,
                 actionable_count=actionable_count,
+                push_mode=push_mode,
             )
         if envelope.target == "servicenow":
             return self._push_servicenow(
                 envelope,
                 adapter_payload,
                 actionable_count=actionable_count,
+                push_mode=push_mode,
             )
         raise ValueError(f"Unsupported export target: {envelope.target}")
 
@@ -582,6 +596,7 @@ class ExportPusher:
         adapter_payload: dict[str, Any],
         *,
         actionable_count: int,
+        push_mode: PushMode,
     ) -> dict[str, Any]:
         issues = adapter_payload.get("issues", [])
         if not isinstance(issues, list):
@@ -591,8 +606,11 @@ class ExportPusher:
             return {
                 "target": "jira",
                 "dry_run": False,
+                "push_mode": push_mode,
                 "attempted_actionable_count": actionable_count,
                 "pushed_count": 0,
+                "created_count": 0,
+                "updated_count": 0,
                 "failed_count": 0,
                 "skipped_duplicate_count": 0,
                 "failure_reason": None,
@@ -615,9 +633,12 @@ class ExportPusher:
         user_email = _required_env("EU_AI_ACT_JIRA_EMAIL")
         api_token = _required_env("EU_AI_ACT_JIRA_API_TOKEN")
         project_key = _required_env("EU_AI_ACT_JIRA_PROJECT_KEY")
-        endpoint = f"{base_url}/rest/api/3/issue"
+        create_endpoint = f"{base_url}/rest/api/3/issue"
+        search_endpoint = f"{base_url}/rest/api/3/search"
 
         pushed_count = 0
+        created_count = 0
+        updated_count = 0
         skipped_duplicate_count = 0
         results: list[dict[str, Any]] = []
 
@@ -633,10 +654,20 @@ class ExportPusher:
                     raise ValueError("Invalid Jira issue payload item: missing 'fields' object.")
                 fields = dict(fields)
                 fields.setdefault("project", {"key": project_key})
-                payload = {"fields": fields}
 
                 idempotency_key = self._build_idempotency_key(envelope, actionable_item)
-                if self.idempotency_enabled and idempotency_key in existing_idempotency_keys:
+                idempotency_label = self._jira_idempotency_label(idempotency_key)
+                fields["labels"] = self._jira_labels_with_idempotency_label(
+                    fields.get("labels"),
+                    idempotency_label,
+                )
+                payload = {"fields": fields}
+
+                if (
+                    push_mode == "create"
+                    and self.idempotency_enabled
+                    and idempotency_key in existing_idempotency_keys
+                ):
                     skipped_duplicate_count += 1
                     results.append(
                         {
@@ -644,29 +675,100 @@ class ExportPusher:
                             "item_index": issue_index,
                             "requirement_id": actionable_item.requirement_id,
                             "idempotency_key": idempotency_key,
+                            "idempotency_label": idempotency_label,
                         }
                     )
                     continue
 
-                attempt_result = self._post_with_retry(
+                operation = "created"
+                issue_key: str | None = None
+                if push_mode == "upsert":
+                    lookup_result = self._request_with_retry(
+                        client=client,
+                        method="GET",
+                        endpoint=search_endpoint,
+                        params={
+                            "jql": f'project = {project_key} AND labels = "{idempotency_label}"',
+                            "maxResults": "1",
+                            "fields": "key",
+                        },
+                        target_name="jira",
+                        success_status_codes={200},
+                    )
+                    if not lookup_result["ok"]:
+                        failure_reason = lookup_result["failure_reason"]
+                        results.append(
+                            {
+                                "status": "failed",
+                                "operation": "lookup",
+                                "http_status": lookup_result["http_status"],
+                                "attempts": lookup_result["attempts"],
+                                "retries_used": max(lookup_result["attempts"] - 1, 0),
+                                "failure_reason": failure_reason,
+                                "item_index": issue_index,
+                                "requirement_id": actionable_item.requirement_id,
+                                "idempotency_key": idempotency_key,
+                                "idempotency_label": idempotency_label,
+                            }
+                        )
+                        push_result = self._build_push_result(
+                            target="jira",
+                            push_mode=push_mode,
+                            dry_run=False,
+                            actionable_count=actionable_count,
+                            pushed_count=pushed_count,
+                            created_count=created_count,
+                            updated_count=updated_count,
+                            failed_count=1,
+                            skipped_duplicate_count=skipped_duplicate_count,
+                            failure_reason=failure_reason,
+                            results=results,
+                        )
+                        raise ExportPushError(
+                            f"Jira push aborted on item {issue_index}: {failure_reason}",
+                            push_result=push_result,
+                        )
+
+                    issue_key = self._extract_jira_issue_key(lookup_result["response"])
+                    if issue_key:
+                        operation = "updated"
+
+                endpoint = create_endpoint
+                method = "POST"
+                success_status_codes = {200, 201}
+                if operation == "updated":
+                    endpoint = f"{base_url}/rest/api/3/issue/{issue_key}"
+                    method = "PUT"
+                    success_status_codes = {200, 204}
+
+                attempt_result = self._request_with_retry(
                     client=client,
+                    method=method,
                     endpoint=endpoint,
                     payload=payload,
                     target_name="jira",
+                    success_status_codes=success_status_codes,
                 )
 
                 if attempt_result["ok"]:
                     response = attempt_result["response"]
                     pushed_count += 1
-                    response_json = self._safe_json(response)
+                    response_json = self._safe_json(response) if operation == "created" else {}
+                    if operation == "created":
+                        created_count += 1
+                        issue_key = response_json.get("key")
+                    else:
+                        updated_count += 1
                     success_entry = {
                         "status": "success",
+                        "operation": operation,
                         "http_status": response.status_code,
                         "attempts": attempt_result["attempts"],
                         "retries_used": max(attempt_result["attempts"] - 1, 0),
                         "requirement_id": actionable_item.requirement_id,
                         "idempotency_key": idempotency_key,
-                        "issue_key": response_json.get("key"),
+                        "idempotency_label": idempotency_label,
+                        "issue_key": issue_key,
                     }
                     if self.idempotency_enabled:
                         ledger_error = self._record_idempotency_success(
@@ -674,7 +776,7 @@ class ExportPusher:
                             item=actionable_item,
                             existing_idempotency_keys=existing_idempotency_keys,
                             idempotency_key=idempotency_key,
-                            remote_ref=response_json.get("key"),
+                            remote_ref=issue_key,
                             http_status=response.status_code,
                         )
                         success_entry["ledger_recorded"] = ledger_error is None
@@ -687,6 +789,7 @@ class ExportPusher:
                 results.append(
                     {
                         "status": "failed",
+                        "operation": operation,
                         "http_status": attempt_result["http_status"],
                         "attempts": attempt_result["attempts"],
                         "retries_used": max(attempt_result["attempts"] - 1, 0),
@@ -694,43 +797,40 @@ class ExportPusher:
                         "item_index": issue_index,
                         "requirement_id": actionable_item.requirement_id,
                         "idempotency_key": idempotency_key,
+                        "idempotency_label": idempotency_label,
                     }
                 )
-                push_result = {
-                    "target": "jira",
-                    "dry_run": False,
-                    "attempted_actionable_count": actionable_count,
-                    "pushed_count": pushed_count,
-                    "failed_count": 1,
-                    "skipped_duplicate_count": skipped_duplicate_count,
-                    "failure_reason": failure_reason,
-                    "max_retries": self.max_retries,
-                    "retry_backoff_seconds": self.retry_backoff_seconds,
-                    "timeout_seconds": self.timeout_seconds,
-                    "idempotency_enabled": self.idempotency_enabled,
-                    "idempotency_path": self._idempotency_path_display(),
-                    "results": results,
-                }
+                push_result = self._build_push_result(
+                    target="jira",
+                    push_mode=push_mode,
+                    dry_run=False,
+                    actionable_count=actionable_count,
+                    pushed_count=pushed_count,
+                    created_count=created_count,
+                    updated_count=updated_count,
+                    failed_count=1,
+                    skipped_duplicate_count=skipped_duplicate_count,
+                    failure_reason=failure_reason,
+                    results=results,
+                )
                 raise ExportPushError(
                     f"Jira push aborted on item {issue_index}: {failure_reason}",
                     push_result=push_result,
                 )
 
-        return {
-            "target": "jira",
-            "dry_run": False,
-            "attempted_actionable_count": actionable_count,
-            "pushed_count": pushed_count,
-            "failed_count": 0,
-            "skipped_duplicate_count": skipped_duplicate_count,
-            "failure_reason": None,
-            "max_retries": self.max_retries,
-            "retry_backoff_seconds": self.retry_backoff_seconds,
-            "timeout_seconds": self.timeout_seconds,
-            "idempotency_enabled": self.idempotency_enabled,
-            "idempotency_path": self._idempotency_path_display(),
-            "results": results,
-        }
+        return self._build_push_result(
+            target="jira",
+            push_mode=push_mode,
+            dry_run=False,
+            actionable_count=actionable_count,
+            pushed_count=pushed_count,
+            created_count=created_count,
+            updated_count=updated_count,
+            failed_count=0,
+            skipped_duplicate_count=skipped_duplicate_count,
+            failure_reason=None,
+            results=results,
+        )
 
     def _push_servicenow(
         self,
@@ -738,6 +838,7 @@ class ExportPusher:
         adapter_payload: dict[str, Any],
         *,
         actionable_count: int,
+        push_mode: PushMode,
     ) -> dict[str, Any]:
         records = adapter_payload.get("records", [])
         if not isinstance(records, list):
@@ -747,8 +848,11 @@ class ExportPusher:
             return {
                 "target": "servicenow",
                 "dry_run": False,
+                "push_mode": push_mode,
                 "attempted_actionable_count": actionable_count,
                 "pushed_count": 0,
+                "created_count": 0,
+                "updated_count": 0,
                 "failed_count": 0,
                 "skipped_duplicate_count": 0,
                 "failure_reason": None,
@@ -773,9 +877,14 @@ class ExportPusher:
         table_name = os.getenv("EU_AI_ACT_SERVICENOW_TABLE", "").strip() or adapter_payload.get(
             "table", "u_ai_act_compliance"
         )
+        idempotency_field = (
+            os.getenv("EU_AI_ACT_SERVICENOW_IDEMPOTENCY_FIELD", "").strip() or "u_idempotency_key"
+        )
         endpoint = f"{instance_url}/api/now/table/{table_name}"
 
         pushed_count = 0
+        created_count = 0
+        updated_count = 0
         skipped_duplicate_count = 0
         results: list[dict[str, Any]] = []
 
@@ -788,7 +897,13 @@ class ExportPusher:
                     raise ValueError("Invalid ServiceNow record payload item: expected object.")
 
                 idempotency_key = self._build_idempotency_key(envelope, actionable_item)
-                if self.idempotency_enabled and idempotency_key in existing_idempotency_keys:
+                record_payload = dict(record)
+                record_payload[idempotency_field] = idempotency_key
+                if (
+                    push_mode == "create"
+                    and self.idempotency_enabled
+                    and idempotency_key in existing_idempotency_keys
+                ):
                     skipped_duplicate_count += 1
                     results.append(
                         {
@@ -800,21 +915,91 @@ class ExportPusher:
                     )
                     continue
 
-                attempt_result = self._post_with_retry(
+                operation = "created"
+                sys_id: str | None = None
+                if push_mode == "upsert":
+                    lookup_result = self._request_with_retry(
+                        client=client,
+                        method="GET",
+                        endpoint=endpoint,
+                        params={
+                            "sysparm_query": f"{idempotency_field}={idempotency_key}",
+                            "sysparm_limit": "1",
+                        },
+                        target_name="servicenow",
+                        success_status_codes={200},
+                    )
+                    if not lookup_result["ok"]:
+                        failure_reason = lookup_result["failure_reason"]
+                        results.append(
+                            {
+                                "status": "failed",
+                                "operation": "lookup",
+                                "http_status": lookup_result["http_status"],
+                                "attempts": lookup_result["attempts"],
+                                "retries_used": max(lookup_result["attempts"] - 1, 0),
+                                "failure_reason": failure_reason,
+                                "item_index": record_index,
+                                "requirement_id": actionable_item.requirement_id,
+                                "idempotency_key": idempotency_key,
+                            }
+                        )
+                        push_result = self._build_push_result(
+                            target="servicenow",
+                            push_mode=push_mode,
+                            dry_run=False,
+                            actionable_count=actionable_count,
+                            pushed_count=pushed_count,
+                            created_count=created_count,
+                            updated_count=updated_count,
+                            failed_count=1,
+                            skipped_duplicate_count=skipped_duplicate_count,
+                            failure_reason=failure_reason,
+                            results=results,
+                        )
+                        raise ExportPushError(
+                            f"ServiceNow push aborted on item {record_index}: {failure_reason}",
+                            push_result=push_result,
+                        )
+
+                    sys_id = self._extract_servicenow_sys_id_from_lookup(lookup_result["response"])
+                    if sys_id:
+                        operation = "updated"
+
+                method = "POST"
+                call_endpoint = endpoint
+                success_status_codes = {200, 201}
+                if operation == "updated":
+                    method = "PATCH"
+                    call_endpoint = f"{endpoint}/{sys_id}"
+                    success_status_codes = {200}
+
+                attempt_result = self._request_with_retry(
                     client=client,
-                    endpoint=endpoint,
-                    payload=record,
+                    method=method,
+                    endpoint=call_endpoint,
+                    payload=record_payload,
                     target_name="servicenow",
+                    success_status_codes=success_status_codes,
                 )
 
                 if attempt_result["ok"]:
                     response = attempt_result["response"]
                     pushed_count += 1
                     response_json = self._safe_json(response)
-                    result_obj = response_json.get("result", {})
-                    sys_id = result_obj.get("sys_id") if isinstance(result_obj, dict) else None
+                    if operation == "created":
+                        created_count += 1
+                        result_obj = response_json.get("result", {})
+                        parsed_sys_id = (
+                            result_obj.get("sys_id") if isinstance(result_obj, dict) else None
+                        )
+                        if isinstance(parsed_sys_id, str) and parsed_sys_id:
+                            sys_id = parsed_sys_id
+                    else:
+                        updated_count += 1
                     success_entry = {
                         "status": "success",
+                        "operation": operation,
                         "http_status": response.status_code,
                         "attempts": attempt_result["attempts"],
                         "retries_used": max(attempt_result["attempts"] - 1, 0),
@@ -841,6 +1026,7 @@ class ExportPusher:
                 results.append(
                     {
                         "status": "failed",
+                        "operation": operation,
                         "http_status": attempt_result["http_status"],
                         "attempts": attempt_result["attempts"],
                         "retries_used": max(attempt_result["attempts"] - 1, 0),
@@ -850,55 +1036,54 @@ class ExportPusher:
                         "idempotency_key": idempotency_key,
                     }
                 )
-                push_result = {
-                    "target": "servicenow",
-                    "dry_run": False,
-                    "attempted_actionable_count": actionable_count,
-                    "pushed_count": pushed_count,
-                    "failed_count": 1,
-                    "skipped_duplicate_count": skipped_duplicate_count,
-                    "failure_reason": failure_reason,
-                    "max_retries": self.max_retries,
-                    "retry_backoff_seconds": self.retry_backoff_seconds,
-                    "timeout_seconds": self.timeout_seconds,
-                    "idempotency_enabled": self.idempotency_enabled,
-                    "idempotency_path": self._idempotency_path_display(),
-                    "results": results,
-                }
+                push_result = self._build_push_result(
+                    target="servicenow",
+                    push_mode=push_mode,
+                    dry_run=False,
+                    actionable_count=actionable_count,
+                    pushed_count=pushed_count,
+                    created_count=created_count,
+                    updated_count=updated_count,
+                    failed_count=1,
+                    skipped_duplicate_count=skipped_duplicate_count,
+                    failure_reason=failure_reason,
+                    results=results,
+                )
                 raise ExportPushError(
                     f"ServiceNow push aborted on item {record_index}: {failure_reason}",
                     push_result=push_result,
                 )
 
-        return {
-            "target": "servicenow",
-            "dry_run": False,
-            "attempted_actionable_count": actionable_count,
-            "pushed_count": pushed_count,
-            "failed_count": 0,
-            "skipped_duplicate_count": skipped_duplicate_count,
-            "failure_reason": None,
-            "max_retries": self.max_retries,
-            "retry_backoff_seconds": self.retry_backoff_seconds,
-            "timeout_seconds": self.timeout_seconds,
-            "idempotency_enabled": self.idempotency_enabled,
-            "idempotency_path": self._idempotency_path_display(),
-            "results": results,
-        }
+        return self._build_push_result(
+            target="servicenow",
+            push_mode=push_mode,
+            dry_run=False,
+            actionable_count=actionable_count,
+            pushed_count=pushed_count,
+            created_count=created_count,
+            updated_count=updated_count,
+            failed_count=0,
+            skipped_duplicate_count=skipped_duplicate_count,
+            failure_reason=None,
+            results=results,
+        )
 
-    def _post_with_retry(
+    def _request_with_retry(
         self,
         *,
         client: httpx.Client,
+        method: str,
         endpoint: str,
-        payload: dict[str, Any],
+        payload: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
         target_name: str,
+        success_status_codes: set[int] | tuple[int, ...] = (200, 201),
     ) -> dict[str, Any]:
         attempts = 0
         while attempts <= self.max_retries:
             attempts += 1
             try:
-                response = client.post(endpoint, json=payload)
+                response = client.request(method, endpoint, json=payload, params=params)
             except httpx.HTTPError as exc:
                 failure_reason = f"HTTP transport error: {exc}"
                 if attempts <= self.max_retries:
@@ -911,7 +1096,7 @@ class ExportPusher:
                     "failure_reason": failure_reason,
                 }
 
-            if response.status_code in {200, 201}:
+            if response.status_code in success_status_codes:
                 return {"ok": True, "attempts": attempts, "response": response}
 
             if self._is_retryable_status(response.status_code) and attempts <= self.max_retries:
@@ -935,6 +1120,77 @@ class ExportPusher:
             "http_status": None,
             "failure_reason": f"{target_name} push failed for unknown retry loop reason.",
         }
+
+    def _build_push_result(
+        self,
+        *,
+        target: str,
+        push_mode: PushMode,
+        dry_run: bool,
+        actionable_count: int,
+        pushed_count: int,
+        created_count: int,
+        updated_count: int,
+        failed_count: int,
+        skipped_duplicate_count: int,
+        failure_reason: str | None,
+        results: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        return {
+            "target": target,
+            "dry_run": dry_run,
+            "push_mode": push_mode,
+            "attempted_actionable_count": actionable_count,
+            "pushed_count": pushed_count,
+            "created_count": created_count,
+            "updated_count": updated_count,
+            "failed_count": failed_count,
+            "skipped_duplicate_count": skipped_duplicate_count,
+            "failure_reason": failure_reason,
+            "max_retries": self.max_retries,
+            "retry_backoff_seconds": self.retry_backoff_seconds,
+            "timeout_seconds": self.timeout_seconds,
+            "idempotency_enabled": self.idempotency_enabled,
+            "idempotency_path": self._idempotency_path_display(),
+            "results": results,
+        }
+
+    def _jira_idempotency_label(self, idempotency_key: str) -> str:
+        return f"eu-ai-act-idem-{idempotency_key[:12]}"
+
+    def _jira_labels_with_idempotency_label(
+        self,
+        labels: Any,
+        idempotency_label: str,
+    ) -> list[str]:
+        normalized_labels: list[str] = []
+        if isinstance(labels, list):
+            normalized_labels = [str(label) for label in labels if str(label).strip()]
+        if idempotency_label not in normalized_labels:
+            normalized_labels.append(idempotency_label)
+        return normalized_labels
+
+    def _extract_jira_issue_key(self, response: httpx.Response) -> str | None:
+        response_json = self._safe_json(response)
+        issues = response_json.get("issues")
+        if isinstance(issues, list) and issues:
+            first_issue = issues[0]
+            if isinstance(first_issue, dict):
+                issue_key = first_issue.get("key")
+                if isinstance(issue_key, str) and issue_key:
+                    return issue_key
+        return None
+
+    def _extract_servicenow_sys_id_from_lookup(self, response: httpx.Response) -> str | None:
+        response_json = self._safe_json(response)
+        result_obj = response_json.get("result")
+        if isinstance(result_obj, list) and result_obj:
+            first = result_obj[0]
+            if isinstance(first, dict):
+                sys_id = first.get("sys_id")
+                if isinstance(sys_id, str) and sys_id:
+                    return sys_id
+        return None
 
     def _sleep_before_retry(self, attempts: int) -> None:
         delay_seconds = self.retry_backoff_seconds * (2 ** (attempts - 1))

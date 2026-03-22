@@ -88,8 +88,8 @@ ai-act export check examples/medical_diagnosis.yaml --target generic --json
 - `ai-act articles [--tier minimal|limited|high_risk|unacceptable]`
 - `ai-act history list|show|diff`
 - `ai-act dashboard build <descriptor_dir> [--recursive] [--include-history]`
-- `ai-act export check <system.yaml> --target jira|servicenow|generic [--output PATH] [--history-path PATH] [--json] [--push] [--dry-run] [--idempotency-path PATH] [--disable-idempotency]`
-- `ai-act export history <event_id> --target jira|servicenow|generic [--output PATH] [--history-path PATH] [--json] [--push] [--dry-run] [--idempotency-path PATH] [--disable-idempotency]`
+- `ai-act export check <system.yaml> --target jira|servicenow|generic [--output PATH] [--history-path PATH] [--json] [--push] [--push-mode create|upsert] [--dry-run] [--idempotency-path PATH] [--disable-idempotency]`
+- `ai-act export history <event_id> --target jira|servicenow|generic [--output PATH] [--history-path PATH] [--json] [--push] [--push-mode create|upsert] [--dry-run] [--idempotency-path PATH] [--disable-idempotency]`
 - `ai-act export ledger list [--idempotency-path PATH] [--target jira|servicenow|generic] [--system NAME] [--requirement-id ID] [--limit N] [--json]`
 - `ai-act export ledger stats [--idempotency-path PATH] [--json]`
 
@@ -204,7 +204,7 @@ pre-commit run --hook-stage pre-push --all-files
 - Phase 15: CI/release runtime hardening completed (Node20 deprecation cleanup + security gate stabilization)
 - Phase 16: live export push completed (strict fail-fast + retry/backoff controls for `--push`)
 - Phase 17: export push production hardening completed (create-only idempotency ledger + duplicate-safe push)
-- Phase 18: export operator observability in progress (`export ledger list|stats` + ledger analytics contract)
+- Phase 18: export operator observability + upsert kickoff in progress (`export ledger list|stats` + `--push-mode create|upsert`)
 
 ## Disclaimer
 

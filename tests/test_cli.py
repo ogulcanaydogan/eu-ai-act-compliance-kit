@@ -29,7 +29,7 @@ class TestCLI:
 
         assert result.exit_code == 0
         assert "version" in result.output.lower()
-        assert "0.1.6" in result.output
+        assert "0.1.7" in result.output
         assert "runtimeerror" not in result.output.lower()
 
     def test_articles_uses_normalized_mapping(self):
@@ -536,7 +536,10 @@ class TestCLI:
         payload = json.loads(result.output[result.output.find("{") :])
         assert "push_result" in payload
         assert payload["push_result"]["dry_run"] is True
+        assert payload["push_result"]["push_mode"] == "create"
         assert payload["push_result"]["pushed_count"] == 0
+        assert payload["push_result"]["created_count"] == 0
+        assert payload["push_result"]["updated_count"] == 0
         assert payload["push_result"]["failed_count"] == 0
         assert payload["push_result"]["skipped_duplicate_count"] == 0
         assert payload["push_result"]["failure_reason"] is None
@@ -548,6 +551,109 @@ class TestCLI:
             ".eu_ai_act/export_push_ledger.jsonl"
         )
         assert "no remote api call" in payload["push_result"]["message"].lower()
+
+    def test_export_check_push_mode_without_push_fails(self):
+        """`--push-mode` should be rejected unless `--push` is explicitly enabled."""
+        runner = CliRunner()
+        system_yaml = EXAMPLES_DIR / "medical_diagnosis.yaml"
+        result = runner.invoke(
+            main,
+            [
+                "export",
+                "check",
+                str(system_yaml),
+                "--target",
+                "jira",
+                "--push-mode",
+                "upsert",
+                "--json",
+            ],
+        )
+
+        assert result.exit_code != 0
+        output = result.output + getattr(result, "stderr", "")
+        assert "--push-mode can only be used together with --push" in output
+
+    def test_export_history_push_mode_without_push_fails(self):
+        """History export should enforce the same push-mode validation contract."""
+        runner = CliRunner()
+        system_yaml = EXAMPLES_DIR / "chatbot.yaml"
+        check_result = runner.invoke(main, ["check", str(system_yaml), "--json"])
+        assert check_result.exit_code == 0
+
+        list_result = runner.invoke(main, ["history", "list", "--event-type", "check", "--json"])
+        assert list_result.exit_code == 0
+        event_id = json.loads(list_result.output[list_result.output.find("{") :])["events"][0][
+            "event_id"
+        ]
+
+        result = runner.invoke(
+            main,
+            [
+                "export",
+                "history",
+                event_id,
+                "--target",
+                "servicenow",
+                "--push-mode",
+                "upsert",
+                "--json",
+            ],
+        )
+
+        assert result.exit_code != 0
+        output = result.output + getattr(result, "stderr", "")
+        assert "--push-mode can only be used together with --push" in output
+
+    def test_export_push_mode_is_forwarded_to_pusher(self, monkeypatch):
+        """`--push-mode upsert` should be passed to ExportPusher and reflected in push_result."""
+        runner = CliRunner()
+        system_yaml = EXAMPLES_DIR / "medical_diagnosis.yaml"
+        captured: dict[str, object] = {}
+
+        def _fake_push(_self, _envelope, dry_run=False, push_mode="create"):
+            captured["push_mode"] = push_mode
+            return {
+                "target": "jira",
+                "dry_run": dry_run,
+                "push_mode": push_mode,
+                "attempted_actionable_count": 1,
+                "pushed_count": 0,
+                "created_count": 0,
+                "updated_count": 1,
+                "failed_count": 0,
+                "skipped_duplicate_count": 0,
+                "failure_reason": None,
+                "max_retries": 3,
+                "retry_backoff_seconds": 1.0,
+                "timeout_seconds": 30.0,
+                "idempotency_enabled": True,
+                "idempotency_path": None,
+                "results": [{"status": "success", "operation": "updated", "issue_key": "EUAI-99"}],
+            }
+
+        monkeypatch.setattr(cli_module.ExportPusher, "push", _fake_push)
+
+        result = runner.invoke(
+            main,
+            [
+                "export",
+                "check",
+                str(system_yaml),
+                "--target",
+                "jira",
+                "--push",
+                "--push-mode",
+                "upsert",
+                "--json",
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert captured["push_mode"] == "upsert"
+        payload = json.loads(result.output[result.output.find("{") :])
+        assert payload["push_result"]["push_mode"] == "upsert"
+        assert payload["push_result"]["updated_count"] == 1
 
     def test_export_push_generic_target_fails(self):
         """`--push` should fail deterministically for unsupported generic target."""
@@ -568,12 +674,15 @@ class TestCLI:
         runner = CliRunner()
         system_yaml = EXAMPLES_DIR / "medical_diagnosis.yaml"
 
-        def _fake_push(_self, _envelope, dry_run=False):
+        def _fake_push(_self, _envelope, dry_run=False, push_mode="create"):
             return {
                 "target": "jira",
                 "dry_run": dry_run,
+                "push_mode": push_mode,
                 "attempted_actionable_count": 2,
                 "pushed_count": 2,
+                "created_count": 2,
+                "updated_count": 0,
                 "failed_count": 0,
                 "results": [{"status": "success", "issue_key": "EUAI-1"}],
             }
@@ -588,7 +697,10 @@ class TestCLI:
         assert result.exit_code == 0
         payload = json.loads(result.output[result.output.find("{") :])
         assert payload["push_result"]["target"] == "jira"
+        assert payload["push_result"]["push_mode"] == "create"
         assert payload["push_result"]["pushed_count"] == 2
+        assert payload["push_result"]["created_count"] == 2
+        assert payload["push_result"]["updated_count"] == 0
         assert payload["push_result"]["failed_count"] == 0
 
     def test_export_push_uses_custom_idempotency_path(self, monkeypatch, tmp_path):
@@ -598,14 +710,17 @@ class TestCLI:
         custom_ledger = tmp_path / "custom-ledger.jsonl"
         captured: dict[str, object] = {}
 
-        def _fake_push(self, _envelope, dry_run=False):
+        def _fake_push(self, _envelope, dry_run=False, push_mode="create"):
             captured["idempotency_enabled"] = self.idempotency_enabled
             captured["idempotency_path"] = self.idempotency_path
             return {
                 "target": "jira",
                 "dry_run": dry_run,
+                "push_mode": push_mode,
                 "attempted_actionable_count": 2,
                 "pushed_count": 1,
+                "created_count": 1,
+                "updated_count": 0,
                 "failed_count": 0,
                 "skipped_duplicate_count": 1,
                 "failure_reason": None,
@@ -650,14 +765,17 @@ class TestCLI:
         system_yaml = EXAMPLES_DIR / "medical_diagnosis.yaml"
         captured: dict[str, object] = {}
 
-        def _fake_push(self, _envelope, dry_run=False):
+        def _fake_push(self, _envelope, dry_run=False, push_mode="create"):
             captured["idempotency_enabled"] = self.idempotency_enabled
             captured["idempotency_path"] = self.idempotency_path
             return {
                 "target": "jira",
                 "dry_run": dry_run,
+                "push_mode": push_mode,
                 "attempted_actionable_count": 2,
                 "pushed_count": 2,
+                "created_count": 2,
+                "updated_count": 0,
                 "failed_count": 0,
                 "skipped_duplicate_count": 0,
                 "failure_reason": None,
@@ -706,14 +824,17 @@ class TestCLI:
         custom_ledger = tmp_path / "history-ledger.jsonl"
         captured: dict[str, object] = {}
 
-        def _fake_push(self, _envelope, dry_run=False):
+        def _fake_push(self, _envelope, dry_run=False, push_mode="create"):
             captured["idempotency_enabled"] = self.idempotency_enabled
             captured["idempotency_path"] = self.idempotency_path
             return {
                 "target": "servicenow",
                 "dry_run": dry_run,
+                "push_mode": push_mode,
                 "attempted_actionable_count": 1,
                 "pushed_count": 1,
+                "created_count": 1,
+                "updated_count": 0,
                 "failed_count": 0,
                 "skipped_duplicate_count": 0,
                 "failure_reason": None,
@@ -751,7 +872,7 @@ class TestCLI:
         runner = CliRunner()
         system_yaml = EXAMPLES_DIR / "medical_diagnosis.yaml"
 
-        def _raise_push_failure(_self, _envelope, dry_run=False):
+        def _raise_push_failure(_self, _envelope, dry_run=False, push_mode="create"):
             raise RuntimeError("Jira push failed with HTTP transport error: timeout")
 
         monkeypatch.setattr(cli_module.ExportPusher, "push", _raise_push_failure)
@@ -827,14 +948,17 @@ class TestCLI:
         runner = CliRunner()
         system_yaml = EXAMPLES_DIR / "medical_diagnosis.yaml"
 
-        def _raise_push_failure(_self, _envelope, dry_run=False):
+        def _raise_push_failure(_self, _envelope, dry_run=False, push_mode="create"):
             raise ExportPushError(
                 "Jira push aborted on item 1: jira API returned HTTP 503: temporary outage",
                 push_result={
                     "target": "jira",
                     "dry_run": dry_run,
+                    "push_mode": push_mode,
                     "attempted_actionable_count": 1,
                     "pushed_count": 0,
+                    "created_count": 0,
+                    "updated_count": 0,
                     "failed_count": 1,
                     "failure_reason": "jira API returned HTTP 503: temporary outage",
                     "max_retries": 3,
