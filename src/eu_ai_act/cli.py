@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import cast
 
 import click
+from click.core import ParameterSource
 from rich.console import Console
 from rich.panel import Panel
 from rich.progress import Progress
@@ -24,6 +25,7 @@ from eu_ai_act.exporter import (
     ExportGenerator,
     ExportPusher,
     ExportPushError,
+    PushMode,
     ExportTarget,
     list_export_push_ledger_records,
     resolve_export_push_ledger_path,
@@ -955,6 +957,13 @@ def export() -> None:
     help="Push payload to target API (supported: jira, servicenow)",
 )
 @click.option(
+    "--push-mode",
+    type=click.Choice(["create", "upsert"]),
+    default="create",
+    show_default=True,
+    help="Push strategy: create-only or upsert (lookup then update/create).",
+)
+@click.option(
     "--dry-run",
     is_flag=True,
     help="Do not call remote APIs; return simulated push summary.",
@@ -991,12 +1000,15 @@ def export() -> None:
     help="Disable duplicate-skip idempotency checks for live push.",
 )
 @click.option("--json", "output_json", is_flag=True, help="Output JSON payload (default behavior)")
+@click.pass_context
 def export_check(
+    ctx: click.Context,
     system_yaml: str,
     target: str,
     output: str | None,
     history_path: str | None,
     push: bool,
+    push_mode: str,
     dry_run: bool,
     max_retries: int,
     retry_backoff_seconds: float,
@@ -1030,6 +1042,9 @@ def export_check(
     if timeout_seconds <= 0:
         console.print("[red]Error: --timeout-seconds must be > 0[/red]")
         sys.exit(1)
+    if not push and ctx.get_parameter_source("push_mode") == ParameterSource.COMMANDLINE:
+        console.print("[red]Error: --push-mode can only be used together with --push[/red]")
+        sys.exit(1)
 
     checker = ComplianceChecker()
     exporter = ExportGenerator()
@@ -1056,7 +1071,11 @@ def export_check(
     payload_dict = payload.to_dict()
     if push:
         try:
-            push_result = pusher.push(payload, dry_run=dry_run)
+            push_result = pusher.push(
+                payload,
+                dry_run=dry_run,
+                push_mode=cast(PushMode, push_mode),
+            )
         except ExportPushError as e:
             console.print(f"[red]Error pushing export payload: {e}[/red]")
             sys.exit(1)
@@ -1068,8 +1087,11 @@ def export_check(
         payload_dict["push_result"] = {
             "target": target,
             "dry_run": True,
+            "push_mode": cast(PushMode, push_mode),
             "attempted_actionable_count": sum(1 for item in payload.items if item.actionable),
             "pushed_count": 0,
+            "created_count": 0,
+            "updated_count": 0,
             "failed_count": 0,
             "skipped_duplicate_count": 0,
             "failure_reason": None,
@@ -1100,6 +1122,13 @@ def export_check(
     "--push",
     is_flag=True,
     help="Push payload to target API (supported: jira, servicenow)",
+)
+@click.option(
+    "--push-mode",
+    type=click.Choice(["create", "upsert"]),
+    default="create",
+    show_default=True,
+    help="Push strategy: create-only or upsert (lookup then update/create).",
 )
 @click.option(
     "--dry-run",
@@ -1138,12 +1167,15 @@ def export_check(
     help="Disable duplicate-skip idempotency checks for live push.",
 )
 @click.option("--json", "output_json", is_flag=True, help="Output JSON payload (default behavior)")
+@click.pass_context
 def export_history(
+    ctx: click.Context,
     event_id: str,
     target: str,
     output: str | None,
     history_path: str | None,
     push: bool,
+    push_mode: str,
     dry_run: bool,
     max_retries: int,
     retry_backoff_seconds: float,
@@ -1170,6 +1202,9 @@ def export_history(
     if timeout_seconds <= 0:
         console.print("[red]Error: --timeout-seconds must be > 0[/red]")
         sys.exit(1)
+    if not push and ctx.get_parameter_source("push_mode") == ParameterSource.COMMANDLINE:
+        console.print("[red]Error: --push-mode can only be used together with --push[/red]")
+        sys.exit(1)
 
     exporter = ExportGenerator()
     resolved_idempotency_path = (
@@ -1189,7 +1224,11 @@ def export_history(
     payload_dict = payload.to_dict()
     if push:
         try:
-            push_result = pusher.push(payload, dry_run=dry_run)
+            push_result = pusher.push(
+                payload,
+                dry_run=dry_run,
+                push_mode=cast(PushMode, push_mode),
+            )
         except ExportPushError as e:
             console.print(f"[red]Error pushing export payload: {e}[/red]")
             sys.exit(1)
@@ -1201,8 +1240,11 @@ def export_history(
         payload_dict["push_result"] = {
             "target": target,
             "dry_run": True,
+            "push_mode": cast(PushMode, push_mode),
             "attempted_actionable_count": sum(1 for item in payload.items if item.actionable),
             "pushed_count": 0,
+            "created_count": 0,
+            "updated_count": 0,
             "failed_count": 0,
             "skipped_duplicate_count": 0,
             "failure_reason": None,

@@ -8,18 +8,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- No changes yet.
+
+## [0.1.7] - 2026-03-22
+
+### Added
 - New export ledger CLI surface:
   - `ai-act export ledger list`
   - `ai-act export ledger stats`
 - Exporter-side ledger query helpers for deterministic list filtering and aggregate summaries.
+- Export push mode selection for live targets:
+  - `--push-mode create|upsert` on `export check` and `export history`
+- Jira and ServiceNow lookup-first upsert runtime for `--push-mode upsert` (create-only default preserved).
 
 ### Changed
 - Roadmap/docs/readme status synchronized to mark Phase 17 as completed after `v0.1.6`.
-- Roadmap/docs/readme status synchronized to start Phase 18 as in progress (operator observability).
+- Roadmap/docs/readme status synchronized to keep Phase 18 in progress with upsert kickoff scope.
+- `push_result` contract extended with `push_mode`, `created_count`, and `updated_count`.
+- ServiceNow upsert lookup field is now configurable via `EU_AI_ACT_SERVICENOW_IDEMPOTENCY_FIELD` (default: `u_idempotency_key`).
 
 ### Tests
 - Added unit coverage for ledger list/summary helpers, including invalid JSON error handling.
 - Added CLI coverage for `export ledger list|stats` JSON contracts and invalid `--limit` handling.
+- Added exporter coverage for Jira/ServiceNow upsert create and update paths, including lookup failure handling.
+- Added CLI coverage for `--push-mode` validation and forwarding behavior.
 
 ## [0.1.6] - 2026-03-22
 

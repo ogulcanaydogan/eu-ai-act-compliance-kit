@@ -21,7 +21,7 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
 - Phase 15 completed (CI/release runtime hardening and security gate stabilization)
 - Phase 16 completed (live export push with strict fail-fast and retry/backoff tuning)
 - Phase 17 completed (create-only export push idempotency and duplicate-safe runtime hardening)
-- Phase 18 in progress (export operator observability with ledger query and stats commands)
+- Phase 18 in progress (export operator observability + push upsert kickoff)
 
 ## Phase 1: Risk Classification Engine (Weeks 1-2) ✅ Completed
 
@@ -405,6 +405,10 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
   - total records
   - target/status/system/requirement distributions
   - first/last push timestamps
+- Start controlled upsert push behavior behind optional mode flag:
+  - `--push-mode create|upsert` (default `create`)
+  - `create` keeps duplicate-skip create-only behavior
+  - `upsert` performs lookup-first create/update for Jira and ServiceNow
 - Preserve non-breaking behavior for existing `export check|history` commands.
 
 ## Timeline Summary (Historical Plan)

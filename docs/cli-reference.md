@@ -141,6 +141,7 @@ ai-act export check <system.yaml> --target generic --json
 ai-act export check <system.yaml> --target jira -o export_jira.json
 ai-act export history <event_id> --target servicenow --history-path .eu_ai_act/history.jsonl --json
 ai-act export check <system.yaml> --target jira --push --dry-run --json
+ai-act export check <system.yaml> --target jira --push --push-mode upsert --json
 ai-act export ledger list --json
 ai-act export ledger stats --json
 ```
@@ -154,6 +155,7 @@ Subcommands:
     - `-o, --output PATH`
     - `--history-path PATH` (accepted for contract compatibility)
     - `--push` (optional live push for `jira`/`servicenow`)
+    - `--push-mode [create|upsert]` (default: `create`, requires `--push`)
     - `--dry-run` (simulated push summary, no network call)
     - `--max-retries INT` (default: `3`, must be `>= 0`)
     - `--retry-backoff-seconds FLOAT` (default: `1.0`, must be `> 0`)
@@ -168,6 +170,7 @@ Subcommands:
     - `-o, --output PATH`
     - `--history-path PATH`
     - `--push` (optional live push for `jira`/`servicenow`)
+    - `--push-mode [create|upsert]` (default: `create`, requires `--push`)
     - `--dry-run` (simulated push summary, no network call)
     - `--max-retries INT` (default: `3`, must be `>= 0`)
     - `--retry-backoff-seconds FLOAT` (default: `1.0`, must be `> 0`)
@@ -197,14 +200,16 @@ Output contract:
 - item fields: `requirement_id`, `title`, `status`, `severity`, `article`, `gap_analysis`, `guidance`, `success_criteria`, `actionable`
 - adapter payload emitted under `adapter_payload` (`generic`, `jira`, `servicenow`)
 - when `--push` or `--dry-run` is used, output may include `push_result`
-  - includes diagnostics: `attempted_actionable_count`, `pushed_count`, `failed_count`, `skipped_duplicate_count`, `failure_reason`, `max_retries`, `retry_backoff_seconds`, `timeout_seconds`, `idempotency_enabled`, `idempotency_path`
+  - includes diagnostics: `push_mode`, `attempted_actionable_count`, `pushed_count`, `created_count`, `updated_count`, `failed_count`, `skipped_duplicate_count`, `failure_reason`, `max_retries`, `retry_backoff_seconds`, `timeout_seconds`, `idempotency_enabled`, `idempotency_path`
 
 Push behavior policy:
 
 - strict fail-fast: push aborts at the first actionable item that still fails after retries
+- `--push-mode` is accepted only together with `--push`
 - retries are attempted only for transport errors and HTTP `429`/`5xx`
 - non-retryable `4xx` responses fail immediately
 - when idempotency is enabled, duplicate actionable items are skipped before remote API call
+- in `upsert` mode, Jira/ServiceNow first perform remote lookup then update existing records or create new ones
 
 Live push environment variables:
 
@@ -218,6 +223,7 @@ Live push environment variables:
   - `EU_AI_ACT_SERVICENOW_USERNAME`
   - `EU_AI_ACT_SERVICENOW_PASSWORD`
   - `EU_AI_ACT_SERVICENOW_TABLE` (optional; default adapter table)
+  - `EU_AI_ACT_SERVICENOW_IDEMPOTENCY_FIELD` (optional; default: `u_idempotency_key`)
 
 ## `transparency`
 
