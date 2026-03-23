@@ -14,7 +14,7 @@ checks transparency and GPAI obligations, and renders audit-oriented reports.
 - Assess transparency obligations and GPAI signals (`Art. 50`, `Art. 51-55`)
 - Integrate checks into CI/CD using the repository's composite GitHub Action
 
-## Current Delivery Status (March 22, 2026)
+## Current Delivery Status (March 23, 2026)
 
 - Phase 1: Risk classification complete
 - Phase 2: Compliance checker, checklist, transparency, GPAI complete
@@ -35,7 +35,7 @@ checks transparency and GPAI obligations, and renders audit-oriented reports.
 - Phase 17: Export push production hardening completed (create-only idempotency ledger + duplicate-safe push)
 - Phase 18: Export operator observability + upsert push completed (`export ledger list|stats` and lookup-first `--push-mode create|upsert`)
 - Phase 19: Export ops hardening completed (`export batch` + `export reconcile` for multi-system operations)
-- Phase 20: Quality and coverage hardening in progress (example matrix + CI/test contract gates)
+- Phase 20: Quality and coverage hardening completed (example matrix + CI/test contract gates)
 
 ## End-to-End Flow
 
