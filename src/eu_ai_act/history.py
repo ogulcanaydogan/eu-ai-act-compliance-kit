@@ -22,6 +22,22 @@ SUMMARY_FIELDS = (
     "compliance_percentage",
 )
 
+SECURITY_SUMMARY_FIELDS = (
+    "total_controls",
+    "compliant_count",
+    "non_compliant_count",
+    "partial_count",
+    "not_assessed_count",
+    "coverage_percentage",
+)
+
+SECURITY_DIFF_FIELDS = (
+    "coverage_percentage",
+    "non_compliant_count",
+    "partial_count",
+    "not_assessed_count",
+)
+
 
 def _utc_now_iso() -> str:
     return datetime.now(UTC).isoformat()
@@ -68,6 +84,47 @@ def _normalize_finding_statuses(finding_statuses: Any) -> dict[str, str]:
     return normalized
 
 
+def _normalize_security_summary(security_summary: Any) -> dict[str, Any]:
+    if not isinstance(security_summary, dict):
+        raise ValueError("security_summary must be an object.")
+
+    normalized: dict[str, Any] = {}
+    framework = security_summary.get("framework")
+    if framework is not None:
+        if not isinstance(framework, str) or not framework.strip():
+            raise ValueError("security_summary.framework must be null or a non-empty string.")
+        normalized["framework"] = framework
+
+    for field_name in SECURITY_SUMMARY_FIELDS:
+        if field_name not in security_summary:
+            raise ValueError(f"security_summary is missing required field '{field_name}'.")
+        if field_name == "coverage_percentage":
+            normalized[field_name] = _normalize_float(security_summary[field_name], field_name)
+        else:
+            normalized[field_name] = _normalize_int(security_summary[field_name], field_name)
+    return normalized
+
+
+def _security_change(
+    older_security: dict[str, Any] | None,
+    newer_security: dict[str, Any] | None,
+    field_name: str,
+) -> dict[str, Any]:
+    older_value = older_security.get(field_name) if older_security else None
+    newer_value = newer_security.get(field_name) if newer_security else None
+    if older_value is None or newer_value is None:
+        delta: float | int | None = None
+    else:
+        delta = round(float(newer_value) - float(older_value), 2)
+        if field_name != "coverage_percentage":
+            delta = int(delta)
+    return {
+        "from": older_value,
+        "to": newer_value,
+        "delta": delta,
+    }
+
+
 @dataclass(frozen=True)
 class HistoryEvent:
     """Serializable event model persisted to JSONL history."""
@@ -81,6 +138,7 @@ class HistoryEvent:
     summary: dict[str, Any]
     finding_statuses: dict[str, str]
     report_format: str | None = None
+    security_summary: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         payload: dict[str, Any] = {
@@ -95,6 +153,8 @@ class HistoryEvent:
         }
         if self.report_format:
             payload["report_format"] = self.report_format
+        if self.security_summary is not None:
+            payload["security_summary"] = dict(self.security_summary)
         return payload
 
     @classmethod
@@ -132,6 +192,12 @@ class HistoryEvent:
         report_format = payload.get("report_format")
         if report_format is not None and (not isinstance(report_format, str) or not report_format):
             raise ValueError("report_format must be null or a non-empty string.")
+        security_summary_raw = payload.get("security_summary")
+        security_summary = (
+            _normalize_security_summary(security_summary_raw)
+            if security_summary_raw is not None
+            else None
+        )
 
         return cls(
             event_id=event_id,
@@ -143,6 +209,7 @@ class HistoryEvent:
             summary=summary,
             finding_statuses=finding_statuses,
             report_format=report_format,
+            security_summary=security_summary,
         )
 
 
@@ -155,6 +222,7 @@ def build_event(
     summary: dict[str, Any],
     finding_statuses: dict[str, str],
     report_format: str | None = None,
+    security_summary: dict[str, Any] | None = None,
     generated_at: str | None = None,
 ) -> HistoryEvent:
     """Build and validate a new history event with generated event_id/timestamp."""
@@ -168,6 +236,7 @@ def build_event(
         "summary": summary,
         "finding_statuses": finding_statuses,
         "report_format": report_format,
+        "security_summary": security_summary,
     }
     return HistoryEvent.from_dict(payload)
 
@@ -346,6 +415,23 @@ def diff_events(
         for requirement_id in sorted(older_requirements - newer_requirements)
     ]
 
+    older_security = older.security_summary
+    newer_security = newer.security_summary
+    framework_from = older_security.get("framework") if older_security else None
+    framework_to = newer_security.get("framework") if newer_security else None
+    security_summary_change = {
+        "available": older_security is not None and newer_security is not None,
+        "framework_change": {
+            "from": framework_from,
+            "to": framework_to,
+            "changed": framework_from != framework_to,
+        },
+        **{
+            field_name: _security_change(older_security, newer_security, field_name)
+            for field_name in SECURITY_DIFF_FIELDS
+        },
+    }
+
     return {
         "older_event_id": older.event_id,
         "newer_event_id": newer.event_id,
@@ -362,4 +448,5 @@ def diff_events(
         "finding_status_changes": finding_status_changes,
         "added_findings": added_findings,
         "removed_findings": removed_findings,
+        "security_summary_change": security_summary_change,
     }

@@ -35,6 +35,7 @@ Options:
 
 JSON includes `summary`, `findings`, `transparency`, `gpai_summary`, `security_summary`, and `audit_trail`.
 Each successful run also attempts a best-effort history append to `.eu_ai_act/history.jsonl`.
+Security signals are observe-only in this phase and do not alter CI fail policy.
 
 ## `security-map`
 
@@ -105,6 +106,10 @@ Outputs:
 
 - `<output-dir>/dashboard.json`
 - `<output-dir>/dashboard.html`
+- `dashboard.json` includes additive security fields:
+  - system-level `security_summary`
+  - top-level `average_security_coverage_percentage`
+  - top-level `security_control_status_distribution`
 
 Options:
 
@@ -144,6 +149,15 @@ Options:
 - `history diff`
   - `--json`
   - `--history-path PATH`
+
+History payload notes:
+
+- event payloads may include additive `security_summary` snapshots
+- diff payload includes additive `security_summary_change` metrics:
+  - `coverage_percentage`
+  - `non_compliant_count`
+  - `partial_count`
+  - `not_assessed_count`
 
 Default history path is project-local `.eu_ai_act/history.jsonl`, resolved from the nearest parent directory containing `pyproject.toml`. If no project root is found, the current working directory is used.
 
@@ -277,6 +291,7 @@ Subcommands:
 Output contract:
 
 - top-level: `schema_version`, `generated_at`, `source_type`, `target`, `system_name`, `risk_tier`, `summary`, `items`
+- additive top-level security block: `security_mapping` (`framework`, `summary`, `controls`)
 - history-source extras: `event_id`, `event_type`, `descriptor_path`, `history_generated_at`
 - item fields: `requirement_id`, `title`, `status`, `severity`, `article`, `gap_analysis`, `guidance`, `success_criteria`, `actionable`
 - adapter payload emitted under `adapter_payload` (`generic`, `jira`, `servicenow`)
@@ -284,6 +299,7 @@ Output contract:
   - includes diagnostics: `push_mode`, `attempted_actionable_count`, `pushed_count`, `created_count`, `updated_count`, `failed_count`, `skipped_duplicate_count`, `failure_reason`, `max_retries`, `retry_backoff_seconds`, `timeout_seconds`, `idempotency_enabled`, `idempotency_path`
 - `export batch` top-level contract:
   - `generated_at`, `scan_root`, `target`, `recursive`, `total_files`, `processed_count`, `success_count`, `failure_count`, `invalid_count`, `results`
+  - successful `results[]` entries include additive `security_mapping`
 - `export reconcile` top-level contract:
   - `generated_at`, `target`, `ledger_path`, `filters`, `repair_enabled`, `apply`, `checked_count`, `exists_count`, `in_sync_count`, `drift_count`, `missing_count`, `error_count`, `repair_planned_count`, `repair_applied_count`, `repair_failed_count`, `results`
 - `export replay` top-level contract:

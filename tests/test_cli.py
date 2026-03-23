@@ -30,7 +30,7 @@ class TestCLI:
 
         assert result.exit_code == 0
         assert "version" in result.output.lower()
-        assert "0.1.14" in result.output
+        assert "0.1.15" in result.output
         assert "runtimeerror" not in result.output.lower()
 
     def test_articles_uses_normalized_mapping(self):
@@ -246,12 +246,15 @@ class TestCLI:
         show_payload = json.loads(show_result.output[show_result.output.find("{") :])
         assert show_payload["event_id"] == newer_id
         assert show_payload["event_type"] == "check"
+        assert "security_summary" in show_payload
+        assert show_payload["security_summary"]["framework"] == "owasp-llm-top-10"
 
         diff_result = runner.invoke(main, ["history", "diff", older_id, newer_id, "--json"])
         assert diff_result.exit_code == 0
         diff_payload = json.loads(diff_result.output[diff_result.output.find("{") :])
         assert "risk_tier_change" in diff_payload
         assert "summary_changes" in diff_payload
+        assert "security_summary_change" in diff_payload
         assert "finding_status_changes" in diff_payload
         assert "added_findings" in diff_payload
         assert "removed_findings" in diff_payload
@@ -303,12 +306,15 @@ class TestCLI:
                 "invalid_descriptor_count",
                 "risk_tier_distribution",
                 "average_compliance_percentage",
+                "average_security_coverage_percentage",
+                "security_control_status_distribution",
                 "systems",
                 "errors",
             ]:
                 assert key in payload
             assert payload["valid_system_count"] == 1
             assert payload["invalid_descriptor_count"] == 0
+            assert payload["systems"][0]["security_summary"]["framework"] == "owasp-llm-top-10"
 
     def test_dashboard_build_output_dir_override(self, tmp_path):
         """`dashboard build --output-dir` should write artifacts to the provided path."""
@@ -385,6 +391,8 @@ class TestCLI:
         assert payload["source_type"] == "check"
         assert payload["target"] == "jira"
         assert payload["descriptor_path"].endswith("examples/medical_diagnosis.yaml")
+        assert "security_mapping" in payload
+        assert payload["security_mapping"]["framework"] == "owasp-llm-top-10"
         assert payload["adapter_payload"]["format"] == "jira/issues/v1"
 
     def test_export_history_json_contract(self):
@@ -408,6 +416,8 @@ class TestCLI:
         assert payload["source_type"] == "history"
         assert payload["event_id"] == event_id
         assert "history_generated_at" in payload
+        assert "security_mapping" in payload
+        assert payload["security_mapping"]["framework"] == "owasp-llm-top-10"
         assert payload["adapter_payload"]["format"] == "servicenow/records/v1"
 
     def test_export_check_output_file(self, tmp_path):
@@ -477,6 +487,7 @@ class TestCLI:
         assert payload["invalid_count"] == 0
         assert len(payload["results"]) == 2
         assert all(item["status"] == "success" for item in payload["results"])
+        assert all("security_mapping" in item for item in payload["results"])
 
     def test_export_batch_mixed_valid_invalid_returns_nonzero(self, tmp_path):
         """Batch export should continue on invalid descriptors and return non-zero summary result."""

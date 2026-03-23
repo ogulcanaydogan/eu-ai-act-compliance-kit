@@ -40,6 +40,7 @@ checks transparency and GPAI obligations, and renders audit-oriented reports.
 - Phase 21: Export V3 reliability completed (reconcile drift detection + guarded repair with explicit `--apply`)
 - Phase 22: Export V4 ops completed (persistent ops log + replay/rollup operational flows)
 - Phase 23: OWASP security mapping core completed (`security-map` command + `check/report` integration)
+- Phase 24: Security ops integration completed (additive security snapshots in dashboard/history/export, observe-only gate policy)
 
 ## End-to-End Flow
 

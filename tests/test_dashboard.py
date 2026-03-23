@@ -35,6 +35,8 @@ class TestDashboardGenerator:
         assert payload["risk_tier_distribution"]["minimal"] == 1
         assert payload["risk_tier_distribution"]["limited"] == 0
         assert payload["risk_tier_distribution"]["unacceptable"] == 0
+        assert "average_security_coverage_percentage" in payload
+        assert "security_control_status_distribution" in payload
 
         first_system = payload["systems"][0]
         for key in [
@@ -46,9 +48,12 @@ class TestDashboardGenerator:
             "non_compliant_count",
             "partial_count",
             "not_assessed_count",
+            "security_summary",
             "generated_at",
         ]:
             assert key in first_system
+        assert first_system["security_summary"]["framework"] == "owasp-llm-top-10"
+        assert first_system["security_summary"]["total_controls"] == 10
 
     def test_aggregate_metrics_average_matches_system_rows(self, tmp_path):
         scan_root = tmp_path / "scan"
@@ -62,7 +67,13 @@ class TestDashboardGenerator:
             / len(payload["systems"]),
             2,
         )
+        expected_security_average = round(
+            sum(system["security_summary"]["coverage_percentage"] for system in payload["systems"])
+            / len(payload["systems"]),
+            2,
+        )
         assert payload["average_compliance_percentage"] == expected_average
+        assert payload["average_security_coverage_percentage"] == expected_security_average
 
     def test_no_valid_systems_returns_empty_systems_and_errors(self, tmp_path):
         scan_root = tmp_path / "scan"
@@ -148,6 +159,7 @@ class TestDashboardGenerator:
 
         assert "EU AI Act Multi-System Dashboard" in html_output
         assert "Risk Tier Distribution" in html_output
+        assert "Security Mapping Overview" in html_output
         assert "Invalid Descriptors" in html_output
         assert "Email Spam Filter" in html_output
 

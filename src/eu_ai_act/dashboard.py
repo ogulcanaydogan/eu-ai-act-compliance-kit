@@ -12,6 +12,7 @@ from eu_ai_act.checker import ComplianceChecker
 from eu_ai_act.classifier import RiskClassifier
 from eu_ai_act.history import list_events
 from eu_ai_act.schema import RiskTier, load_system_descriptor_from_file
+from eu_ai_act.security_mapping import SecurityMapper
 
 
 def _utc_now_iso() -> str:
@@ -25,6 +26,7 @@ class DashboardGenerator:
     def __init__(self) -> None:
         self.classifier = RiskClassifier()
         self.checker = ComplianceChecker()
+        self.security_mapper = SecurityMapper()
 
     def build(
         self,
@@ -49,6 +51,7 @@ class DashboardGenerator:
                 descriptor = load_system_descriptor_from_file(str(descriptor_file))
                 classification = self.classifier.classify(descriptor)
                 compliance_report = self.checker.check(descriptor)
+                security_mapping = self.security_mapper.map_from_compliance(compliance_report)
             except Exception as exc:
                 errors.append(
                     {
@@ -59,6 +62,10 @@ class DashboardGenerator:
                 continue
 
             summary = compliance_report.summary
+            security_summary = {
+                "framework": security_mapping.framework,
+                **security_mapping.summary.to_dict(),
+            }
             system_row = {
                 "system_name": descriptor.name,
                 "descriptor_path": str(descriptor_file),
@@ -68,6 +75,7 @@ class DashboardGenerator:
                 "non_compliant_count": summary.non_compliant_count,
                 "partial_count": summary.partial_count,
                 "not_assessed_count": summary.not_assessed_count,
+                "security_summary": security_summary,
                 "generated_at": compliance_report.generated_at,
             }
             systems.append(system_row)
@@ -80,6 +88,20 @@ class DashboardGenerator:
             if systems
             else 0.0
         )
+        average_security_coverage = (
+            round(
+                sum(row["security_summary"]["coverage_percentage"] for row in systems) / len(systems),
+                2,
+            )
+            if systems
+            else 0.0
+        )
+        security_control_status_distribution = {
+            "compliant": sum(row["security_summary"]["compliant_count"] for row in systems),
+            "non_compliant": sum(row["security_summary"]["non_compliant_count"] for row in systems),
+            "partial": sum(row["security_summary"]["partial_count"] for row in systems),
+            "not_assessed": sum(row["security_summary"]["not_assessed_count"] for row in systems),
+        }
 
         payload: dict[str, Any] = {
             "generated_at": _utc_now_iso(),
@@ -89,6 +111,8 @@ class DashboardGenerator:
             "invalid_descriptor_count": len(errors),
             "risk_tier_distribution": risk_tier_distribution,
             "average_compliance_percentage": average_compliance,
+            "average_security_coverage_percentage": average_security_coverage,
+            "security_control_status_distribution": security_control_status_distribution,
             "systems": systems,
             "errors": errors,
         }
@@ -106,6 +130,10 @@ class DashboardGenerator:
         cards = self._render_cards(payload)
         systems_rows = self._render_system_rows(payload.get("systems", []))
         errors_rows = self._render_error_rows(payload.get("errors", []))
+        security_overview = self._render_security_overview(
+            payload.get("average_security_coverage_percentage", 0.0),
+            payload.get("security_control_status_distribution", {}),
+        )
         history_section = self._render_history_section(payload.get("history_trends"))
 
         return (
@@ -138,6 +166,8 @@ class DashboardGenerator:
             f"{cards}\n"
             "  <h2>Risk Tier Distribution</h2>\n"
             f"  {self._render_risk_distribution(payload.get('risk_tier_distribution', {}))}\n"
+            "  <h2>Security Mapping Overview</h2>\n"
+            f"  {security_overview}\n"
             "  <h2>Systems</h2>\n"
             f"{systems_rows}\n"
             "  <h2>Invalid Descriptors</h2>\n"
@@ -240,6 +270,25 @@ class DashboardGenerator:
             f"<span><strong>{html.escape(label)}:</strong> {html.escape(str(distribution.get(label, 0)))}</span>"
             for label in labels
         ]
+        return '<div class="risk-grid">' + "".join(items) + "</div>"
+
+    def _render_security_overview(
+        self,
+        average_coverage: float,
+        distribution: dict[str, Any],
+    ) -> str:
+        labels = ["compliant", "non_compliant", "partial", "not_assessed"]
+        items = [
+            "<span><strong>Avg Coverage:</strong> "
+            f"{html.escape(str(round(average_coverage, 2)))}%</span>"
+        ]
+        items.extend(
+            (
+                f"<span><strong>{html.escape(label)}:</strong> "
+                f"{html.escape(str(distribution.get(label, 0)))}</span>"
+            )
+            for label in labels
+        )
         return '<div class="risk-grid">' + "".join(items) + "</div>"
 
     def _render_system_rows(self, systems: list[dict[str, Any]]) -> str:

@@ -25,6 +25,7 @@ def _make_event(
     summary: dict,
     finding_statuses: dict,
     report_format: str | None = None,
+    security_summary: dict | None = None,
 ) -> HistoryEvent:
     payload = {
         "event_id": event_id,
@@ -36,6 +37,7 @@ def _make_event(
         "summary": summary,
         "finding_statuses": finding_statuses,
         "report_format": report_format,
+        "security_summary": security_summary,
     }
     return HistoryEvent.from_dict(payload)
 
@@ -158,6 +160,15 @@ class TestHistoryStorage:
                     "compliance_percentage": 25.0,
                 },
                 finding_statuses={"Art. 10": "partial", "Art. 50": "not_assessed"},
+                security_summary={
+                    "framework": "owasp-llm-top-10",
+                    "total_controls": 10,
+                    "compliant_count": 2,
+                    "non_compliant_count": 4,
+                    "partial_count": 1,
+                    "not_assessed_count": 3,
+                    "coverage_percentage": 70.0,
+                },
             ),
             history_path=history_path,
         )
@@ -178,6 +189,15 @@ class TestHistoryStorage:
                     "compliance_percentage": 50.0,
                 },
                 finding_statuses={"Art. 10": "compliant", "Art. 43": "partial"},
+                security_summary={
+                    "framework": "owasp-llm-top-10",
+                    "total_controls": 10,
+                    "compliant_count": 4,
+                    "non_compliant_count": 3,
+                    "partial_count": 1,
+                    "not_assessed_count": 2,
+                    "coverage_percentage": 80.0,
+                },
             ),
             history_path=history_path,
         )
@@ -196,6 +216,11 @@ class TestHistoryStorage:
         ]
         assert diff["added_findings"] == [{"requirement_id": "Art. 43", "status": "partial"}]
         assert diff["removed_findings"] == [{"requirement_id": "Art. 50", "status": "not_assessed"}]
+        assert diff["security_summary_change"]["available"] is True
+        assert diff["security_summary_change"]["coverage_percentage"]["delta"] == 10.0
+        assert diff["security_summary_change"]["non_compliant_count"]["delta"] == -1
+        assert diff["security_summary_change"]["partial_count"]["delta"] == 0
+        assert diff["security_summary_change"]["not_assessed_count"]["delta"] == -1
 
     def test_invalid_jsonl_raises_clear_error(self, tmp_path):
         history_path = tmp_path / "history.jsonl"
@@ -239,6 +264,15 @@ class TestHistoryStorage:
             },
             finding_statuses={"Art. 43": "partial"},
             report_format="html",
+            security_summary={
+                "framework": "owasp-llm-top-10",
+                "total_controls": 10,
+                "compliant_count": 8,
+                "non_compliant_count": 0,
+                "partial_count": 2,
+                "not_assessed_count": 0,
+                "coverage_percentage": 100.0,
+            },
         )
         append_event(event, history_path=history_path)
 
@@ -247,3 +281,5 @@ class TestHistoryStorage:
         assert payload["event_id"] == "evt-json"
         assert payload["event_type"] == "report"
         assert payload["report_format"] == "html"
+        assert payload["security_summary"]["framework"] == "owasp-llm-top-10"
+        assert payload["security_summary"]["total_controls"] == 10

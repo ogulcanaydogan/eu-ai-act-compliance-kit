@@ -39,6 +39,10 @@ def test_from_check_generic_contract_and_status_actionability():
     assert payload["target"] == "generic"
     assert payload["system_name"] == descriptor.name
     assert payload["risk_tier"] == "high_risk"
+    assert "security_mapping" in payload
+    assert payload["security_mapping"]["framework"] == "owasp-llm-top-10"
+    assert payload["security_mapping"]["summary"]["total_controls"] == 10
+    assert len(payload["security_mapping"]["controls"]) == 10
 
     summary = payload["summary"]
     assert summary["total_requirements"] == 6
@@ -130,6 +134,10 @@ def test_from_history_preserves_event_metadata():
     assert payload["descriptor_path"] == "/tmp/snapshot.yaml"
     assert payload["history_generated_at"] == event.generated_at
     assert payload["summary"]["partial_count"] == 1
+    assert "security_mapping" in payload
+    assert payload["security_mapping"]["framework"] == "owasp-llm-top-10"
+    assert payload["security_mapping"]["summary"]["total_controls"] == 10
+    assert len(payload["security_mapping"]["controls"]) == 10
     assert len(payload["items"]) == 2
     assert payload["adapter_payload"]["format"] == "servicenow/records/v1"
     assert payload["adapter_payload"]["actionable_count"] == 1
@@ -1332,6 +1340,9 @@ def test_run_export_batch_mixed_valid_invalid_continues(tmp_path):
     ]
     statuses = [item["status"] for item in payload["results"]]
     assert statuses == ["success", "invalid_descriptor"]
+    success_entry = payload["results"][0]
+    assert success_entry["security_mapping"]["framework"] == "owasp-llm-top-10"
+    assert success_entry["security_mapping"]["summary"]["total_controls"] == 10
 
 
 def test_run_export_batch_push_continues_on_failed_descriptor(monkeypatch, tmp_path):

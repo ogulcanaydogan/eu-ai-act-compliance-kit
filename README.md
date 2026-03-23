@@ -99,6 +99,14 @@ ai-act export check examples/medical_diagnosis.yaml --target generic --json
 
 Full reference: [docs/cli-reference.md](docs/cli-reference.md)
 
+## Security Ops Signals (Observe-Only)
+
+- `ai-act check --json` includes `security_summary`.
+- `dashboard.json` includes system-level `security_summary` and top-level security aggregates.
+- `history` events can persist `security_summary`; `history diff` includes security delta metrics.
+- `export check|history|batch` payloads include additive top-level `security_mapping`.
+- These security fields are visibility signals only in this phase and do not change gate decisions.
+
 ## Example Systems
 
 - `examples/medical_diagnosis.yaml` (high risk)
@@ -130,6 +138,7 @@ Fail policy:
 
 - `unacceptable` always fails
 - `high_risk` fails only when `fail_on_high_risk=true` and `non_compliant_count > 0`
+- OWASP security mapping is observe-only and does not change CI gate behavior in this phase
 
 ## For UK Global Talent Evidence
 
@@ -216,6 +225,7 @@ pre-commit run --hook-stage pre-push --all-files
 - Phase 21: export v3 reliability completed (reconcile drift detection + guarded repair with explicit `--apply`)
 - Phase 22: export v4 ops completed (persistent ops log + `export replay` and `export rollup`)
 - Phase 23: OWASP security mapping core completed (`security-map` command + `check/report` security integration)
+- Phase 24: security ops integration completed (`dashboard/history/export` now include additive security mapping snapshots)
 
 ## Disclaimer
 
