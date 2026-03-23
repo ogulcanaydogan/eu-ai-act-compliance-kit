@@ -9,6 +9,10 @@ inputs:
     description: "Fail workflow when high-risk systems have non-compliant requirements"
     required: false
     default: "false"
+  security_gate_mode:
+    description: "Security gate mode (observe or enforce)"
+    required: false
+    default: "observe"
   report_format:
     description: "Report output format (json, md, html)"
     required: false
@@ -46,6 +50,12 @@ outputs:
   not_assessed_count:
     description: "Not-assessed requirement count"
     value: ${{ steps.analyze.outputs.not_assessed_count }}
+  security_non_compliant_count:
+    description: "Non-compliant OWASP control count from security summary"
+    value: ${{ steps.analyze.outputs.security_non_compliant_count }}
+  security_gate_failed:
+    description: "Security gate failure flag (true/false)"
+    value: ${{ steps.analyze.outputs.security_gate_failed }}
 
 runs:
   using: "composite"
@@ -69,7 +79,32 @@ runs:
         ai-act classify "${{ inputs.system_yaml }}" --json > /tmp/classification.json
         ai-act check "${{ inputs.system_yaml }}" --json > /tmp/check.json
 
-        python -c "import json, pathlib; c=json.loads(pathlib.Path('/tmp/classification.json').read_text()); k=json.loads(pathlib.Path('/tmp/check.json').read_text()); s=k.get('summary', {}); print(f\"risk_tier={c.get('risk_tier', '')}\"); print(f\"articles_applicable={', '.join(c.get('articles_applicable', []))}\"); print(f\"compliance_percentage={s.get('compliance_percentage', 0)}\"); print(f\"total_requirements={int(s.get('total_requirements', 0))}\"); print(f\"compliant_count={int(s.get('compliant_count', 0))}\"); print(f\"non_compliant_count={int(s.get('non_compliant_count', 0))}\"); print(f\"partial_count={int(s.get('partial_count', 0))}\"); print(f\"not_assessed_count={int(s.get('not_assessed_count', 0))}\")" >> "$GITHUB_OUTPUT"
+        SECURITY_GATE_MODE="${{ inputs.security_gate_mode }}" python - <<'PY' >> "$GITHUB_OUTPUT"
+        import json
+        import os
+        import pathlib
+
+        classification = json.loads(pathlib.Path("/tmp/classification.json").read_text())
+        check = json.loads(pathlib.Path("/tmp/check.json").read_text())
+        summary = check.get("summary", {}) or {}
+        security_summary = check.get("security_summary", {}) or {}
+        security_non_compliant_count = int(security_summary.get("non_compliant_count", 0))
+        security_gate_mode = str(os.environ.get("SECURITY_GATE_MODE", "observe")).strip().lower()
+        security_gate_failed = (
+            security_gate_mode == "enforce" and security_non_compliant_count > 0
+        )
+
+        print(f"risk_tier={classification.get('risk_tier', '')}")
+        print(f"articles_applicable={', '.join(classification.get('articles_applicable', []))}")
+        print(f"compliance_percentage={summary.get('compliance_percentage', 0)}")
+        print(f"total_requirements={int(summary.get('total_requirements', 0))}")
+        print(f"compliant_count={int(summary.get('compliant_count', 0))}")
+        print(f"non_compliant_count={int(summary.get('non_compliant_count', 0))}")
+        print(f"partial_count={int(summary.get('partial_count', 0))}")
+        print(f"not_assessed_count={int(summary.get('not_assessed_count', 0))}")
+        print(f"security_non_compliant_count={security_non_compliant_count}")
+        print(f"security_gate_failed={'true' if security_gate_failed else 'false'}")
+        PY
 
     - name: "Generate report"
       id: report
@@ -132,6 +167,8 @@ runs:
       run: |
         RISK_TIER="${{ steps.analyze.outputs.risk_tier }}"
         NON_COMPLIANT_COUNT="${{ steps.analyze.outputs.non_compliant_count }}"
+        SECURITY_GATE_MODE="$(echo '${{ inputs.security_gate_mode }}' | tr '[:upper:]' '[:lower:]')"
+        SECURITY_NON_COMPLIANT_COUNT="${{ steps.analyze.outputs.security_non_compliant_count }}"
 
         if [[ "$RISK_TIER" == "unacceptable" ]]; then
           echo "❌ Workflow failed: System classified as UNACCEPTABLE"
@@ -142,6 +179,17 @@ runs:
         if [[ "${{ inputs.fail_on_high_risk }}" == "true" && "$RISK_TIER" == "high_risk" && "$NON_COMPLIANT_COUNT" -gt 0 ]]; then
           echo "❌ Workflow failed: High-risk system has non-compliant requirements (${NON_COMPLIANT_COUNT})"
           echo "   Address non-compliant findings before merging."
+          exit 1
+        fi
+
+        if [[ "$SECURITY_GATE_MODE" != "observe" && "$SECURITY_GATE_MODE" != "enforce" ]]; then
+          echo "❌ Invalid security gate mode: $SECURITY_GATE_MODE (expected observe or enforce)"
+          exit 1
+        fi
+
+        if [[ "$SECURITY_GATE_MODE" == "enforce" && "$SECURITY_NON_COMPLIANT_COUNT" -gt 0 ]]; then
+          echo "❌ Workflow failed: Security gate enforced with non-compliant controls (${SECURITY_NON_COMPLIANT_COUNT})"
+          echo "   Address security-mapped non-compliant findings before merging."
           exit 1
         fi
 

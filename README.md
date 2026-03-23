@@ -45,7 +45,9 @@ flowchart LR
     C -- "yes" --> Z["Fail"]
     C -- "no" --> D{"risk_tier == high_risk\nAND non_compliant_count > 0\nAND fail_on_high_risk=true?"}
     D -- "yes" --> Z
-    D -- "no" --> E["Pass"]
+    D -- "no" --> S{"security_gate_mode == enforce\nAND security_non_compliant_count > 0?"}
+    S -- "yes" --> Z
+    S -- "no" --> E["Pass"]
     B --> F["Outputs: compliance %, counts, report path"]
 ```
 
@@ -80,7 +82,7 @@ ai-act export check examples/medical_diagnosis.yaml --target generic --json
 ## CLI Surface
 
 - `ai-act classify <system.yaml> [--json]`
-- `ai-act check <system.yaml> [--json]`
+- `ai-act check <system.yaml> [--json] [--security-gate observe|enforce]`
 - `ai-act security-map <system.yaml> [--json] [--output PATH]`
 - `ai-act checklist <system.yaml> [--format json|md|html]`
 - `ai-act transparency <system.yaml> [--json]`
@@ -99,13 +101,15 @@ ai-act export check examples/medical_diagnosis.yaml --target generic --json
 
 Full reference: [docs/cli-reference.md](docs/cli-reference.md)
 
-## Security Ops Signals (Observe-Only)
+## Security Ops Signals (Observe-by-Default)
 
 - `ai-act check --json` includes `security_summary`.
+- `ai-act check --json` includes additive `security_gate`.
+- `ai-act check --security-gate enforce` fails when `security_summary.non_compliant_count > 0`.
 - `dashboard.json` includes system-level `security_summary` and top-level security aggregates.
 - `history` events can persist `security_summary`; `history diff` includes security delta metrics.
 - `export check|history|batch` payloads include additive top-level `security_mapping`.
-- These security fields are visibility signals only in this phase and do not change gate decisions.
+- Security policy remains backward-compatible: default mode is observe.
 
 ## Example Systems
 
@@ -133,12 +137,14 @@ Outputs:
 - `non_compliant_count`
 - `partial_count`
 - `not_assessed_count`
+- `security_non_compliant_count`
+- `security_gate_failed`
 
 Fail policy:
 
 - `unacceptable` always fails
 - `high_risk` fails only when `fail_on_high_risk=true` and `non_compliant_count > 0`
-- OWASP security mapping is observe-only and does not change CI gate behavior in this phase
+- security gate fails only when `security_gate_mode=enforce` and `security_non_compliant_count > 0`
 
 ## For UK Global Talent Evidence
 
@@ -226,6 +232,7 @@ pre-commit run --hook-stage pre-push --all-files
 - Phase 22: export v4 ops completed (persistent ops log + `export replay` and `export rollup`)
 - Phase 23: OWASP security mapping core completed (`security-map` command + `check/report` security integration)
 - Phase 24: security ops integration completed (`dashboard/history/export` now include additive security mapping snapshots)
+- Phase 25: enforceable security gate completed (observe-by-default + optional enforce mode across CLI/action/CI)
 
 ## Disclaimer
 

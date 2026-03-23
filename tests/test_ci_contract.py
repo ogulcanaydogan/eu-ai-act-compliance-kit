@@ -8,11 +8,16 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "ci.yml"
+ACTION_PATH = REPO_ROOT / "action.yml"
 
 
 def _load_ci_jobs() -> dict:
     payload = yaml.safe_load(CI_WORKFLOW_PATH.read_text(encoding="utf-8"))
     return payload.get("jobs", {})
+
+
+def _load_action_payload() -> dict:
+    return yaml.safe_load(ACTION_PATH.read_text(encoding="utf-8"))
 
 
 def test_ci_contains_required_quickstart_smoke_job():
@@ -86,3 +91,33 @@ def test_all_checks_treats_examples_smoke_as_required():
     )
     run_script = check_status_step.get("run", "")
     assert "needs.examples-smoke.result" in run_script
+
+
+def test_action_exposes_security_gate_input_and_outputs():
+    """Composite action should expose non-breaking security gate controls and outputs."""
+    action_payload = _load_action_payload()
+    inputs = action_payload.get("inputs", {})
+    outputs = action_payload.get("outputs", {})
+
+    assert "security_gate_mode" in inputs
+    assert inputs["security_gate_mode"].get("default") == "observe"
+
+    assert "security_non_compliant_count" in outputs
+    assert "security_gate_failed" in outputs
+
+
+def test_ci_action_smoke_exercises_security_gate_enforcement():
+    """Action-smoke job must include explicit security gate enforcement scenario."""
+    jobs = _load_ci_jobs()
+    assert "action-smoke" in jobs
+
+    action_smoke_steps = jobs["action-smoke"].get("steps", [])
+    step_text = "\n".join(
+        step.get("run", "") if isinstance(step, dict) else "" for step in action_smoke_steps
+    )
+    uses_payload = "\n".join(
+        str(step) for step in action_smoke_steps if isinstance(step, dict) and "uses" in step
+    )
+
+    assert "steps.securitygate.outcome" in step_text
+    assert "security_gate_mode" in uses_payload

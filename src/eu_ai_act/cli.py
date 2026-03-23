@@ -58,6 +58,7 @@ from eu_ai_act.schema import (
     UseCaseDomain,
     load_system_descriptor_from_file,
 )
+from eu_ai_act.security_gate import SecurityGateEvaluator
 from eu_ai_act.security_mapping import SecurityMapper
 from eu_ai_act.transparency import TransparencyChecker, TransparencyFinding
 
@@ -162,7 +163,15 @@ def classify(system_yaml: str, output_json: bool) -> None:
     is_flag=True,
     help="Output as JSON instead of human-readable format",
 )
-def check(system_yaml: str, output_json: bool) -> None:
+@click.option(
+    "--security-gate",
+    "security_gate_mode",
+    type=click.Choice(["observe", "enforce"], case_sensitive=False),
+    default="observe",
+    show_default=True,
+    help="Security gate mode. enforce fails when security non-compliant controls are present.",
+)
+def check(system_yaml: str, output_json: bool, security_gate_mode: str) -> None:
     """
     Perform full compliance check on an AI system.
 
@@ -187,6 +196,7 @@ def check(system_yaml: str, output_json: bool) -> None:
     transparency_checker = TransparencyChecker()
     gpai_assessor = GPAIAssessor()
     security_mapper = SecurityMapper()
+    security_gate_evaluator = SecurityGateEvaluator()
 
     with Progress(transient=True) as progress:
         progress.add_task("Checking compliance...", total=None)
@@ -196,6 +206,15 @@ def check(system_yaml: str, output_json: bool) -> None:
         gpai_assessment = gpai_assessor.assess(_build_gpai_model_info_from_descriptor(descriptor))
         gpai_summary = _build_gpai_summary(gpai_assessment, descriptor)
         security_mapping = security_mapper.map_from_compliance(report_result)
+
+    security_summary_payload = {
+        "framework": security_mapping.framework,
+        **security_mapping.summary.to_dict(),
+    }
+    security_gate_result = security_gate_evaluator.evaluate(
+        security_summary=security_summary_payload,
+        mode=security_gate_mode,
+    )
 
     history_warning = None
     try:
@@ -244,10 +263,8 @@ def check(system_yaml: str, output_json: bool) -> None:
                 _serialize_transparency_finding(finding) for finding in transparency_findings
             ],
             "gpai_summary": gpai_summary,
-            "security_summary": {
-                "framework": security_mapping.framework,
-                **security_mapping.summary.to_dict(),
-            },
+            "security_summary": {**security_summary_payload},
+            "security_gate": security_gate_result.to_dict(),
             "audit_trail": report_result.audit_trail,
             "generated_at": report_result.generated_at,
         }
@@ -332,8 +349,27 @@ def check(system_yaml: str, output_json: bool) -> None:
         )
         console.print(security_table)
 
+        gate_table = Table(title="Security Gate")
+        gate_table.add_column("Metric", style="cyan")
+        gate_table.add_column("Value", justify="right")
+        gate_table.add_row("Mode", security_gate_result.mode)
+        gate_table.add_row("Failed", "yes" if security_gate_result.failed else "no")
+        gate_table.add_row("Reason", security_gate_result.reason)
+        console.print(gate_table)
+
     if history_warning:
         click.echo(f"Warning: failed to write history event: {history_warning}", err=True)
+
+    if security_gate_result.failed:
+        if not output_json:
+            click.echo(
+                (
+                    "Security gate enforcement failed: "
+                    f"{security_gate_result.non_compliant_count} non-compliant security controls detected."
+                ),
+                err=True,
+            )
+        sys.exit(1)
 
 
 @main.command("security-map")

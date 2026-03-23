@@ -10,6 +10,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - No changes yet.
 
+## [0.1.16] - 2026-03-23
+
+### Added
+- New deterministic security gate evaluator (`security_gate.py`) with:
+  - `observe` mode (default, no blocking)
+  - `enforce` mode (fails when `security_summary.non_compliant_count > 0`)
+- `ai-act check` now supports `--security-gate observe|enforce`.
+- `ai-act check --json` now includes additive `security_gate` payload (`mode`, `failed`, `reason`, `non_compliant_count`).
+- Composite GitHub Action now supports `security_gate_mode` input (`observe|enforce`).
+- Composite action additive outputs:
+  - `security_non_compliant_count`
+  - `security_gate_failed`
+
+### Changed
+- Action gate policy now optionally enforces security controls when `security_gate_mode=enforce`.
+- CI action-smoke now validates explicit security-gate enforcement behavior.
+- Phase 25 status synchronized as completed across README, docs index, and roadmap snapshot.
+
+### Tests
+- Added `tests/test_security_gate.py` for evaluator mode/threshold/validation behavior.
+- Extended `tests/test_cli.py` for `--security-gate` contract and non-zero enforce behavior.
+- Extended `tests/test_ci_contract.py` for action input/output and action-smoke security-gate assertions.
+
 ## [0.1.15] - 2026-03-23
 
 ### Added
