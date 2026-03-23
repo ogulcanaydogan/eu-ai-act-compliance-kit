@@ -16,8 +16,8 @@ from eu_ai_act.exporter import (
     list_export_ops_log_records,
     reconcile_export_push_records,
     replay_export_push_failures,
-    summarize_export_ops_rollup,
     run_export_batch,
+    summarize_export_ops_rollup,
 )
 from eu_ai_act.history import build_event
 from eu_ai_act.schema import load_system_descriptor_from_file
