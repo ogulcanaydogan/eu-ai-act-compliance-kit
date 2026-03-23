@@ -207,7 +207,7 @@ pre-commit run --hook-stage pre-push --all-files
 - Phase 16: live export push completed (strict fail-fast + retry/backoff controls for `--push`)
 - Phase 17: export push production hardening completed (create-only idempotency ledger + duplicate-safe push)
 - Phase 18: export operator observability + upsert push completed (`export ledger list|stats` + lookup-first upsert mode)
-- Phase 19: export ops hardening in progress (`export batch` + `export reconcile` for operational reliability)
+- Phase 19: export ops hardening completed (`export batch` + `export reconcile` for operational reliability)
 
 ## Disclaimer
 
