@@ -101,8 +101,12 @@ def test_action_exposes_security_gate_input_and_outputs():
 
     assert "security_gate_mode" in inputs
     assert inputs["security_gate_mode"].get("default") == "observe"
+    assert "security_gate_profile" in inputs
+    assert inputs["security_gate_profile"].get("default") == "balanced"
 
     assert "security_non_compliant_count" in outputs
+    assert "security_partial_count" in outputs
+    assert "security_not_assessed_count" in outputs
     assert "security_gate_failed" in outputs
 
 
@@ -121,3 +125,4 @@ def test_ci_action_smoke_exercises_security_gate_enforcement():
 
     assert "steps.securitygate.outcome" in step_text
     assert "security_gate_mode" in uses_payload
+    assert "security_gate_profile" in uses_payload

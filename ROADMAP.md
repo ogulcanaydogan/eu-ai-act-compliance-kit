@@ -29,6 +29,7 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
 - Phase 23 completed (OWASP LLM Top 10 security mapping core with `security-map` command and check/report integration)
 - Phase 24 completed (security ops integration across dashboard/history/export with observe-only gate policy)
 - Phase 25 completed (enforceable security gate v1 with observe-by-default policy and optional enforce mode)
+- Phase 26 completed (security gate v2 with profile-based thresholds and tier-aware enforcement)
 
 ## Phase 1: Risk Classification Engine (Weeks 1-2) ✅ Completed
 
@@ -484,6 +485,19 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
   - `security_non_compliant_count`
   - `security_gate_failed`
 - Extended CI action-smoke path with explicit security gate enforcement scenario.
+
+## Phase 26: Security Gate V2 ✅ Completed
+
+- Extended security gate evaluator with profile-based thresholds:
+  - `strict`, `balanced`, `lenient`
+- Added tier-aware policy:
+  - `lenient` is automatically treated as `balanced` for `high_risk` and `unacceptable`.
+- Extended `ai-act check` with `--security-gate-profile` and additive V2 gate payload fields:
+  - `profile`, `effective_profile`, `partial_count`, `not_assessed_count`.
+- Extended composite action with:
+  - `security_gate_profile` input
+  - additive outputs: `security_partial_count`, `security_not_assessed_count`
+  - evaluator-based gate decision reuse (no duplicated threshold logic).
 
 ## Timeline Summary (Historical Plan)
 - **Week 1-2**: Risk Classification Engine (Phases 1.1-1.5)

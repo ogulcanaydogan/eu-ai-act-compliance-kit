@@ -13,6 +13,10 @@ inputs:
     description: "Security gate mode (observe or enforce)"
     required: false
     default: "observe"
+  security_gate_profile:
+    description: "Security gate profile (strict, balanced, lenient)"
+    required: false
+    default: "balanced"
   report_format:
     description: "Report output format (json, md, html)"
     required: false
@@ -53,6 +57,12 @@ outputs:
   security_non_compliant_count:
     description: "Non-compliant OWASP control count from security summary"
     value: ${{ steps.analyze.outputs.security_non_compliant_count }}
+  security_partial_count:
+    description: "Partial OWASP control count from security summary"
+    value: ${{ steps.analyze.outputs.security_partial_count }}
+  security_not_assessed_count:
+    description: "Not-assessed OWASP control count from security summary"
+    value: ${{ steps.analyze.outputs.security_not_assessed_count }}
   security_gate_failed:
     description: "Security gate failure flag (true/false)"
     value: ${{ steps.analyze.outputs.security_gate_failed }}
@@ -79,20 +89,32 @@ runs:
         ai-act classify "${{ inputs.system_yaml }}" --json > /tmp/classification.json
         ai-act check "${{ inputs.system_yaml }}" --json > /tmp/check.json
 
-        SECURITY_GATE_MODE="${{ inputs.security_gate_mode }}" python - <<'PY' >> "$GITHUB_OUTPUT"
+        SECURITY_GATE_MODE="${{ inputs.security_gate_mode }}" SECURITY_GATE_PROFILE="${{ inputs.security_gate_profile }}" python - <<'PY' >> "$GITHUB_OUTPUT"
         import json
         import os
         import pathlib
+
+        from eu_ai_act.security_gate import SecurityGateEvaluator
 
         classification = json.loads(pathlib.Path("/tmp/classification.json").read_text())
         check = json.loads(pathlib.Path("/tmp/check.json").read_text())
         summary = check.get("summary", {}) or {}
         security_summary = check.get("security_summary", {}) or {}
-        security_non_compliant_count = int(security_summary.get("non_compliant_count", 0))
         security_gate_mode = str(os.environ.get("SECURITY_GATE_MODE", "observe")).strip().lower()
-        security_gate_failed = (
-            security_gate_mode == "enforce" and security_non_compliant_count > 0
+        security_gate_profile = str(
+            os.environ.get("SECURITY_GATE_PROFILE", "balanced")
+        ).strip().lower()
+
+        gate_result = SecurityGateEvaluator().evaluate(
+            security_summary=security_summary,
+            mode=security_gate_mode,
+            profile=security_gate_profile,
+            risk_tier=classification.get("risk_tier"),
         )
+        security_non_compliant_count = gate_result.non_compliant_count
+        security_partial_count = gate_result.partial_count
+        security_not_assessed_count = gate_result.not_assessed_count
+        security_gate_failed = gate_result.failed
 
         print(f"risk_tier={classification.get('risk_tier', '')}")
         print(f"articles_applicable={', '.join(classification.get('articles_applicable', []))}")
@@ -103,7 +125,13 @@ runs:
         print(f"partial_count={int(summary.get('partial_count', 0))}")
         print(f"not_assessed_count={int(summary.get('not_assessed_count', 0))}")
         print(f"security_non_compliant_count={security_non_compliant_count}")
+        print(f"security_partial_count={security_partial_count}")
+        print(f"security_not_assessed_count={security_not_assessed_count}")
+        print(f"security_gate_mode={gate_result.mode}")
+        print(f"security_gate_profile={gate_result.profile}")
         print(f"security_gate_failed={'true' if security_gate_failed else 'false'}")
+        print(f"security_gate_reason={gate_result.reason}")
+        print(f"security_gate_effective_profile={gate_result.effective_profile}")
         PY
 
     - name: "Generate report"
@@ -167,8 +195,11 @@ runs:
       run: |
         RISK_TIER="${{ steps.analyze.outputs.risk_tier }}"
         NON_COMPLIANT_COUNT="${{ steps.analyze.outputs.non_compliant_count }}"
-        SECURITY_GATE_MODE="$(echo '${{ inputs.security_gate_mode }}' | tr '[:upper:]' '[:lower:]')"
+        SECURITY_GATE_MODE="${{ steps.analyze.outputs.security_gate_mode }}"
         SECURITY_NON_COMPLIANT_COUNT="${{ steps.analyze.outputs.security_non_compliant_count }}"
+        SECURITY_GATE_FAILED="${{ steps.analyze.outputs.security_gate_failed }}"
+        SECURITY_GATE_REASON="${{ steps.analyze.outputs.security_gate_reason }}"
+        SECURITY_GATE_EFFECTIVE_PROFILE="${{ steps.analyze.outputs.security_gate_effective_profile }}"
 
         if [[ "$RISK_TIER" == "unacceptable" ]]; then
           echo "❌ Workflow failed: System classified as UNACCEPTABLE"
@@ -182,14 +213,11 @@ runs:
           exit 1
         fi
 
-        if [[ "$SECURITY_GATE_MODE" != "observe" && "$SECURITY_GATE_MODE" != "enforce" ]]; then
-          echo "❌ Invalid security gate mode: $SECURITY_GATE_MODE (expected observe or enforce)"
-          exit 1
-        fi
-
-        if [[ "$SECURITY_GATE_MODE" == "enforce" && "$SECURITY_NON_COMPLIANT_COUNT" -gt 0 ]]; then
-          echo "❌ Workflow failed: Security gate enforced with non-compliant controls (${SECURITY_NON_COMPLIANT_COUNT})"
-          echo "   Address security-mapped non-compliant findings before merging."
+        if [[ "$SECURITY_GATE_FAILED" == "true" ]]; then
+          echo "❌ Workflow failed: Security gate policy blocked this run"
+          echo "   mode=$SECURITY_GATE_MODE effective_profile=$SECURITY_GATE_EFFECTIVE_PROFILE reason=$SECURITY_GATE_REASON"
+          echo "   non_compliant_controls=$SECURITY_NON_COMPLIANT_COUNT"
+          echo "   Address security-mapped findings before merging."
           exit 1
         fi
 

@@ -45,7 +45,7 @@ flowchart LR
     C -- "yes" --> Z["Fail"]
     C -- "no" --> D{"risk_tier == high_risk\nAND non_compliant_count > 0\nAND fail_on_high_risk=true?"}
     D -- "yes" --> Z
-    D -- "no" --> S{"security_gate_mode == enforce\nAND security_non_compliant_count > 0?"}
+    D -- "no" --> S{"security_gate_mode == enforce\nAND security_gate_failed == true?"}
     S -- "yes" --> Z
     S -- "no" --> E["Pass"]
     B --> F["Outputs: compliance %, counts, report path"]
@@ -82,7 +82,7 @@ ai-act export check examples/medical_diagnosis.yaml --target generic --json
 ## CLI Surface
 
 - `ai-act classify <system.yaml> [--json]`
-- `ai-act check <system.yaml> [--json] [--security-gate observe|enforce]`
+- `ai-act check <system.yaml> [--json] [--security-gate observe|enforce] [--security-gate-profile strict|balanced|lenient]`
 - `ai-act security-map <system.yaml> [--json] [--output PATH]`
 - `ai-act checklist <system.yaml> [--format json|md|html]`
 - `ai-act transparency <system.yaml> [--json]`
@@ -105,11 +105,11 @@ Full reference: [docs/cli-reference.md](docs/cli-reference.md)
 
 - `ai-act check --json` includes `security_summary`.
 - `ai-act check --json` includes additive `security_gate`.
-- `ai-act check --security-gate enforce` fails when `security_summary.non_compliant_count > 0`.
+- `ai-act check --security-gate enforce` applies profile thresholds (`strict|balanced|lenient`) with tier-aware override for `lenient` on `high_risk|unacceptable`.
 - `dashboard.json` includes system-level `security_summary` and top-level security aggregates.
 - `history` events can persist `security_summary`; `history diff` includes security delta metrics.
 - `export check|history|batch` payloads include additive top-level `security_mapping`.
-- Security policy remains backward-compatible: default mode is observe.
+- Security policy remains backward-compatible: default mode is `observe`, default profile is `balanced`.
 
 ## Example Systems
 
@@ -138,13 +138,15 @@ Outputs:
 - `partial_count`
 - `not_assessed_count`
 - `security_non_compliant_count`
+- `security_partial_count`
+- `security_not_assessed_count`
 - `security_gate_failed`
 
 Fail policy:
 
 - `unacceptable` always fails
 - `high_risk` fails only when `fail_on_high_risk=true` and `non_compliant_count > 0`
-- security gate fails only when `security_gate_mode=enforce` and `security_non_compliant_count > 0`
+- security gate fails only when `security_gate_mode=enforce` and action-evaluated `security_gate_failed=true`
 
 ## For UK Global Talent Evidence
 
@@ -233,6 +235,7 @@ pre-commit run --hook-stage pre-push --all-files
 - Phase 23: OWASP security mapping core completed (`security-map` command + `check/report` security integration)
 - Phase 24: security ops integration completed (`dashboard/history/export` now include additive security mapping snapshots)
 - Phase 25: enforceable security gate completed (observe-by-default + optional enforce mode across CLI/action/CI)
+- Phase 26: security gate v2 completed (profiles + tier-aware policy, observe default preserved)
 
 ## Disclaimer
 

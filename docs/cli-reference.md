@@ -29,16 +29,24 @@ ai-act check <system.yaml>
 ai-act check <system.yaml> --json
 ai-act check <system.yaml> --json --security-gate observe
 ai-act check <system.yaml> --json --security-gate enforce
+ai-act check <system.yaml> --json --security-gate enforce --security-gate-profile strict
 ```
 
 Options:
 
 - `--json`: machine-readable output
 - `--security-gate [observe|enforce]`: security gate mode (default: `observe`)
+- `--security-gate-profile [strict|balanced|lenient]`: profile threshold set (default: `balanced`)
 
 JSON includes `summary`, `findings`, `transparency`, `gpai_summary`, `security_summary`, `security_gate`, and `audit_trail`.
 Each successful run also attempts a best-effort history append to `.eu_ai_act/history.jsonl`.
-Default mode is observe-only. In `enforce` mode, command exits non-zero when `security_summary.non_compliant_count > 0`.
+Default mode is observe-only. In `enforce` mode, command exits non-zero when profile thresholds are breached:
+
+- `strict`: any `non_compliant`, `partial`, or `not_assessed`
+- `balanced`: any `non_compliant`
+- `lenient`: `non_compliant >= 2`
+
+Tier-aware override: `lenient` is treated as `balanced` for `high_risk` and `unacceptable` systems.
 
 ## `security-map`
 

@@ -10,6 +10,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - No changes yet.
 
+## [0.1.17] - 2026-03-23
+
+### Added
+- Security Gate V2 profile support in evaluator and CLI/action contracts:
+  - profiles: `strict`, `balanced`, `lenient`
+  - new CLI flag: `--security-gate-profile`
+  - additive `security_gate` payload fields: `profile`, `effective_profile`, `partial_count`, `not_assessed_count`
+- Composite action additive input:
+  - `security_gate_profile` (default: `balanced`)
+- Composite action additive outputs:
+  - `security_partial_count`
+  - `security_not_assessed_count`
+
+### Changed
+- Security gate policy is now tier-aware:
+  - `lenient` profile is treated as `balanced` for `high_risk` and `unacceptable` systems.
+- Composite action gate decision now reuses evaluator output instead of duplicating threshold logic.
+- CI action-smoke now exercises explicit profile-aware security gate settings.
+- Phase 26 status synchronized as completed across README, docs index, and roadmap snapshot.
+
+### Tests
+- Extended `tests/test_security_gate.py` for strict/balanced/lenient thresholds and tier-aware override behavior.
+- Extended `tests/test_cli.py` for profile-aware CLI contract and tier-aware enforce behavior.
+- Extended `tests/test_ci_contract.py` for action profile input/additive output and CI action-smoke profile usage.
+
 ## [0.1.16] - 2026-03-23
 
 ### Added
