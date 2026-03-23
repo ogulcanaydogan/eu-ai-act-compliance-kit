@@ -36,7 +36,7 @@ checks transparency and GPAI obligations, and renders audit-oriented reports.
 - Phase 18: Export operator observability + upsert push completed (`export ledger list|stats` and lookup-first `--push-mode create|upsert`)
 - Phase 19: Export ops hardening completed (`export batch` + `export reconcile` for multi-system operations)
 - Phase 20: Quality and coverage hardening completed (example matrix + CI/test contract gates)
-- Phase 21: Export V3 reliability in progress (reconcile drift detection + guarded repair with explicit `--apply`)
+- Phase 21: Export V3 reliability completed (reconcile drift detection + guarded repair with explicit `--apply`)
 
 ## End-to-End Flow
 

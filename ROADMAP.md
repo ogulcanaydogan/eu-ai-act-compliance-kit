@@ -24,7 +24,7 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
 - Phase 18 completed (export operator observability + lookup-first push upsert mode)
 - Phase 19 completed (batch export orchestration + reconcile checks for live push operations)
 - Phase 20 completed (quality and coverage hardening for examples, tests, and CI gates)
-- Phase 21 in progress (reconcile drift detection + guarded repair with explicit apply contract)
+- Phase 21 completed (reconcile drift detection + guarded repair with explicit apply contract)
 
 ## Phase 1: Risk Classification Engine (Weeks 1-2) ✅ Completed
 
@@ -436,16 +436,16 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
 - Strengthened quickstart reliability checks by running smoke coverage across more than one descriptor profile.
 - Added CI `examples-smoke` required job and enforced coverage floor (`--cov-fail-under=80`).
 
-## Phase 21: Export V3 Reliability 🚧 In Progress
+## Phase 21: Export V3 Reliability ✅ Completed
 
-- Extend `ai-act export reconcile` with remote-local status parity signals:
+- Extended `ai-act export reconcile` with remote-local status parity signals:
   - `drift_status` (`in_sync`, `status_mismatch`, `unknown`)
   - `expected_status` and `remote_status`
-- Add guarded repair controls:
+- Added guarded repair controls:
   - `--repair` for repair planning (default no-write)
   - `--repair --apply` for explicit remote update execution
-- Preserve deterministic retry + continue-all behavior for reconcile checks and repair attempts.
-- Enforce stricter reconcile exit contract:
+- Preserved deterministic retry + continue-all behavior for reconcile checks and repair attempts.
+- Enforced stricter reconcile exit contract:
   - non-zero on `missing_count`, `error_count`, `drift_count`, or `repair_failed_count`.
 
 ## Timeline Summary (Historical Plan)
