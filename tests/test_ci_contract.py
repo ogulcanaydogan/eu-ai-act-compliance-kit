@@ -105,7 +105,7 @@ def test_ci_contains_export_ops_gate_smoke_job():
     run_blocks = [step.get("run", "") for step in steps if isinstance(step, dict)]
     joined_run = "\n".join(run_blocks)
     assert "ai-act export gate" in joined_run
-    assert "--mode \"$GATE_MODE\"" in joined_run
+    assert '--mode "$GATE_MODE"' in joined_run
     assert "--policy config/export_ops_gate_policy.yaml" in joined_run
 
     step_payload = "\n".join(str(step) for step in steps if isinstance(step, dict))
@@ -150,8 +150,7 @@ def test_action_exposes_security_gate_input_and_outputs():
     assert inputs["export_ops_gate_target"].get("default") == "jira"
     assert "export_ops_gate_policy_path" in inputs
     assert (
-        inputs["export_ops_gate_policy_path"].get("default")
-        == "config/export_ops_gate_policy.yaml"
+        inputs["export_ops_gate_policy_path"].get("default") == "config/export_ops_gate_policy.yaml"
     )
     assert "export_ops_ops_path" in inputs
     assert "export_ops_reconcile_log_path" in inputs
