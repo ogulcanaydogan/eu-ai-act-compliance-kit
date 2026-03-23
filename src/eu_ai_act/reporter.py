@@ -15,6 +15,7 @@ from eu_ai_act.checklist import ChecklistItem, ComplianceChecklist
 from eu_ai_act.classifier import RiskClassification
 from eu_ai_act.gpai import GPAIAssessment
 from eu_ai_act.schema import AISystemDescriptor
+from eu_ai_act.security_mapping import SecurityMapper
 from eu_ai_act.transparency import TransparencyFinding
 
 
@@ -24,6 +25,10 @@ class ReportGenerator:
 
     Supports JSON, HTML, Markdown, and PDF output for audit documentation.
     """
+
+    def __init__(self) -> None:
+        """Initialize report generator dependencies."""
+        self.security_mapper = SecurityMapper()
 
     def generate_report(
         self,
@@ -173,6 +178,19 @@ class ReportGenerator:
             }
             compliance_findings: dict[str, dict[str, Any]] = {}
             audit_trail: list[str] = []
+            security_mapping_payload: dict[str, Any] = {
+                "framework": SecurityMapper.FRAMEWORK,
+                "generated_at": generated_at,
+                "summary": {
+                    "total_controls": 0,
+                    "compliant_count": 0,
+                    "non_compliant_count": 0,
+                    "partial_count": 0,
+                    "not_assessed_count": 0,
+                    "coverage_percentage": 0.0,
+                },
+                "controls": [],
+            }
         else:
             compliance_summary = {
                 "total_requirements": compliance_report.summary.total_requirements,
@@ -187,6 +205,9 @@ class ReportGenerator:
                 for finding_id, finding in compliance_report.findings.items()
             }
             audit_trail = compliance_report.audit_trail
+            security_mapping_payload = self.security_mapper.map_from_compliance(
+                compliance_report
+            ).to_dict()
 
         transparency_payload = [
             self._serialize_transparency_finding(finding) for finding in transparency_findings
@@ -226,6 +247,7 @@ class ReportGenerator:
             "compliance_findings": compliance_findings,
             "transparency_findings": transparency_payload,
             "gpai_assessment": gpai_payload,
+            "security_mapping": security_mapping_payload,
             "audit_trail": audit_trail,
             "recommended_actions": recommended_actions,
             "recommended_action_count": len(recommended_actions),
@@ -265,6 +287,32 @@ class ReportGenerator:
                     lines.append(f"  Gap: {finding['gap_analysis']}")
         else:
             lines.append("- No compliance findings generated.")
+
+        lines.extend(
+            [
+                "",
+                "## Security Mapping (OWASP LLM Top 10)",
+                f"- Total Controls: {payload['security_mapping']['summary']['total_controls']}",
+                f"- Compliant: {payload['security_mapping']['summary']['compliant_count']}",
+                f"- Non-compliant: {payload['security_mapping']['summary']['non_compliant_count']}",
+                f"- Partial: {payload['security_mapping']['summary']['partial_count']}",
+                f"- Not Assessed: {payload['security_mapping']['summary']['not_assessed_count']}",
+                (
+                    "- Coverage Percentage: "
+                    f"{payload['security_mapping']['summary']['coverage_percentage']:.2f}"
+                ),
+            ]
+        )
+        if payload["security_mapping"]["controls"]:
+            for control in payload["security_mapping"]["controls"]:
+                lines.append(
+                    f"- [{control['status']}] {control['control_id']}: {control['title']} "
+                    f"(severity: {control['severity']})"
+                )
+                if control["gap_analysis"]:
+                    lines.append(f"  Gap: {control['gap_analysis']}")
+        else:
+            lines.append("- No security mapping controls generated.")
 
         lines.extend(["", "## Transparency Findings"])
         if payload["transparency_findings"]:
@@ -328,6 +376,7 @@ class ReportGenerator:
         }.get(payload["risk_tier"], "#4b5563")
 
         compliance_rows = self._build_compliance_rows(payload)
+        security_rows = self._build_security_rows(payload)
         transparency_rows = self._build_transparency_rows(payload)
         gpai_gap_rows = self._build_simple_list(
             payload["gpai_assessment"]["compliance_gaps"], "No GPAI compliance gaps detected."
@@ -378,6 +427,17 @@ class ReportGenerator:
         <h2>Compliance Findings</h2>
         {compliance_rows}
 
+        <h2>Security Mapping (OWASP LLM Top 10)</h2>
+        <ul>
+            <li>Total Controls: {payload['security_mapping']['summary']['total_controls']}</li>
+            <li>Compliant: {payload['security_mapping']['summary']['compliant_count']}</li>
+            <li>Non-compliant: {payload['security_mapping']['summary']['non_compliant_count']}</li>
+            <li>Partial: {payload['security_mapping']['summary']['partial_count']}</li>
+            <li>Not Assessed: {payload['security_mapping']['summary']['not_assessed_count']}</li>
+            <li>Coverage Percentage: {payload['security_mapping']['summary']['coverage_percentage']:.2f}</li>
+        </ul>
+        {security_rows}
+
         <h2>Transparency Findings</h2>
         {transparency_rows}
 
@@ -416,6 +476,30 @@ class ReportGenerator:
         return (
             "<table><thead><tr>"
             "<th>Requirement</th><th>Title</th><th>Status</th><th>Severity</th><th>Gap</th>"
+            "</tr></thead><tbody>" + "".join(rows) + "</tbody></table>"
+        )
+
+    def _build_security_rows(self, payload: dict[str, Any]) -> str:
+        """Build HTML block for OWASP security controls."""
+        controls = payload["security_mapping"]["controls"]
+        if not controls:
+            return "<p>No security mapping controls generated.</p>"
+
+        rows = []
+        for control in controls:
+            rows.append(
+                "<tr>"
+                f"<td>{html.escape(control['control_id'])}</td>"
+                f"<td>{html.escape(control['title'])}</td>"
+                f"<td>{html.escape(control['status'])}</td>"
+                f"<td>{html.escape(control['severity'])}</td>"
+                f"<td>{html.escape(control['gap_analysis'] or '-')}</td>"
+                "</tr>"
+            )
+
+        return (
+            "<table><thead><tr>"
+            "<th>Control</th><th>Title</th><th>Status</th><th>Severity</th><th>Gap</th>"
             "</tr></thead><tbody>" + "".join(rows) + "</tbody></table>"
         )
 

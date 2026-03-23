@@ -11,6 +11,7 @@ checks transparency and GPAI obligations, and renders audit-oriented reports.
 - Generate action-focused checklists (JSON, Markdown, HTML)
 - Produce compliance reports (JSON, Markdown, HTML, PDF)
 - Generate payload-first external export artifacts (`generic`, `jira`, `servicenow`)
+- Map compliance findings to OWASP LLM Top 10 controls (`security-map`)
 - Assess transparency obligations and GPAI signals (`Art. 50`, `Art. 51-55`)
 - Integrate checks into CI/CD using the repository's composite GitHub Action
 
@@ -38,6 +39,7 @@ checks transparency and GPAI obligations, and renders audit-oriented reports.
 - Phase 20: Quality and coverage hardening completed (example matrix + CI/test contract gates)
 - Phase 21: Export V3 reliability completed (reconcile drift detection + guarded repair with explicit `--apply`)
 - Phase 22: Export V4 ops completed (persistent ops log + replay/rollup operational flows)
+- Phase 23: OWASP security mapping core completed (`security-map` command + `check/report` integration)
 
 ## End-to-End Flow
 

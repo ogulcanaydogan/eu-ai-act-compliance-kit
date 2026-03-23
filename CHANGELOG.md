@@ -10,6 +10,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - No changes yet.
 
+## [0.1.14] - 2026-03-23
+
+### Added
+- New OWASP LLM Top 10 mapping runtime (`security_mapping.py`) with deterministic control-level status derivation and summary metrics.
+- New CLI command: `ai-act security-map <system.yaml> [--json] [--output PATH]`.
+
+### Changed
+- `ai-act check --json` now includes non-breaking `security_summary`.
+- Report payload/renderers now include non-breaking `security_mapping` in JSON and a new `Security Mapping (OWASP LLM Top 10)` section in Markdown/HTML.
+- Phase 23 status synchronized as completed across README, docs index, and roadmap snapshot.
+
+### Tests
+- Added `tests/test_security_mapping.py` coverage for deterministic status derivation and summary counts.
+- Extended CLI/reporter contract tests for `security-map`, `check --json security_summary`, and report security mapping sections.
+
 ## [0.1.13] - 2026-03-23
 
 ### Added

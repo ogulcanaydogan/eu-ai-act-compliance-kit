@@ -58,6 +58,7 @@ from eu_ai_act.schema import (
     UseCaseDomain,
     load_system_descriptor_from_file,
 )
+from eu_ai_act.security_mapping import SecurityMapper
 from eu_ai_act.transparency import TransparencyChecker, TransparencyFinding
 
 console = Console()
@@ -185,6 +186,7 @@ def check(system_yaml: str, output_json: bool) -> None:
     classifier = RiskClassifier()
     transparency_checker = TransparencyChecker()
     gpai_assessor = GPAIAssessor()
+    security_mapper = SecurityMapper()
 
     with Progress(transient=True) as progress:
         progress.add_task("Checking compliance...", total=None)
@@ -193,6 +195,7 @@ def check(system_yaml: str, output_json: bool) -> None:
         transparency_findings = _collect_transparency_findings(transparency_checker, descriptor)
         gpai_assessment = gpai_assessor.assess(_build_gpai_model_info_from_descriptor(descriptor))
         gpai_summary = _build_gpai_summary(gpai_assessment, descriptor)
+        security_mapping = security_mapper.map_from_compliance(report_result)
 
     history_warning = None
     try:
@@ -240,6 +243,10 @@ def check(system_yaml: str, output_json: bool) -> None:
                 _serialize_transparency_finding(finding) for finding in transparency_findings
             ],
             "gpai_summary": gpai_summary,
+            "security_summary": {
+                "framework": security_mapping.framework,
+                **security_mapping.summary.to_dict(),
+            },
             "audit_trail": report_result.audit_trail,
             "generated_at": report_result.generated_at,
         }
@@ -310,8 +317,96 @@ def check(system_yaml: str, output_json: bool) -> None:
         gpai_table.add_row("Actionable Gaps", str(gpai_summary["actionable_gaps"]))
         console.print(gpai_table)
 
+        security_table = Table(title="Security Mapping (OWASP LLM Top 10)")
+        security_table.add_column("Metric", style="cyan")
+        security_table.add_column("Value", justify="right")
+        security_table.add_row("Total Controls", str(security_mapping.summary.total_controls))
+        security_table.add_row("Compliant", str(security_mapping.summary.compliant_count))
+        security_table.add_row("Non-compliant", str(security_mapping.summary.non_compliant_count))
+        security_table.add_row("Partial", str(security_mapping.summary.partial_count))
+        security_table.add_row("Not Assessed", str(security_mapping.summary.not_assessed_count))
+        security_table.add_row(
+            "Coverage %",
+            f"{security_mapping.summary.coverage_percentage:.1f}",
+        )
+        console.print(security_table)
+
     if history_warning:
         click.echo(f"Warning: failed to write history event: {history_warning}", err=True)
+
+
+@main.command("security-map")
+@click.argument("system_yaml", type=click.Path(exists=True))
+@click.option(
+    "--json",
+    "output_json",
+    is_flag=True,
+    help="Output as JSON instead of human-readable format",
+)
+@click.option(
+    "--output",
+    "-o",
+    type=click.Path(),
+    help="Output file path (writes JSON payload)",
+)
+def security_map(system_yaml: str, output_json: bool, output: str | None) -> None:
+    """
+    Map compliance findings to OWASP LLM Top 10 controls.
+
+    Example:
+      ai-act security-map examples/medical_diagnosis.yaml --json
+      ai-act security-map examples/hiring_tool.yaml --json -o security_map.json
+    """
+    try:
+        descriptor = load_system_descriptor_from_file(system_yaml)
+    except FileNotFoundError:
+        console.print(f"[red]Error: File not found: {system_yaml}[/red]")
+        sys.exit(1)
+    except Exception as e:
+        console.print(f"[red]Error loading system descriptor: {e}[/red]")
+        sys.exit(1)
+
+    checker = ComplianceChecker()
+    security_mapper = SecurityMapper()
+
+    with Progress(transient=True) as progress:
+        progress.add_task("Building security mapping...", total=None)
+        report_result = checker.check(descriptor)
+        security_mapping = security_mapper.map_from_compliance(report_result)
+
+    payload = {
+        "system_name": descriptor.name,
+        "risk_tier": report_result.risk_tier.value,
+        "generated_at": security_mapping.generated_at,
+        "framework": security_mapping.framework,
+        "summary": security_mapping.summary.to_dict(),
+        "controls": [control.to_dict() for control in security_mapping.controls],
+    }
+
+    payload_json = json.dumps(payload, indent=2)
+    if output:
+        output_path = Path(output)
+        output_path.write_text(payload_json, encoding="utf-8")
+        console.print(f"[green]Security mapping saved to: {output_path}[/green]")
+        return
+
+    if output_json:
+        click.echo(payload_json)
+        return
+
+    table = Table(title=f"Security Mapping (OWASP LLM Top 10): {descriptor.name}")
+    table.add_column("Control")
+    table.add_column("Status")
+    table.add_column("Severity")
+    table.add_column("Linked Requirements")
+    for control in security_mapping.controls:
+        table.add_row(
+            control.control_id,
+            control.status.value,
+            control.severity,
+            ", ".join(control.linked_requirements),
+        )
+    console.print(table)
 
 
 @main.command()

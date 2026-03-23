@@ -37,6 +37,10 @@ __all__ = [
     "GPAIModelInfo",
     "GPAIAssessment",
     "GPAIAssessor",
+    "SecurityMapper",
+    "SecurityMappingResult",
+    "SecurityMappingSummary",
+    "SecurityControlResult",
     "HistoryEvent",
     "append_event",
     "list_events",
@@ -59,6 +63,12 @@ from eu_ai_act.gpai import GPAIAssessment, GPAIAssessor, GPAIModelInfo
 from eu_ai_act.history import HistoryEvent, append_event, diff_events, get_event, list_events
 from eu_ai_act.reporter import ReportGenerator
 from eu_ai_act.schema import AISystemDescriptor, RiskTier, UseCaseDomain
+from eu_ai_act.security_mapping import (
+    SecurityControlResult,
+    SecurityMapper,
+    SecurityMappingResult,
+    SecurityMappingSummary,
+)
 from eu_ai_act.transparency import TransparencyChecker, TransparencyFinding
 
 __all__ += [

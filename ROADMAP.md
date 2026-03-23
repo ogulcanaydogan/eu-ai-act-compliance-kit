@@ -26,6 +26,7 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
 - Phase 20 completed (quality and coverage hardening for examples, tests, and CI gates)
 - Phase 21 completed (reconcile drift detection + guarded repair with explicit apply contract)
 - Phase 22 completed (persistent export ops log + replay and rollup operations)
+- Phase 23 completed (OWASP LLM Top 10 security mapping core with `security-map` command and check/report integration)
 
 ## Phase 1: Risk Classification Engine (Weeks 1-2) ✅ Completed
 

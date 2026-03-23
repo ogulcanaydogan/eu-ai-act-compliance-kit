@@ -92,6 +92,7 @@ class TestReportGenerator:
 
         for key in [
             "compliance_findings",
+            "security_mapping",
             "audit_trail",
             "recommended_actions",
             "recommended_action_count",
@@ -207,6 +208,7 @@ class TestReportGenerator:
             "## Executive Summary",
             "## Compliance Summary",
             "## Compliance Findings",
+            "## Security Mapping (OWASP LLM Top 10)",
             "## Transparency Findings",
             "## GPAI Assessment",
             "## Recommended Actions",
@@ -220,6 +222,7 @@ class TestReportGenerator:
             "Executive Summary",
             "Compliance Summary",
             "Compliance Findings",
+            "Security Mapping (OWASP LLM Top 10)",
             "Transparency Findings",
             "GPAI Assessment",
             "Recommended Actions",
