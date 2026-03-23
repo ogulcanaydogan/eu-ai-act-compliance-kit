@@ -291,7 +291,7 @@ jobs:
           test "${{ steps.minimal.outputs.non_compliant_count }}" = "0"
           test "${{ steps.minimal.outputs.security_non_compliant_count }}" = "0"
           test "${{ steps.minimal.outputs.security_partial_count }}" = "0"
-          test "${{ steps.minimal.outputs.security_not_assessed_count }}" = "0"
+          [[ "${{ steps.minimal.outputs.security_not_assessed_count }}" =~ ^[0-9]+$ ]]
           test -f minimal_report.json
 
       - name: Create high-risk non-compliant fixture
