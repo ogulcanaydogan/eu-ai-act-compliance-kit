@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- No changes yet.
+
+## [0.1.11] - 2026-03-23
+
+### Added
 - New example descriptors:
   - `examples/public_benefits_triage.yaml`
   - `examples/synthetic_media_campaign_assistant.yaml`
@@ -18,7 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Coverage gate hardened to enforce a minimum threshold of `80%` in CI.
 - Quickstart smoke tests now cover multiple descriptor profiles.
-- Phase 20 status synchronized as in progress across README, docs index, and roadmap snapshot.
+- Phase 20 status synchronized as completed across README, docs index, and roadmap snapshot.
 
 ### Tests
 - Added contracts for:

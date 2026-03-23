@@ -23,7 +23,7 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
 - Phase 17 completed (create-only export push idempotency and duplicate-safe runtime hardening)
 - Phase 18 completed (export operator observability + lookup-first push upsert mode)
 - Phase 19 completed (batch export orchestration + reconcile checks for live push operations)
-- Phase 20 in progress (quality and coverage hardening for examples, tests, and CI gates)
+- Phase 20 completed (quality and coverage hardening for examples, tests, and CI gates)
 
 ## Phase 1: Risk Classification Engine (Weeks 1-2) ✅ Completed
 
@@ -428,12 +428,12 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
   - batch continues across systems and returns non-zero when any invalid/push failure exists
   - reconcile remains read-only and returns non-zero when `missing_count` or `error_count` is non-zero
 
-## Phase 20: Quality & Coverage Hardening 🚧 In Progress
+## Phase 20: Quality & Coverage Hardening ✅ Completed
 
-- Expand example matrix with additional high-risk, transparency-heavy, and GPAI-uncertain scenarios.
-- Add example contract tests for schema + classify/check (`system` examples) and GPAI assessment (`gpai_model*` examples).
-- Strengthen quickstart reliability checks by running smoke coverage across more than one descriptor profile.
-- Add CI `examples-smoke` required job and enforce coverage floor (`--cov-fail-under=80`).
+- Expanded example matrix with additional high-risk, transparency-heavy, and GPAI-uncertain scenarios.
+- Added example contract tests for schema + classify/check (`system` examples) and GPAI assessment (`gpai_model*` examples).
+- Strengthened quickstart reliability checks by running smoke coverage across more than one descriptor profile.
+- Added CI `examples-smoke` required job and enforced coverage floor (`--cov-fail-under=80`).
 
 ## Timeline Summary (Historical Plan)
 - **Week 1-2**: Risk Classification Engine (Phases 1.1-1.5)
