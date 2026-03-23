@@ -363,6 +363,8 @@ def reconcile_export_push_records(
     max_retries: int = 3,
     retry_backoff_seconds: float = 1.0,
     timeout_seconds: float = 30.0,
+    repair_enabled: bool = False,
+    apply: bool = False,
     cwd: str | Path | None = None,
 ) -> dict[str, Any]:
     """Reconcile ledger entries against remote target existence/status."""
@@ -370,6 +372,8 @@ def reconcile_export_push_records(
         raise ValueError("Reconcile is not supported for target 'generic'.")
     if limit is not None and limit < 1:
         raise ValueError("limit must be >= 1.")
+    if apply and not repair_enabled:
+        raise ValueError("--apply requires --repair.")
 
     ledger_path, records = list_export_push_ledger_records(
         idempotency_path=idempotency_path,
@@ -389,8 +393,13 @@ def reconcile_export_push_records(
     )
 
     exists_count = 0
+    in_sync_count = 0
+    drift_count = 0
     missing_count = 0
     error_count = 0
+    repair_planned_count = 0
+    repair_applied_count = 0
+    repair_failed_count = 0
     results: list[dict[str, Any]] = []
 
     if target == "jira":
@@ -399,11 +408,15 @@ def reconcile_export_push_records(
         api_token = _required_env("EU_AI_ACT_JIRA_API_TOKEN")
         endpoint_template = f"{base_url}/rest/api/3/issue/{{remote_ref}}"
         auth = (user_email, api_token)
+        servicenow_status_field = None
     else:
         instance_url = _required_env("EU_AI_ACT_SERVICENOW_INSTANCE_URL").rstrip("/")
         username = _required_env("EU_AI_ACT_SERVICENOW_USERNAME")
         password = _required_env("EU_AI_ACT_SERVICENOW_PASSWORD")
         table_name = os.getenv("EU_AI_ACT_SERVICENOW_TABLE", "").strip() or "u_ai_act_compliance"
+        servicenow_status_field = (
+            os.getenv("EU_AI_ACT_SERVICENOW_STATUS_FIELD", "").strip() or "u_status"
+        )
         endpoint_template = f"{instance_url}/api/now/table/{table_name}/{{remote_ref}}"
         auth = (username, password)
 
@@ -411,6 +424,14 @@ def reconcile_export_push_records(
         for index, record in enumerate(records, start=1):
             remote_ref_raw = record.get("remote_ref")
             remote_ref = str(remote_ref_raw).strip() if remote_ref_raw is not None else ""
+            expected_status_raw = record.get("status")
+            expected_status: str | None = None
+            if isinstance(expected_status_raw, str) and expected_status_raw.strip():
+                try:
+                    expected_status = _normalize_status(expected_status_raw)
+                except ValueError:
+                    expected_status = None
+
             result_entry = {
                 "record_index": index,
                 "status": "exists",
@@ -419,6 +440,9 @@ def reconcile_export_push_records(
                 "system_name": record.get("system_name"),
                 "requirement_id": record.get("requirement_id"),
                 "remote_ref": remote_ref_raw,
+                "expected_status": expected_status,
+                "remote_status": None,
+                "drift_status": "unknown",
             }
 
             if not remote_ref:
@@ -446,6 +470,97 @@ def reconcile_export_push_records(
                 result_entry["http_status"] = response.status_code
                 result_entry["attempts"] = attempt["attempts"]
                 result_entry["retries_used"] = max(attempt["attempts"] - 1, 0)
+                if target == "jira":
+                    remote_status, remote_labels = _extract_jira_remote_status(
+                        response=response,
+                        pusher=pusher,
+                    )
+                else:
+                    remote_status = _extract_servicenow_remote_status(
+                        response=response,
+                        pusher=pusher,
+                        status_field=servicenow_status_field or "u_status",
+                    )
+                    remote_labels = []
+
+                drift_status = _calculate_drift_status(
+                    expected_status=expected_status,
+                    remote_status=remote_status,
+                )
+                result_entry["remote_status"] = remote_status
+                result_entry["drift_status"] = drift_status
+                if drift_status == "in_sync":
+                    in_sync_count += 1
+                else:
+                    drift_count += 1
+
+                if repair_enabled and drift_status != "in_sync":
+                    repair_payload: dict[str, Any]
+                    if target == "jira":
+                        normalized_labels = _normalize_jira_labels_for_status(
+                            labels=remote_labels,
+                            expected_status=expected_status,
+                        )
+                        repair_payload = {"fields": {"labels": normalized_labels}}
+                    else:
+                        status_field = servicenow_status_field or "u_status"
+                        repair_payload = {status_field: expected_status}
+
+                    repair_planned_count += 1
+                    result_entry["repair_plan"] = {
+                        "operation": "update",
+                        "endpoint": endpoint_template.format(remote_ref=remote_ref),
+                        "payload": repair_payload,
+                    }
+
+                    if apply:
+                        if expected_status is None:
+                            repair_failed_count += 1
+                            result_entry["repair_result"] = {
+                                "status": "failed",
+                                "attempts": 0,
+                                "retries_used": 0,
+                                "http_status": None,
+                                "failure_reason": (
+                                    "Cannot apply repair because expected_status is missing or "
+                                    "invalid in ledger record."
+                                ),
+                            }
+                        else:
+                            repair_method = "PUT" if target == "jira" else "PATCH"
+                            repair_success_codes = {200, 204} if target == "jira" else {200}
+                            repair_attempt = pusher._request_with_retry(
+                                client=client,
+                                method=repair_method,
+                                endpoint=endpoint_template.format(remote_ref=remote_ref),
+                                payload=repair_payload,
+                                target_name=f"{target}-repair",
+                                success_status_codes=repair_success_codes,
+                            )
+                            if repair_attempt["ok"]:
+                                repair_applied_count += 1
+                                repair_response = repair_attempt["response"]
+                                result_entry["repair_result"] = {
+                                    "status": "applied",
+                                    "attempts": repair_attempt["attempts"],
+                                    "retries_used": max(repair_attempt["attempts"] - 1, 0),
+                                    "http_status": repair_response.status_code,
+                                }
+                            else:
+                                repair_failed_count += 1
+                                result_entry["repair_result"] = {
+                                    "status": "failed",
+                                    "attempts": repair_attempt["attempts"],
+                                    "retries_used": max(repair_attempt["attempts"] - 1, 0),
+                                    "http_status": repair_attempt["http_status"],
+                                    "failure_reason": repair_attempt["failure_reason"],
+                                }
+                    else:
+                        result_entry["repair_result"] = {
+                            "status": "planned",
+                            "apply": False,
+                        }
+
                 results.append(result_entry)
                 continue
 
@@ -471,10 +586,17 @@ def reconcile_export_push_records(
             "requirement_id": requirement_id,
             "limit": limit,
         },
+        "repair_enabled": repair_enabled,
+        "apply": apply,
         "checked_count": len(records),
         "exists_count": exists_count,
+        "in_sync_count": in_sync_count,
+        "drift_count": drift_count,
         "missing_count": missing_count,
         "error_count": error_count,
+        "repair_planned_count": repair_planned_count,
+        "repair_applied_count": repair_applied_count,
+        "repair_failed_count": repair_failed_count,
         "results": results,
     }
 
@@ -484,6 +606,89 @@ def _normalize_status(status: str) -> str:
     if normalized_key not in _STATUS_NORMALIZATION_MAP:
         raise ValueError(f"Unsupported status value: {status}")
     return _STATUS_NORMALIZATION_MAP[normalized_key]
+
+
+def _calculate_drift_status(
+    *,
+    expected_status: str | None,
+    remote_status: str | None,
+) -> str:
+    if expected_status is None or remote_status is None:
+        return "unknown"
+    if expected_status == remote_status:
+        return "in_sync"
+    return "status_mismatch"
+
+
+def _extract_jira_remote_status(
+    *,
+    response: httpx.Response,
+    pusher: ExportPusher,
+) -> tuple[str | None, list[str]]:
+    response_json = pusher._safe_json(response)  # noqa: SLF001
+    labels: list[str] = []
+    fields_obj = response_json.get("fields")
+    if isinstance(fields_obj, dict):
+        labels_obj = fields_obj.get("labels")
+        if isinstance(labels_obj, list):
+            labels = [str(label) for label in labels_obj if str(label).strip()]
+
+    for label in labels:
+        if not label.startswith("status-"):
+            continue
+        candidate = label.removeprefix("status-").strip()
+        if not candidate:
+            continue
+        try:
+            return _normalize_status(candidate), labels
+        except ValueError:
+            continue
+    return None, labels
+
+
+def _normalize_jira_labels_for_status(
+    *,
+    labels: list[str],
+    expected_status: str | None,
+) -> list[str]:
+    normalized_labels: list[str] = []
+    seen: set[str] = set()
+    for label in labels:
+        normalized = str(label).strip()
+        if not normalized or normalized.startswith("status-") or normalized in seen:
+            continue
+        normalized_labels.append(normalized)
+        seen.add(normalized)
+    if expected_status:
+        status_label = f"status-{expected_status}"
+        if status_label not in seen:
+            normalized_labels.append(status_label)
+    return normalized_labels
+
+
+def _extract_servicenow_remote_status(
+    *,
+    response: httpx.Response,
+    pusher: ExportPusher,
+    status_field: str,
+) -> str | None:
+    response_json = pusher._safe_json(response)  # noqa: SLF001
+    result_obj = response_json.get("result")
+
+    value: Any = None
+    if isinstance(result_obj, dict):
+        value = result_obj.get(status_field)
+    elif isinstance(result_obj, list) and result_obj:
+        first = result_obj[0]
+        if isinstance(first, dict):
+            value = first.get(status_field)
+
+    if isinstance(value, str) and value.strip():
+        try:
+            return _normalize_status(value)
+        except ValueError:
+            return None
+    return None
 
 
 def _is_actionable(status: str) -> bool:
