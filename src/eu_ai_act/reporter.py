@@ -14,8 +14,8 @@ from eu_ai_act.checker import ComplianceFinding, ComplianceReport
 from eu_ai_act.checklist import ChecklistItem, ComplianceChecklist
 from eu_ai_act.classifier import RiskClassification
 from eu_ai_act.gpai import GPAIAssessment
-from eu_ai_act.security_mapping import SecurityMapper
 from eu_ai_act.schema import AISystemDescriptor
+from eu_ai_act.security_mapping import SecurityMapper
 from eu_ai_act.transparency import TransparencyFinding
 
 

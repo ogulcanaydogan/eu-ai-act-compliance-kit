@@ -52,13 +52,13 @@ from eu_ai_act.history import (
     resolve_history_path,
 )
 from eu_ai_act.reporter import ReportGenerator
-from eu_ai_act.security_mapping import SecurityMapper
 from eu_ai_act.schema import (
     AISystemDescriptor,
     RiskTier,
     UseCaseDomain,
     load_system_descriptor_from_file,
 )
+from eu_ai_act.security_mapping import SecurityMapper
 from eu_ai_act.transparency import TransparencyChecker, TransparencyFinding
 
 console = Console()
