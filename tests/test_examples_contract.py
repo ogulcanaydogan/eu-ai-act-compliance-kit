@@ -38,7 +38,9 @@ def test_all_system_examples_validate_and_check_contract():
 
         check_payload = _invoke_json(runner, ["check", str(descriptor), "--json"])
         assert "summary" in check_payload, f"{descriptor.name}: missing check summary"
-        assert isinstance(check_payload["summary"], dict), f"{descriptor.name}: invalid summary type"
+        assert isinstance(
+            check_payload["summary"], dict
+        ), f"{descriptor.name}: invalid summary type"
         for key in (
             "total_requirements",
             "compliant_count",
@@ -47,7 +49,9 @@ def test_all_system_examples_validate_and_check_contract():
             "not_assessed_count",
             "compliance_percentage",
         ):
-            assert key in check_payload["summary"], f"{descriptor.name}: missing summary key '{key}'"
+            assert (
+                key in check_payload["summary"]
+            ), f"{descriptor.name}: missing summary key '{key}'"
 
 
 def test_phase20_new_system_examples_expected_contract():
