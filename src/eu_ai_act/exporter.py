@@ -10,7 +10,7 @@ import time
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 from uuid import uuid4
 
 import httpx
@@ -18,6 +18,7 @@ import httpx
 from eu_ai_act.checker import ComplianceChecker, ComplianceReport
 from eu_ai_act.history import HistoryEvent, get_event
 from eu_ai_act.schema import load_system_descriptor_from_file
+from eu_ai_act.security_mapping import SecurityMapper
 
 ExportTarget = Literal["generic", "jira", "servicenow"]
 SourceType = Literal["check", "history"]
@@ -415,6 +416,7 @@ def run_export_batch(
             "system_name": report.system_name,
             "risk_tier": report.risk_tier.value,
             "summary": _summary_from_compliance(report),
+            "security_mapping": _payload_security_mapping(envelope),
             "status": "success",
         }
 
@@ -499,6 +501,7 @@ def _filter_envelope_to_requirement(
         event_type=envelope.event_type,
         descriptor_path=envelope.descriptor_path,
         history_generated_at=envelope.history_generated_at,
+        security_mapping=_payload_security_mapping(envelope),
     )
 
     adapter_payload = envelope.adapter_payload or {}
@@ -1246,6 +1249,153 @@ def _summary_from_compliance(report: ComplianceReport) -> dict[str, Any]:
     }
 
 
+def _default_security_summary_payload() -> dict[str, Any]:
+    return {
+        "total_controls": 10,
+        "compliant_count": 0,
+        "non_compliant_count": 0,
+        "partial_count": 0,
+        "not_assessed_count": 10,
+        "coverage_percentage": 0.0,
+    }
+
+
+def _default_security_mapping_payload() -> dict[str, Any]:
+    return {
+        "framework": SecurityMapper.FRAMEWORK,
+        "summary": _default_security_summary_payload(),
+        "controls": [],
+    }
+
+
+def _derive_security_control_status(statuses: list[str]) -> str:
+    if not statuses:
+        return "not_assessed"
+    if "non_compliant" in statuses:
+        return "non_compliant"
+    if "partial" in statuses:
+        return "partial"
+    if "not_assessed" in statuses:
+        return "not_assessed"
+    return "compliant"
+
+
+def _security_mapping_from_history_event(event: HistoryEvent) -> dict[str, Any]:
+    normalized_statuses: dict[str, str] = {}
+    for requirement_id, raw_status in event.finding_statuses.items():
+        try:
+            normalized_statuses[requirement_id] = _normalize_status(raw_status)
+        except ValueError:
+            continue
+
+    controls: list[dict[str, Any]] = []
+    compliant_count = 0
+    non_compliant_count = 0
+    partial_count = 0
+    not_assessed_count = 0
+
+    for definition in SecurityMapper.CONTROL_DEFINITIONS:
+        control_status = _derive_security_control_status(
+            [
+                normalized_statuses[requirement_id]
+                for requirement_id in definition.linked_requirements
+                if requirement_id in normalized_statuses
+            ]
+        )
+        if control_status == "compliant":
+            compliant_count += 1
+        elif control_status == "non_compliant":
+            non_compliant_count += 1
+        elif control_status == "partial":
+            partial_count += 1
+        else:
+            not_assessed_count += 1
+
+        controls.append(
+            {
+                "control_id": definition.control_id,
+                "title": definition.title,
+                "status": control_status,
+                "severity": definition.severity,
+                "linked_requirements": list(definition.linked_requirements),
+                "gap_analysis": (
+                    ""
+                    if control_status == "compliant"
+                    else (
+                        "Derived from history snapshot requirement statuses; "
+                        "run a fresh check for detailed control analysis."
+                    )
+                ),
+                "recommendations": (
+                    [] if control_status == "compliant" else [definition.default_recommendation]
+                ),
+            }
+        )
+
+    total_controls = len(controls)
+    derived_summary = {
+        "total_controls": total_controls,
+        "compliant_count": compliant_count,
+        "non_compliant_count": non_compliant_count,
+        "partial_count": partial_count,
+        "not_assessed_count": not_assessed_count,
+        "coverage_percentage": round(
+            (
+                ((total_controls - not_assessed_count) / total_controls * 100.0)
+                if total_controls
+                else 0.0
+            ),
+            2,
+        ),
+    }
+
+    snapshot = event.security_summary or {}
+    summary = {
+        "total_controls": int(snapshot.get("total_controls", derived_summary["total_controls"])),
+        "compliant_count": int(snapshot.get("compliant_count", derived_summary["compliant_count"])),
+        "non_compliant_count": int(
+            snapshot.get("non_compliant_count", derived_summary["non_compliant_count"])
+        ),
+        "partial_count": int(snapshot.get("partial_count", derived_summary["partial_count"])),
+        "not_assessed_count": int(
+            snapshot.get("not_assessed_count", derived_summary["not_assessed_count"])
+        ),
+        "coverage_percentage": round(
+            float(snapshot.get("coverage_percentage", derived_summary["coverage_percentage"])),
+            2,
+        ),
+    }
+    framework_raw = snapshot.get("framework")
+    framework = (
+        framework_raw
+        if isinstance(framework_raw, str) and framework_raw.strip()
+        else SecurityMapper.FRAMEWORK
+    )
+    return {
+        "framework": framework,
+        "summary": summary,
+        "controls": controls,
+    }
+
+
+def _payload_security_mapping(envelope: ExportEnvelope) -> dict[str, Any]:
+    if envelope.security_mapping is None:
+        return _default_security_mapping_payload()
+    return {
+        "framework": envelope.security_mapping.get("framework", SecurityMapper.FRAMEWORK),
+        "summary": dict(
+            cast(dict[str, Any], envelope.security_mapping.get("summary"))
+            if isinstance(envelope.security_mapping.get("summary"), dict)
+            else _default_security_summary_payload()
+        ),
+        "controls": list(
+            cast(list[dict[str, Any]], envelope.security_mapping.get("controls"))
+            if isinstance(envelope.security_mapping.get("controls"), list)
+            else []
+        ),
+    }
+
+
 @dataclass
 class ExportItem:
     """Canonical export item used by all target adapters."""
@@ -1290,6 +1440,7 @@ class ExportEnvelope:
     event_type: str | None = None
     descriptor_path: str | None = None
     history_generated_at: str | None = None
+    security_mapping: dict[str, Any] | None = None
     adapter_payload: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -1311,6 +1462,8 @@ class ExportEnvelope:
             payload["descriptor_path"] = self.descriptor_path
         if self.history_generated_at is not None:
             payload["history_generated_at"] = self.history_generated_at
+        if self.security_mapping is not None:
+            payload["security_mapping"] = self.security_mapping
         if self.adapter_payload is not None:
             payload["adapter_payload"] = self.adapter_payload
         return payload
@@ -1343,6 +1496,7 @@ class ExportGenerator:
             summary=_summary_from_compliance(report),
             items=items,
             descriptor_path=descriptor_path,
+            security_mapping=SecurityMapper().map_from_compliance(report).to_dict(),
         )
         envelope.adapter_payload = self._build_adapter_payload(envelope)
         return envelope
@@ -1368,6 +1522,7 @@ class ExportGenerator:
             event_type=event.event_type,
             descriptor_path=event.descriptor_path,
             history_generated_at=event.generated_at,
+            security_mapping=_security_mapping_from_history_event(event),
         )
         envelope.adapter_payload = self._build_adapter_payload(envelope)
         return envelope

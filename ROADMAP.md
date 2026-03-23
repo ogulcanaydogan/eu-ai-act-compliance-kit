@@ -27,6 +27,7 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
 - Phase 21 completed (reconcile drift detection + guarded repair with explicit apply contract)
 - Phase 22 completed (persistent export ops log + replay and rollup operations)
 - Phase 23 completed (OWASP LLM Top 10 security mapping core with `security-map` command and check/report integration)
+- Phase 24 completed (security ops integration across dashboard/history/export with observe-only gate policy)
 
 ## Phase 1: Risk Classification Engine (Weeks 1-2) ✅ Completed
 
@@ -458,6 +459,19 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
 - Preserved strict existing export policies:
   - `generic` remains payload-only for live operations
   - replay uses continue-all with final non-zero when replay failures/unreplayable sources exist
+
+## Phase 23: OWASP Security Mapping Core ✅ Completed
+
+- Added deterministic OWASP LLM Top 10 mapping runtime (`security-map`) from compliance findings.
+- Extended `ai-act check --json` with additive `security_summary`.
+- Extended report payload/renderers (`json|md|html`) with additive `security_mapping` section.
+
+## Phase 24: Security Ops Integration ✅ Completed
+
+- Dashboard payload now includes per-system `security_summary` plus top-level security aggregates.
+- History events now persist optional `security_summary` snapshots; `history diff` includes security deltas.
+- Export payloads (`check`, `history`, `batch`) now include top-level additive `security_mapping` block.
+- Security mapping remains observe-only for CI gates in this phase (existing fail policy unchanged).
 
 ## Timeline Summary (Historical Plan)
 - **Week 1-2**: Risk Classification Engine (Phases 1.1-1.5)

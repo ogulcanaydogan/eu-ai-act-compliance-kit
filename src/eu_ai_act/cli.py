@@ -206,6 +206,7 @@ def check(system_yaml: str, output_json: bool) -> None:
             risk_tier=report_result.risk_tier.value,
             summary=_history_summary(report_result),
             finding_statuses=_history_finding_statuses(report_result.findings),
+            security_summary=_history_security_summary(security_mapping),
         )
         append_event(history_event)
     except Exception as e:
@@ -629,6 +630,7 @@ def report(system_yaml: str, format: str, output: str | None) -> None:
     report_generator = ReportGenerator()
     transparency_checker = TransparencyChecker()
     gpai_assessor = GPAIAssessor()
+    security_mapper = SecurityMapper()
 
     with Progress(transient=True) as progress:
         progress.add_task("Generating report...", total=None)
@@ -636,6 +638,7 @@ def report(system_yaml: str, format: str, output: str | None) -> None:
         compliance_report = checker.check(descriptor)
         transparency_findings = _collect_transparency_findings(transparency_checker, descriptor)
         gpai_assessment = gpai_assessor.assess(_build_gpai_model_info_from_descriptor(descriptor))
+        security_mapping = security_mapper.map_from_compliance(compliance_report)
         checklist_result = checklist_generator.generate(
             descriptor=descriptor,
             tier=compliance_report.risk_tier,
@@ -682,6 +685,7 @@ def report(system_yaml: str, format: str, output: str | None) -> None:
             summary=_history_summary(compliance_report),
             finding_statuses=_history_finding_statuses(compliance_report.findings),
             report_format=format,
+            security_summary=_history_security_summary(security_mapping),
         )
         append_event(history_event)
     except Exception as e:
@@ -937,6 +941,25 @@ def history_show(event_id: str, output_json: bool, history_path: str | None) -> 
         summary_table.add_row(field_name, str(value))
     console.print(summary_table)
 
+    if event.security_summary:
+        security_table = Table(title="Security Summary")
+        security_table.add_column("Metric", style="cyan")
+        security_table.add_column("Value", justify="right")
+        framework = event.security_summary.get("framework", "owasp-llm-top-10")
+        security_table.add_row("framework", str(framework))
+        for field_name in [
+            "total_controls",
+            "compliant_count",
+            "non_compliant_count",
+            "partial_count",
+            "not_assessed_count",
+            "coverage_percentage",
+        ]:
+            security_table.add_row(field_name, str(event.security_summary.get(field_name, "-")))
+        console.print(security_table)
+    else:
+        console.print("[yellow]No security summary snapshot in this history event.[/yellow]")
+
     findings_table = Table(title="Finding Statuses")
     findings_table.add_column("Requirement")
     findings_table.add_column("Status")
@@ -998,6 +1021,27 @@ def history_diff(
     for metric, change in payload["summary_changes"].items():
         summary_table.add_row(metric, str(change["from"]), str(change["to"]), str(change["delta"]))
     console.print(summary_table)
+
+    security_change = payload.get("security_summary_change", {})
+    security_table = Table(title="Security Summary Changes")
+    security_table.add_column("Metric")
+    security_table.add_column("From", justify="right")
+    security_table.add_column("To", justify="right")
+    security_table.add_column("Delta", justify="right")
+    for metric in [
+        "coverage_percentage",
+        "non_compliant_count",
+        "partial_count",
+        "not_assessed_count",
+    ]:
+        change = security_change.get(metric, {"from": "-", "to": "-", "delta": "-"})
+        security_table.add_row(
+            metric,
+            str(change.get("from", "-")),
+            str(change.get("to", "-")),
+            str(change.get("delta", "-")),
+        )
+    console.print(security_table)
 
     if payload["finding_status_changes"]:
         status_table = Table(title="Finding Status Changes")
@@ -2044,6 +2088,14 @@ def _history_summary(report_result) -> dict:
         "partial_count": report_result.summary.partial_count,
         "not_assessed_count": report_result.summary.not_assessed_count,
         "compliance_percentage": round(report_result.summary.compliance_percentage, 2),
+    }
+
+
+def _history_security_summary(security_mapping) -> dict:
+    """Build compact security summary payload for history snapshots."""
+    return {
+        "framework": security_mapping.framework,
+        **security_mapping.summary.to_dict(),
     }
 
 

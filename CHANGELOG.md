@@ -10,6 +10,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - No changes yet.
 
+## [0.1.15] - 2026-03-23
+
+### Added
+- Dashboard security ops visibility:
+  - system-level `security_summary`
+  - top-level `average_security_coverage_percentage`
+  - top-level `security_control_status_distribution`
+- History event payload now supports additive `security_summary` snapshots.
+- Export payloads now include additive top-level `security_mapping` in:
+  - `export check`
+  - `export history`
+  - `export batch` result entries
+
+### Changed
+- `history diff` now includes additive `security_summary_change` deltas (`coverage_percentage`, `non_compliant_count`, `partial_count`, `not_assessed_count`).
+- Dashboard HTML now includes a new `Security Mapping Overview` section.
+- Phase 24 status synchronized as completed across README, docs index, and roadmap snapshot.
+- Security mapping remains observe-only for CI gate policy in this phase.
+
+### Tests
+- Added/extended history, dashboard, exporter, and CLI contract coverage for new security ops payload fields.
+
 ## [0.1.14] - 2026-03-23
 
 ### Added
