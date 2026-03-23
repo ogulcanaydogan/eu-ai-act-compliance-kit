@@ -1340,7 +1340,11 @@ def _security_mapping_from_history_event(event: HistoryEvent) -> dict[str, Any]:
         "partial_count": partial_count,
         "not_assessed_count": not_assessed_count,
         "coverage_percentage": round(
-            ((total_controls - not_assessed_count) / total_controls * 100.0) if total_controls else 0.0,
+            (
+                ((total_controls - not_assessed_count) / total_controls * 100.0)
+                if total_controls
+                else 0.0
+            ),
             2,
         ),
     }

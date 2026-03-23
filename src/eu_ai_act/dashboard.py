@@ -90,7 +90,8 @@ class DashboardGenerator:
         )
         average_security_coverage = (
             round(
-                sum(row["security_summary"]["coverage_percentage"] for row in systems) / len(systems),
+                sum(row["security_summary"]["coverage_percentage"] for row in systems)
+                / len(systems),
                 2,
             )
             if systems
