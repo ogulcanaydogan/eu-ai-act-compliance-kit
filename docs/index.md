@@ -11,6 +11,7 @@ checks transparency and GPAI obligations, and renders audit-oriented reports.
 - Generate action-focused checklists (JSON, Markdown, HTML)
 - Produce compliance reports (JSON, Markdown, HTML, PDF)
 - Generate payload-first external export artifacts (`generic`, `jira`, `servicenow`)
+- Evaluate export operational posture with policy-based gating (`export gate`)
 - Map compliance findings to OWASP LLM Top 10 controls (`security-map`)
 - Assess transparency obligations and GPAI signals (`Art. 50`, `Art. 51-55`)
 - Integrate checks into CI/CD using the repository's composite GitHub Action
@@ -43,6 +44,7 @@ checks transparency and GPAI obligations, and renders audit-oriented reports.
 - Phase 24: Security ops integration completed (additive security snapshots in dashboard/history/export, observe-only gate policy)
 - Phase 25: Enforceable security gate completed (observe-by-default + optional enforce mode in `check` and action gate surfaces)
 - Phase 26: Security gate V2 completed (profile-based thresholds + tier-aware evaluation in CLI/action/CI)
+- Phase 27: Export ops governance completed (`export gate`, reconcile log continuity, observe-first CI smoke)
 
 ## End-to-End Flow
 

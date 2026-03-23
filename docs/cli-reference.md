@@ -188,6 +188,8 @@ ai-act export batch examples --target jira --push --push-mode upsert --json
 ai-act export replay --target jira --limit 20 --json
 ai-act export replay --target servicenow --since-hours 24 --dry-run --json
 ai-act export rollup --target jira --since-hours 24 --json
+ai-act export gate --target jira --mode observe --json
+ai-act export gate --target servicenow --mode enforce --policy ops_policy.yaml --json
 ai-act export reconcile --target jira --json
 ai-act export ledger list --json
 ai-act export ledger stats --json
@@ -284,6 +286,30 @@ Subcommands:
     - `--idempotency-path PATH` (override ledger location)
     - `-o, --output PATH`
     - `--json` (JSON is default output shape)
+- `export gate`
+  - source: policy evaluation over rollup + reconcile summary windows
+  - options:
+    - `--target [jira|servicenow]` (required)
+    - `--system <name>`
+    - `--since-hours FLOAT` (optional; defaults to resolved policy window)
+    - `--limit N` (optional; defaults to resolved policy window)
+    - `--mode [observe|enforce]` (default: `observe`)
+    - `--policy PATH` (optional YAML policy file)
+    - `--open-failures-max INT` (default: `0`, must be `>= 0`)
+    - `--drift-max INT` (default: `0`, must be `>= 0`)
+    - `--min-success-rate FLOAT` (default: `95.0`, must be in `0..100`)
+    - `--ops-path PATH` (override ops log location)
+    - `--reconcile-log-path PATH` (override reconcile log location)
+    - `-o, --output PATH`
+    - `--json` (JSON is default output shape)
+  - policy precedence:
+    - CLI flags override policy file values
+    - policy file values override built-in defaults
+  - enforce behavior:
+    - exits non-zero when any threshold is violated
+    - exits non-zero when reconcile data is missing (`missing_reconcile_data`)
+  - observe behavior:
+    - emits the same decision payload but always exits zero
 - `export ledger list`
   - source: persisted push idempotency ledger (`.eu_ai_act/export_push_ledger.jsonl`)
   - options:
@@ -317,6 +343,8 @@ Output contract:
   - `generated_at`, `target`, `ops_path`, `selected_count`, `replayed_count`, `failed_count`, `unreplayable_count`, `results`
 - `export rollup` top-level contract:
   - `generated_at`, `window`, `metrics`, `distributions`, `systems_with_failures`, `top_failure_reasons`, `ops_path`, `idempotency_path`
+- `export gate` top-level contract:
+  - `generated_at`, `target`, `system_name`, `mode`, `failed`, `reason_codes`, `effective_policy`, `rollup_metrics`, `reconcile_metrics`, `decision_details`, `ops_path`, `reconcile_log_path`
 
 Push behavior policy:
 
@@ -337,6 +365,12 @@ Push behavior policy:
   - `error_count > 0`
   - `drift_count > 0`
   - `repair_failed_count > 0`
+- `export reconcile` writes append-only best-effort reconcile records to `.eu_ai_act/export_reconcile_log.jsonl` (warning-only on write failure)
+- `export gate` evaluates multi-threshold policy:
+  - `open_failures_count > open_failures_max`
+  - `drift_count > drift_max`
+  - `success_rate < min_success_rate`
+  - enforce-only fail when reconcile data is missing
 
 Live push environment variables:
 
@@ -353,6 +387,8 @@ Live push environment variables:
   - `EU_AI_ACT_SERVICENOW_IDEMPOTENCY_FIELD` (optional; default: `u_idempotency_key`)
 - Ops log:
   - `EU_AI_ACT_EXPORT_OPS_LOG_PATH` (optional override for `.eu_ai_act/export_ops_log.jsonl`)
+- Reconcile log:
+  - `EU_AI_ACT_EXPORT_RECONCILE_LOG_PATH` (optional override for `.eu_ai_act/export_reconcile_log.jsonl`)
 
 ## `transparency`
 

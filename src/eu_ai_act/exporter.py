@@ -99,6 +99,31 @@ def resolve_export_ops_log_path(
     return base_dir / ".eu_ai_act" / "export_ops_log.jsonl"
 
 
+def resolve_export_reconcile_log_path(
+    reconcile_log_path: str | Path | None = None,
+    *,
+    cwd: str | Path | None = None,
+) -> Path:
+    """Resolve explicit or default export reconcile log path."""
+    current_dir = Path(cwd).resolve() if cwd else Path.cwd().resolve()
+    path_input: str | Path | None = reconcile_log_path
+
+    if path_input is None:
+        env_path = os.getenv("EU_AI_ACT_EXPORT_RECONCILE_LOG_PATH")
+        if env_path:
+            path_input = env_path
+
+    if path_input is not None:
+        candidate = Path(path_input).expanduser()
+        if not candidate.is_absolute():
+            candidate = (current_dir / candidate).resolve()
+        return candidate
+
+    project_root = _find_project_root(current_dir)
+    base_dir = project_root if project_root else current_dir
+    return base_dir / ".eu_ai_act" / "export_reconcile_log.jsonl"
+
+
 def _read_export_push_ledger_records(ledger_path: Path) -> list[dict[str, Any]]:
     if not ledger_path.exists():
         return []
@@ -142,6 +167,30 @@ def _read_export_ops_log_records(ops_log_path: Path) -> list[dict[str, Any]]:
             if not isinstance(record, dict):
                 raise ValueError(
                     f"Invalid export ops log record at line {line_number}: expected object."
+                )
+            records.append(record)
+    return records
+
+
+def _read_export_reconcile_log_records(reconcile_log_path: Path) -> list[dict[str, Any]]:
+    if not reconcile_log_path.exists():
+        return []
+
+    records: list[dict[str, Any]] = []
+    with reconcile_log_path.open("r", encoding="utf-8") as handle:
+        for line_number, line in enumerate(handle, start=1):
+            payload_line = line.strip()
+            if not payload_line:
+                continue
+            try:
+                record = json.loads(payload_line)
+            except json.JSONDecodeError as exc:
+                raise ValueError(
+                    f"Invalid JSON in export reconcile log at line {line_number}: {exc.msg}"
+                ) from exc
+            if not isinstance(record, dict):
+                raise ValueError(
+                    f"Invalid export reconcile log record at line {line_number}: expected object."
                 )
             records.append(record)
     return records
@@ -209,6 +258,102 @@ def list_export_ops_log_records(
     if limit is not None:
         records = records[:limit]
     return ops_log_path, records
+
+
+def list_export_reconcile_log_records(
+    *,
+    reconcile_log_path: str | Path | None = None,
+    cwd: str | Path | None = None,
+    target: ExportTarget | None = None,
+    system_name: str | None = None,
+    since_hours: float | None = None,
+    limit: int | None = None,
+) -> tuple[Path, list[dict[str, Any]]]:
+    """List export reconcile log records with deterministic filtering."""
+    if since_hours is not None and since_hours < 0:
+        raise ValueError("since_hours must be >= 0.")
+    if limit is not None and limit < 1:
+        raise ValueError("limit must be >= 1.")
+
+    resolved_path = resolve_export_reconcile_log_path(reconcile_log_path, cwd=cwd)
+    records = _read_export_reconcile_log_records(resolved_path)
+
+    if target:
+        records = [record for record in records if record.get("target") == target]
+    if system_name:
+        records = [record for record in records if record.get("system_name") == system_name]
+    if since_hours is not None:
+        threshold = datetime.now(UTC) - timedelta(hours=since_hours)
+        filtered: list[dict[str, Any]] = []
+        for record in records:
+            generated_at = record.get("generated_at")
+            generated_at_dt = (
+                _parse_iso_datetime(str(generated_at)) if isinstance(generated_at, str) else None
+            )
+            if generated_at_dt is None or generated_at_dt >= threshold:
+                filtered.append(record)
+        records = filtered
+
+    records.sort(
+        key=lambda record: (
+            str(record.get("generated_at") or ""),
+            str(record.get("reconcile_id") or ""),
+        ),
+        reverse=True,
+    )
+    if limit is not None:
+        records = records[:limit]
+    return resolved_path, records
+
+
+def summarize_export_reconcile_log(
+    *,
+    reconcile_log_path: str | Path | None = None,
+    cwd: str | Path | None = None,
+    target: ExportTarget | None = None,
+    system_name: str | None = None,
+    since_hours: float | None = None,
+    limit: int | None = None,
+) -> dict[str, Any]:
+    """Summarize export reconcile log records for ops gate consumption."""
+    resolved_path, records = list_export_reconcile_log_records(
+        reconcile_log_path=reconcile_log_path,
+        cwd=cwd,
+        target=target,
+        system_name=system_name,
+        since_hours=since_hours,
+        limit=limit,
+    )
+
+    checked_count = len(records)
+    in_sync_count = sum(1 for record in records if record.get("drift_status") == "in_sync")
+    drift_count = sum(1 for record in records if record.get("drift_status") == "status_mismatch")
+    missing_count = sum(1 for record in records if record.get("status") == "missing")
+    error_count = sum(1 for record in records if record.get("status") == "check_error")
+    generated_values = [
+        str(record.get("generated_at")) for record in records if record.get("generated_at")
+    ]
+    latest_reconcile_at = max(generated_values) if generated_values else None
+
+    return {
+        "generated_at": _utc_now_iso(),
+        "path": str(resolved_path),
+        "window": {
+            "target": target,
+            "system_name": system_name,
+            "since_hours": since_hours,
+            "limit": limit,
+        },
+        "metrics": {
+            "checked_count": checked_count,
+            "drift_count": drift_count,
+            "in_sync_count": in_sync_count,
+            "missing_count": missing_count,
+            "error_count": error_count,
+            "latest_reconcile_at": latest_reconcile_at,
+            "has_reconcile_data": checked_count > 0,
+        },
+    }
 
 
 def list_export_push_ledger_records(
@@ -868,6 +1013,7 @@ def reconcile_export_push_records(
     timeout_seconds: float = 30.0,
     repair_enabled: bool = False,
     apply: bool = False,
+    reconcile_log_path: str | Path | None = None,
     cwd: str | Path | None = None,
 ) -> dict[str, Any]:
     """Reconcile ledger entries against remote target existence/status."""
@@ -894,6 +1040,7 @@ def reconcile_export_push_records(
         idempotency_enabled=False,
         cwd=cwd,
     )
+    resolved_reconcile_log_path = resolve_export_reconcile_log_path(reconcile_log_path, cwd=cwd)
 
     exists_count = 0
     in_sync_count = 0
@@ -1080,10 +1227,34 @@ def reconcile_export_push_records(
                 result_entry["status"] = "check_error"
             results.append(result_entry)
 
-    return {
+    reconcile_log_warning: str | None = None
+    reconcile_id = str(uuid4())
+    try:
+        for result in results:
+            if not isinstance(result, dict):
+                continue
+            record = {
+                "reconcile_id": reconcile_id,
+                "generated_at": _utc_now_iso(),
+                "target": target,
+                "system_name": result.get("system_name"),
+                "requirement_id": result.get("requirement_id"),
+                "status": result.get("status"),
+                "drift_status": result.get("drift_status"),
+                "http_status": result.get("http_status"),
+                "failure_reason": result.get("failure_reason"),
+                "repair_enabled": repair_enabled,
+                "apply": apply,
+            }
+            _append_export_reconcile_log_record(resolved_reconcile_log_path, record)
+    except Exception as exc:  # pragma: no cover - best-effort warning path
+        reconcile_log_warning = f"Failed to write export reconcile log: {exc}"
+
+    payload = {
         "generated_at": _utc_now_iso(),
         "target": target,
         "ledger_path": str(ledger_path),
+        "reconcile_log_path": str(resolved_reconcile_log_path),
         "filters": {
             "system_name": system_name,
             "requirement_id": requirement_id,
@@ -1102,6 +1273,9 @@ def reconcile_export_push_records(
         "repair_failed_count": repair_failed_count,
         "results": results,
     }
+    if reconcile_log_warning:
+        payload["reconcile_log_warning"] = reconcile_log_warning
+    return payload
 
 
 def _normalize_status(status: str) -> str:
@@ -1662,6 +1836,15 @@ def _required_env(name: str) -> str:
     if not value:
         raise ValueError(f"Missing required environment variable: {name}")
     return value
+
+
+def _append_export_reconcile_log_record(
+    reconcile_log_path: Path,
+    record: dict[str, Any],
+) -> None:
+    reconcile_log_path.parent.mkdir(parents=True, exist_ok=True)
+    with reconcile_log_path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
 def _trim_body_for_error(body: str, *, max_len: int = 300) -> str:

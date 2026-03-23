@@ -14,10 +14,12 @@ from eu_ai_act.exporter import (
     ExportPusher,
     ExportPushError,
     list_export_ops_log_records,
+    list_export_reconcile_log_records,
     reconcile_export_push_records,
     replay_export_push_failures,
     run_export_batch,
     summarize_export_ops_rollup,
+    summarize_export_reconcile_log,
 )
 from eu_ai_act.history import build_event
 from eu_ai_act.schema import load_system_descriptor_from_file
@@ -1861,6 +1863,190 @@ def test_reconcile_repair_apply_continues_when_one_record_fails(monkeypatch, tmp
     ]
     assert len(failed) == 1
     assert "HTTP 400" in failed[0]["repair_result"]["failure_reason"]
+
+
+def test_reconcile_writes_reconcile_log_and_summarize(monkeypatch, tmp_path):
+    """Reconcile should append per-record log entries and summarize deterministic aggregates."""
+    ledger_path = tmp_path / ".eu_ai_act" / "export_push_ledger.jsonl"
+    reconcile_log_path = tmp_path / ".eu_ai_act" / "export_reconcile_log.jsonl"
+    ledger_path.parent.mkdir(parents=True, exist_ok=True)
+    ledger_path.write_text(
+        json.dumps(
+            {
+                "idempotency_key": "k1",
+                "target": "jira",
+                "system_name": "System A",
+                "descriptor_path": "/tmp/a.yaml",
+                "requirement_id": "Art. 10",
+                "status": "non_compliant",
+                "remote_ref": "EUAI-1",
+                "pushed_at": "2026-03-22T10:00:00+00:00",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("EU_AI_ACT_JIRA_BASE_URL", "https://example.atlassian.net")
+    monkeypatch.setenv("EU_AI_ACT_JIRA_EMAIL", "ops@example.com")
+    monkeypatch.setenv("EU_AI_ACT_JIRA_API_TOKEN", "secret")
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            status_code=200,
+            json={"key": "EUAI-1", "fields": {"labels": ["status-non_compliant"]}},
+        )
+
+    transport = httpx.MockTransport(handler)
+    original_client = httpx.Client
+
+    def _fake_client(*args, **kwargs):
+        return original_client(transport=transport)
+
+    monkeypatch.setattr("eu_ai_act.exporter.httpx.Client", _fake_client)
+
+    payload = reconcile_export_push_records(
+        target="jira",
+        idempotency_path=ledger_path,
+        reconcile_log_path=reconcile_log_path,
+        max_retries=0,
+    )
+
+    assert payload["checked_count"] == 1
+    assert payload["exists_count"] == 1
+    assert payload["reconcile_log_path"] == str(reconcile_log_path)
+    assert reconcile_log_path.exists()
+
+    log_path, records = list_export_reconcile_log_records(reconcile_log_path=reconcile_log_path)
+    assert log_path == reconcile_log_path
+    assert len(records) == 1
+    assert records[0]["target"] == "jira"
+    assert records[0]["status"] == "exists"
+    assert records[0]["drift_status"] == "in_sync"
+    assert records[0]["repair_enabled"] is False
+    assert records[0]["apply"] is False
+
+    summary = summarize_export_reconcile_log(
+        reconcile_log_path=reconcile_log_path,
+        target="jira",
+    )
+    assert summary["path"] == str(reconcile_log_path)
+    assert summary["metrics"]["checked_count"] == 1
+    assert summary["metrics"]["in_sync_count"] == 1
+    assert summary["metrics"]["drift_count"] == 0
+    assert summary["metrics"]["missing_count"] == 0
+    assert summary["metrics"]["error_count"] == 0
+    assert summary["metrics"]["has_reconcile_data"] is True
+    assert isinstance(summary["metrics"]["latest_reconcile_at"], str)
+
+
+def test_reconcile_log_write_error_keeps_reconcile_success(monkeypatch, tmp_path):
+    """Reconcile log write failures should surface warning without failing reconcile payload."""
+    ledger_path = tmp_path / ".eu_ai_act" / "export_push_ledger.jsonl"
+    reconcile_log_path = tmp_path / ".eu_ai_act" / "export_reconcile_log.jsonl"
+    ledger_path.parent.mkdir(parents=True, exist_ok=True)
+    ledger_path.write_text(
+        json.dumps(
+            {
+                "idempotency_key": "k1",
+                "target": "jira",
+                "system_name": "System A",
+                "descriptor_path": "/tmp/a.yaml",
+                "requirement_id": "Art. 10",
+                "status": "non_compliant",
+                "remote_ref": "EUAI-1",
+                "pushed_at": "2026-03-22T10:00:00+00:00",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("EU_AI_ACT_JIRA_BASE_URL", "https://example.atlassian.net")
+    monkeypatch.setenv("EU_AI_ACT_JIRA_EMAIL", "ops@example.com")
+    monkeypatch.setenv("EU_AI_ACT_JIRA_API_TOKEN", "secret")
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            status_code=200,
+            json={"key": "EUAI-1", "fields": {"labels": ["status-non_compliant"]}},
+        )
+
+    transport = httpx.MockTransport(handler)
+    original_client = httpx.Client
+
+    def _fake_client(*args, **kwargs):
+        return original_client(transport=transport)
+
+    monkeypatch.setattr("eu_ai_act.exporter.httpx.Client", _fake_client)
+
+    def _raise_reconcile_log_write(_path, _record):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(
+        "eu_ai_act.exporter._append_export_reconcile_log_record", _raise_reconcile_log_write
+    )
+
+    payload = reconcile_export_push_records(
+        target="jira",
+        idempotency_path=ledger_path,
+        reconcile_log_path=reconcile_log_path,
+        max_retries=0,
+    )
+
+    assert payload["exists_count"] == 1
+    assert isinstance(payload.get("reconcile_log_warning"), str)
+    assert "export reconcile log" in payload["reconcile_log_warning"]
+
+
+def test_list_export_reconcile_log_records_and_invalid_json(tmp_path):
+    """Reconcile log listing should filter deterministically and fail on malformed JSON."""
+    reconcile_log_path = tmp_path / ".eu_ai_act" / "export_reconcile_log.jsonl"
+    reconcile_log_path.parent.mkdir(parents=True, exist_ok=True)
+    reconcile_log_path.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "reconcile_id": "r1",
+                        "generated_at": "2026-03-23T10:00:00+00:00",
+                        "target": "jira",
+                        "system_name": "System A",
+                        "requirement_id": "Art. 10",
+                        "status": "exists",
+                        "drift_status": "in_sync",
+                    }
+                ),
+                json.dumps(
+                    {
+                        "reconcile_id": "r2",
+                        "generated_at": "2026-03-23T11:00:00+00:00",
+                        "target": "jira",
+                        "system_name": "System B",
+                        "requirement_id": "Art. 11",
+                        "status": "check_error",
+                        "drift_status": "unknown",
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    resolved_path, records = list_export_reconcile_log_records(
+        reconcile_log_path=reconcile_log_path,
+        target="jira",
+        system_name="System B",
+        limit=10,
+    )
+    assert resolved_path == reconcile_log_path
+    assert len(records) == 1
+    assert records[0]["reconcile_id"] == "r2"
+
+    reconcile_log_path.write_text("{not-json}\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="Invalid JSON in export reconcile log"):
+        list_export_reconcile_log_records(reconcile_log_path=reconcile_log_path)
 
 
 def test_list_export_ops_log_records_and_invalid_json(tmp_path):

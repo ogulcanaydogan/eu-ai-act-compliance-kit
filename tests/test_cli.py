@@ -30,7 +30,7 @@ class TestCLI:
 
         assert result.exit_code == 0
         assert "version" in result.output.lower()
-        assert "0.1.17" in result.output
+        assert "0.1.18" in result.output
         assert "runtimeerror" not in result.output.lower()
 
     def test_articles_uses_normalized_mapping(self):
@@ -842,6 +842,44 @@ class TestCLI:
         assert payload["drift_count"] == 0
         assert payload["missing_count"] == 0
         assert payload["error_count"] == 0
+
+    def test_export_reconcile_emits_warning_when_log_write_fails(self, monkeypatch):
+        """Reconcile should surface best-effort log-write warnings without changing outcome."""
+        runner = CliRunner()
+
+        monkeypatch.setattr(
+            cli_module,
+            "reconcile_export_push_records",
+            lambda **_kwargs: {
+                "generated_at": "2026-03-22T00:00:00+00:00",
+                "target": "jira",
+                "ledger_path": "/tmp/ledger.jsonl",
+                "reconcile_log_path": "/tmp/reconcile.jsonl",
+                "filters": {"system_name": None, "requirement_id": None, "limit": 50},
+                "repair_enabled": False,
+                "apply": False,
+                "checked_count": 1,
+                "exists_count": 1,
+                "in_sync_count": 1,
+                "drift_count": 0,
+                "missing_count": 0,
+                "error_count": 0,
+                "repair_planned_count": 0,
+                "repair_applied_count": 0,
+                "repair_failed_count": 0,
+                "reconcile_log_warning": "Failed to write export reconcile log: disk full",
+                "results": [{"record_index": 1, "status": "exists"}],
+            },
+        )
+
+        result = runner.invoke(
+            main,
+            ["export", "reconcile", "--target", "jira", "--json"],
+        )
+
+        assert result.exit_code == 0
+        output = result.output + getattr(result, "stderr", "")
+        assert "Warning: Failed to write export reconcile log" in output
 
     def test_export_reconcile_apply_without_repair_fails(self):
         """`--apply` should be rejected unless `--repair` is explicitly enabled."""
@@ -1736,3 +1774,170 @@ class TestCLI:
         assert output_file.exists()
         file_payload = json.loads(output_file.read_text(encoding="utf-8"))
         assert file_payload["metrics"]["failed_count"] == 2
+
+    def test_export_gate_observe_json_contract(self, monkeypatch):
+        """`export gate --mode observe` should emit payload and keep zero exit."""
+        runner = CliRunner()
+
+        monkeypatch.setattr(
+            cli_module,
+            "summarize_export_ops_rollup",
+            lambda **_kwargs: {
+                "generated_at": "2026-03-23T12:00:00+00:00",
+                "metrics": {
+                    "open_failures_count": 2,
+                    "success_rate": 90.0,
+                },
+                "ops_path": "/tmp/export_ops_log.jsonl",
+            },
+        )
+        monkeypatch.setattr(
+            cli_module,
+            "summarize_export_reconcile_log",
+            lambda **_kwargs: {
+                "generated_at": "2026-03-23T12:00:00+00:00",
+                "metrics": {
+                    "drift_count": 1,
+                    "has_reconcile_data": True,
+                },
+                "path": "/tmp/export_reconcile_log.jsonl",
+            },
+        )
+
+        result = runner.invoke(
+            main,
+            ["export", "gate", "--target", "jira", "--mode", "observe", "--json"],
+        )
+
+        assert result.exit_code == 0
+        payload = json.loads(result.output[result.output.find("{") :])
+        assert payload["mode"] == "observe"
+        assert payload["failed"] is True
+        assert "open_failures_threshold_exceeded" in payload["reason_codes"]
+        assert "drift_threshold_exceeded" in payload["reason_codes"]
+        assert "success_rate_below_threshold" in payload["reason_codes"]
+        assert payload["effective_policy"]["window"]["since_hours"] == 24.0
+        assert payload["effective_policy"]["window"]["limit"] == 200
+
+    def test_export_gate_enforce_fails_when_reconcile_data_missing(self, monkeypatch):
+        """Enforce mode should fail when reconcile data is missing."""
+        runner = CliRunner()
+
+        monkeypatch.setattr(
+            cli_module,
+            "summarize_export_ops_rollup",
+            lambda **_kwargs: {
+                "generated_at": "2026-03-23T12:00:00+00:00",
+                "metrics": {
+                    "open_failures_count": 0,
+                    "success_rate": 100.0,
+                },
+                "ops_path": "/tmp/export_ops_log.jsonl",
+            },
+        )
+        monkeypatch.setattr(
+            cli_module,
+            "summarize_export_reconcile_log",
+            lambda **_kwargs: {
+                "generated_at": "2026-03-23T12:00:00+00:00",
+                "metrics": {
+                    "drift_count": 0,
+                    "has_reconcile_data": False,
+                },
+                "path": "/tmp/export_reconcile_log.jsonl",
+            },
+        )
+
+        result = runner.invoke(
+            main,
+            ["export", "gate", "--target", "jira", "--mode", "enforce", "--json"],
+        )
+
+        assert result.exit_code != 0
+        payload = json.loads(result.output[result.output.find("{") :])
+        assert payload["mode"] == "enforce"
+        assert payload["failed"] is True
+        assert payload["reason_codes"] == ["missing_reconcile_data"]
+
+    def test_export_gate_policy_file_and_cli_override_precedence(self, tmp_path, monkeypatch):
+        """CLI overrides should take precedence over policy file values."""
+        runner = CliRunner()
+        policy_file = tmp_path / "ops_gate_policy.yaml"
+        policy_file.write_text(
+            (
+                "mode: enforce\n"
+                "window:\n"
+                "  since_hours: 12\n"
+                "  limit: 50\n"
+                "thresholds:\n"
+                "  open_failures_max: 1\n"
+                "  drift_max: 2\n"
+                "  min_success_rate: 80.0\n"
+            ),
+            encoding="utf-8",
+        )
+
+        monkeypatch.setattr(
+            cli_module,
+            "summarize_export_ops_rollup",
+            lambda **_kwargs: {
+                "generated_at": "2026-03-23T12:00:00+00:00",
+                "metrics": {
+                    "open_failures_count": 0,
+                    "success_rate": 90.0,
+                },
+                "ops_path": "/tmp/export_ops_log.jsonl",
+            },
+        )
+        monkeypatch.setattr(
+            cli_module,
+            "summarize_export_reconcile_log",
+            lambda **_kwargs: {
+                "generated_at": "2026-03-23T12:00:00+00:00",
+                "metrics": {
+                    "drift_count": 0,
+                    "has_reconcile_data": True,
+                },
+                "path": "/tmp/export_reconcile_log.jsonl",
+            },
+        )
+
+        result = runner.invoke(
+            main,
+            [
+                "export",
+                "gate",
+                "--target",
+                "jira",
+                "--policy",
+                str(policy_file),
+                "--min-success-rate",
+                "95",
+                "--json",
+            ],
+        )
+
+        assert result.exit_code != 0
+        payload = json.loads(result.output[result.output.find("{") :])
+        assert payload["mode"] == "enforce"
+        assert payload["effective_policy"]["window"]["since_hours"] == 12.0
+        assert payload["effective_policy"]["window"]["limit"] == 50
+        assert payload["effective_policy"]["thresholds"]["min_success_rate"] == 95.0
+        assert payload["reason_codes"] == ["success_rate_below_threshold"]
+
+    def test_export_gate_invalid_flags_fail(self):
+        """Gate command should validate invalid threshold/window values."""
+        runner = CliRunner()
+
+        invalid_cases = [
+            (["--since-hours", "-1"], "--since-hours must be >= 0"),
+            (["--limit", "0"], "--limit must be >= 1"),
+            (["--open-failures-max", "-1"], "--open-failures-max must be >= 0"),
+            (["--drift-max", "-1"], "--drift-max must be >= 0"),
+            (["--min-success-rate", "101"], "--min-success-rate must be between 0 and 100"),
+        ]
+        for flags, expected_error in invalid_cases:
+            result = runner.invoke(main, ["export", "gate", "--target", "jira", *flags, "--json"])
+            assert result.exit_code != 0
+            output = result.output + getattr(result, "stderr", "")
+            assert expected_error in output
