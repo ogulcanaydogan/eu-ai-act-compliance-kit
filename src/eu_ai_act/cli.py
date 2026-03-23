@@ -7,10 +7,12 @@ checklist generation, and report generation.
 
 import json
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
 
 import click
+import yaml
 from click.core import ParameterSource
 from rich.console import Console
 from rich.panel import Panel
@@ -21,6 +23,10 @@ from eu_ai_act.checker import ComplianceChecker
 from eu_ai_act.checklist import ChecklistGenerator
 from eu_ai_act.classifier import RiskClassifier
 from eu_ai_act.dashboard import DashboardGenerator
+from eu_ai_act.export_ops_gate import (
+    ExportOpsGateEvaluator,
+    resolve_export_ops_gate_policy,
+)
 from eu_ai_act.exporter import (
     ExportGenerator,
     ExportPusher,
@@ -35,6 +41,7 @@ from eu_ai_act.exporter import (
     run_export_batch,
     summarize_export_ops_rollup,
     summarize_export_push_ledger,
+    summarize_export_reconcile_log,
 )
 from eu_ai_act.gpai import (
     GPAIAssessment,
@@ -1770,6 +1777,147 @@ def export_rollup(
     _emit_export_output(payload_json, output)
 
 
+@export.command("gate")
+@click.option(
+    "--target",
+    type=click.Choice(["jira", "servicenow"]),
+    required=True,
+    help="Export target adapter",
+)
+@click.option("--system", "system_name", help="Filter by system name")
+@click.option(
+    "--since-hours",
+    type=float,
+    help="Window size in hours (default from policy/defaults).",
+)
+@click.option(
+    "--limit",
+    type=int,
+    help="Maximum number of recent records considered for policy evaluation.",
+)
+@click.option(
+    "--mode",
+    type=click.Choice(["observe", "enforce"]),
+    help="Gate mode. observe never changes exit code; enforce fails on policy violations.",
+)
+@click.option(
+    "--policy",
+    "policy_path",
+    type=click.Path(exists=True, dir_okay=False),
+    help="Optional YAML policy file.",
+)
+@click.option(
+    "--open-failures-max",
+    type=int,
+    help="Maximum allowed open failures before gate violation.",
+)
+@click.option(
+    "--drift-max",
+    type=int,
+    help="Maximum allowed drift count before gate violation.",
+)
+@click.option(
+    "--min-success-rate",
+    type=float,
+    help="Minimum success rate percentage (0-100).",
+)
+@click.option("--ops-path", type=click.Path(), help="Override export operations log path")
+@click.option(
+    "--reconcile-log-path",
+    type=click.Path(),
+    help="Override export reconcile log path",
+)
+@click.option("--output", "-o", type=click.Path(), help="Write JSON payload to a file")
+@click.option("--json", "output_json", is_flag=True, help="Output JSON payload (default behavior)")
+def export_gate(
+    target: str,
+    system_name: str | None,
+    since_hours: float | None,
+    limit: int | None,
+    mode: str | None,
+    policy_path: str | None,
+    open_failures_max: int | None,
+    drift_max: int | None,
+    min_success_rate: float | None,
+    ops_path: str | None,
+    reconcile_log_path: str | None,
+    output: str | None,
+    output_json: bool,
+) -> None:
+    """Evaluate export operational metrics against policy thresholds."""
+    _ = output_json
+
+    if since_hours is not None and since_hours < 0:
+        console.print("[red]Error: --since-hours must be >= 0[/red]")
+        sys.exit(1)
+    if limit is not None and limit < 1:
+        console.print("[red]Error: --limit must be >= 1[/red]")
+        sys.exit(1)
+    if open_failures_max is not None and open_failures_max < 0:
+        console.print("[red]Error: --open-failures-max must be >= 0[/red]")
+        sys.exit(1)
+    if drift_max is not None and drift_max < 0:
+        console.print("[red]Error: --drift-max must be >= 0[/red]")
+        sys.exit(1)
+    if min_success_rate is not None and not (0 <= min_success_rate <= 100):
+        console.print("[red]Error: --min-success-rate must be between 0 and 100[/red]")
+        sys.exit(1)
+
+    try:
+        policy_payload = _load_export_gate_policy_file(policy_path)
+        resolved_policy = resolve_export_ops_gate_policy(
+            policy_payload=policy_payload,
+            mode=mode,
+            since_hours=since_hours,
+            limit=limit,
+            open_failures_max=open_failures_max,
+            drift_max=drift_max,
+            min_success_rate=min_success_rate,
+        )
+        rollup_payload = summarize_export_ops_rollup(
+            ops_path=ops_path,
+            target=cast(ExportTarget, target),
+            system_name=system_name,
+            since_hours=resolved_policy.since_hours,
+            limit=resolved_policy.limit,
+        )
+        reconcile_payload = summarize_export_reconcile_log(
+            reconcile_log_path=reconcile_log_path,
+            target=cast(ExportTarget, target),
+            system_name=system_name,
+            since_hours=resolved_policy.since_hours,
+            limit=resolved_policy.limit,
+        )
+        gate_result = ExportOpsGateEvaluator().evaluate(
+            policy=resolved_policy,
+            rollup_metrics=cast(dict, rollup_payload.get("metrics", {})),
+            reconcile_metrics=cast(dict, reconcile_payload.get("metrics", {})),
+        )
+    except Exception as e:
+        console.print(f"[red]Error running export gate: {e}[/red]")
+        sys.exit(1)
+
+    payload = {
+        "generated_at": datetime.now(UTC).isoformat(),
+        "target": target,
+        "system_name": system_name,
+        "mode": gate_result.mode,
+        "failed": gate_result.failed,
+        "reason_codes": gate_result.reason_codes,
+        "effective_policy": resolved_policy.to_dict(),
+        "rollup_metrics": rollup_payload.get("metrics", {}),
+        "reconcile_metrics": reconcile_payload.get("metrics", {}),
+        "decision_details": gate_result.decision_details,
+        "ops_path": rollup_payload.get("ops_path"),
+        "reconcile_log_path": reconcile_payload.get("path"),
+    }
+    payload_json = json.dumps(payload, indent=2)
+    _emit_export_output(payload_json, output)
+
+    if resolved_policy.mode == "enforce" and gate_result.failed:
+        sys.exit(1)
+
+
 @export.command("reconcile")
 @click.option(
     "--target",
@@ -1818,6 +1966,11 @@ def export_rollup(
     is_flag=True,
     help="Apply repair plan updates to remote records (requires --repair).",
 )
+@click.option(
+    "--reconcile-log-path",
+    type=click.Path(),
+    help="Override export reconcile log path.",
+)
 @click.option("--output", "-o", type=click.Path(), help="Write JSON payload to a file")
 @click.option("--json", "output_json", is_flag=True, help="Output JSON payload (default behavior)")
 def export_reconcile(
@@ -1831,6 +1984,7 @@ def export_reconcile(
     timeout_seconds: float,
     repair: bool,
     apply: bool,
+    reconcile_log_path: str | None,
     output: str | None,
     output_json: bool,
 ) -> None:
@@ -1865,6 +2019,7 @@ def export_reconcile(
             timeout_seconds=timeout_seconds,
             repair_enabled=repair,
             apply=apply,
+            reconcile_log_path=reconcile_log_path,
         )
     except Exception as e:
         console.print(f"[red]Error running export reconcile: {e}[/red]")
@@ -1872,6 +2027,7 @@ def export_reconcile(
 
     payload_json = json.dumps(payload, indent=2)
     _emit_export_output(payload_json, output)
+    _emit_reconcile_log_warning(payload)
 
     if (
         payload.get("missing_count", 0) > 0
@@ -2030,11 +2186,34 @@ def _emit_export_output(payload_json: str, output: str | None) -> None:
     click.echo(payload_json)
 
 
+def _load_export_gate_policy_file(policy_path: str | None) -> dict[str, object]:
+    if policy_path is None:
+        return {}
+    try:
+        parsed = yaml.safe_load(Path(policy_path).read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise ValueError(f"Unable to read policy file: {exc}") from exc
+    if parsed is None:
+        return {}
+    if not isinstance(parsed, dict):
+        raise ValueError("Policy file must contain a YAML object at top level.")
+    return {str(key): value for key, value in parsed.items()}
+
+
 def _emit_ops_log_warning(push_result: dict | None) -> None:
     """Emit best-effort export ops-log warning without changing command outcome."""
     if not isinstance(push_result, dict):
         return
     warning = push_result.get("ops_log_warning")
+    if isinstance(warning, str) and warning.strip():
+        click.echo(f"Warning: {warning}", err=True)
+
+
+def _emit_reconcile_log_warning(payload: dict | None) -> None:
+    """Emit best-effort reconcile-log warning without changing command outcome."""
+    if not isinstance(payload, dict):
+        return
+    warning = payload.get("reconcile_log_warning")
     if isinstance(warning, str) and warning.strip():
         click.echo(f"Warning: {warning}", err=True)
 

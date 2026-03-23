@@ -10,6 +10,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - No changes yet.
 
+## [0.1.18] - 2026-03-23
+
+### Added
+- New operations governance command: `ai-act export gate`.
+- New policy-based export ops evaluator (`observe|enforce`) with multi-threshold decisioning:
+  - `open_failures_count > open_failures_max`
+  - `drift_count > drift_max`
+  - `success_rate < min_success_rate`
+  - enforce-only: `missing_reconcile_data`
+- Optional YAML policy file support for `export gate` with deterministic precedence:
+  - CLI flags > policy file > defaults.
+- New persistent reconcile log:
+  - `.eu_ai_act/export_reconcile_log.jsonl`
+  - best-effort append from `export reconcile` with non-blocking warning behavior.
+- New reconcile-log listing/summary helpers for ops governance analytics.
+- New CI required job: `export-ops-gate-smoke` (observe-only contract validation).
+
+### Changed
+- `export reconcile` payload extended with additive fields:
+  - `reconcile_log_path`
+  - optional `reconcile_log_warning`
+- `README`, `docs/index`, and `ROADMAP` status synchronized to mark Phase 27 as completed.
+
+### Tests
+- Added `tests/test_export_ops_gate.py` for policy defaults, precedence, threshold evaluation, and enforce missing-reconcile behavior.
+- Extended `tests/test_exporter.py` with reconcile-log write/summarize and malformed reconcile-log error coverage.
+- Extended `tests/test_cli.py` with `export gate` contract, policy precedence, validation, and reconcile warning coverage.
+- Extended `tests/test_ci_contract.py` for `export-ops-gate-smoke` job and required `all-checks` dependency assertions.
+
 ## [0.1.17] - 2026-03-23
 
 ### Added

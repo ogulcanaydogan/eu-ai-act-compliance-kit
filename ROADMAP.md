@@ -30,6 +30,7 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
 - Phase 24 completed (security ops integration across dashboard/history/export with observe-only gate policy)
 - Phase 25 completed (enforceable security gate v1 with observe-by-default policy and optional enforce mode)
 - Phase 26 completed (security gate v2 with profile-based thresholds and tier-aware enforcement)
+- Phase 27 completed (export ops governance with policy-based `export gate` and reconcile log continuity)
 
 ## Phase 1: Risk Classification Engine (Weeks 1-2) ✅ Completed
 
@@ -498,6 +499,24 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
   - `security_gate_profile` input
   - additive outputs: `security_partial_count`, `security_not_assessed_count`
   - evaluator-based gate decision reuse (no duplicated threshold logic).
+
+## Phase 27: Export Ops Governance V1 ✅ Completed
+
+- Added policy-based export operations gate command:
+  - `ai-act export gate --target jira|servicenow [--mode observe|enforce]`
+  - supports CLI thresholds plus optional YAML policy file (`CLI > file > defaults`)
+- Added persistent reconcile log continuity:
+  - `.eu_ai_act/export_reconcile_log.jsonl`
+  - append-only best-effort write from `export reconcile` (warning on write failure, non-blocking)
+- Added reconcile-log summarization for governance evaluation:
+  - `checked_count`, `drift_count`, `in_sync_count`, `missing_count`, `error_count`, `latest_reconcile_at`, `has_reconcile_data`
+- Added deterministic governance policy rules:
+  - fail when open failures exceed threshold
+  - fail when drift exceeds threshold
+  - fail when success rate is below threshold
+  - enforce-only fail when reconcile data is missing (`missing_reconcile_data`)
+- Added CI observe-only contract validation:
+  - `export-ops-gate-smoke` required in `all-checks`
 
 ## Timeline Summary (Historical Plan)
 - **Week 1-2**: Risk Classification Engine (Phases 1.1-1.5)

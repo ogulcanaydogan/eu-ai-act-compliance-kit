@@ -93,6 +93,37 @@ def test_all_checks_treats_examples_smoke_as_required():
     assert "needs.examples-smoke.result" in run_script
 
 
+def test_ci_contains_export_ops_gate_smoke_job():
+    """CI must include export-ops-gate-smoke job validating observe-mode gate payload."""
+    jobs = _load_ci_jobs()
+    assert "export-ops-gate-smoke" in jobs
+
+    gate_job = jobs["export-ops-gate-smoke"]
+    assert gate_job.get("name") == "Export Ops Gate Smoke"
+
+    steps = gate_job.get("steps", [])
+    run_blocks = [step.get("run", "") for step in steps if isinstance(step, dict)]
+    joined_run = "\n".join(run_blocks)
+    assert "ai-act export gate" in joined_run
+    assert "--mode observe" in joined_run
+
+
+def test_all_checks_treats_export_ops_gate_smoke_as_required():
+    """All-checks gate must evaluate export-ops-gate-smoke result as required."""
+    jobs = _load_ci_jobs()
+    assert "all-checks" in jobs
+
+    all_checks_job = jobs["all-checks"]
+    needs = all_checks_job.get("needs", [])
+    assert "export-ops-gate-smoke" in needs
+
+    check_status_step = next(
+        step for step in all_checks_job.get("steps", []) if step.get("name") == "Check status"
+    )
+    run_script = check_status_step.get("run", "")
+    assert "needs.export-ops-gate-smoke.result" in run_script
+
+
 def test_action_exposes_security_gate_input_and_outputs():
     """Composite action should expose non-breaking security gate controls and outputs."""
     action_payload = _load_action_payload()

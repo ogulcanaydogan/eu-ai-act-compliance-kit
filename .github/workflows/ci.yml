@@ -177,10 +177,54 @@ jobs:
           )
           PY
 
+  export-ops-gate-smoke:
+    runs-on: ubuntu-latest
+    name: Export Ops Gate Smoke
+    needs: [lint, test]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run export gate observe-mode smoke
+        run: |
+          mkdir -p /tmp/export-gate-smoke/.eu_ai_act
+          cat > /tmp/export-gate-smoke/.eu_ai_act/export_ops_log.jsonl <<'JSONL'
+          {"attempt_id":"a1","generated_at":"2026-03-23T10:00:00+00:00","target":"jira","push_mode":"create","operation":"create","result":"failed","system_name":"Smoke System","idempotency_key":"k1","failure_reason":"HTTP 503"}
+          {"attempt_id":"a2","generated_at":"2026-03-23T11:00:00+00:00","target":"jira","push_mode":"create","operation":"create","result":"success","system_name":"Smoke System","idempotency_key":"k1","failure_reason":null}
+          JSONL
+          cat > /tmp/export-gate-smoke/.eu_ai_act/export_push_ledger.jsonl <<'JSONL'
+          {"idempotency_key":"k1","target":"jira","system_name":"Smoke System","descriptor_path":"/tmp/smoke.yaml","requirement_id":"Art. 10","status":"non_compliant","remote_ref":"EUAI-1","pushed_at":"2026-03-23T11:00:00+00:00"}
+          JSONL
+          cat > /tmp/export-gate-smoke/.eu_ai_act/export_reconcile_log.jsonl <<'JSONL'
+          {"reconcile_id":"r1","generated_at":"2026-03-23T12:00:00+00:00","target":"jira","system_name":"Smoke System","requirement_id":"Art. 10","status":"exists","drift_status":"in_sync","http_status":200,"failure_reason":null,"repair_enabled":false,"apply":false}
+          JSONL
+          ai-act export gate --target jira --mode observe --ops-path /tmp/export-gate-smoke/.eu_ai_act/export_ops_log.jsonl --reconcile-log-path /tmp/export-gate-smoke/.eu_ai_act/export_reconcile_log.jsonl --json > /tmp/export-gate-smoke/gate.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          payload = json.loads(Path("/tmp/export-gate-smoke/gate.json").read_text())
+          assert payload["mode"] == "observe"
+          assert "effective_policy" in payload
+          assert "rollup_metrics" in payload
+          assert "reconcile_metrics" in payload
+          assert "decision_details" in payload
+          PY
+
   build:
     runs-on: ubuntu-latest
     name: Build
-    needs: [lint, test, quickstart-smoke, examples-smoke]
+    needs: [lint, test, quickstart-smoke, examples-smoke, export-ops-gate-smoke]
     steps:
       - uses: actions/checkout@v6
 
@@ -207,7 +251,7 @@ jobs:
   docker:
     runs-on: ubuntu-latest
     name: Build Docker Image
-    needs: [lint, test, quickstart-smoke, examples-smoke]
+    needs: [lint, test, quickstart-smoke, examples-smoke, export-ops-gate-smoke]
     permissions:
       contents: read
     steps:
@@ -270,7 +314,7 @@ jobs:
   action-smoke:
     runs-on: ubuntu-latest
     name: Action Smoke
-    needs: [lint, test, quickstart-smoke, examples-smoke]
+    needs: [lint, test, quickstart-smoke, examples-smoke, export-ops-gate-smoke]
     steps:
       - uses: actions/checkout@v6
 
@@ -359,12 +403,12 @@ jobs:
   all-checks:
     runs-on: ubuntu-latest
     name: All Checks Passed
-    needs: [lint, test, quickstart-smoke, examples-smoke, build, docker, docs, security, action-smoke]
+    needs: [lint, test, quickstart-smoke, examples-smoke, export-ops-gate-smoke, build, docker, docs, security, action-smoke]
     if: always()
     steps:
       - name: Check status
         run: |
-          if [[ "${{ needs.lint.result }}" == "failure" || "${{ needs.test.result }}" == "failure" || "${{ needs.quickstart-smoke.result }}" == "failure" || "${{ needs.examples-smoke.result }}" == "failure" || "${{ needs.build.result }}" == "failure" || "${{ needs.docker.result }}" == "failure" || "${{ needs.action-smoke.result }}" == "failure" ]]; then
+          if [[ "${{ needs.lint.result }}" == "failure" || "${{ needs.test.result }}" == "failure" || "${{ needs.quickstart-smoke.result }}" == "failure" || "${{ needs.examples-smoke.result }}" == "failure" || "${{ needs.export-ops-gate-smoke.result }}" == "failure" || "${{ needs.build.result }}" == "failure" || "${{ needs.docker.result }}" == "failure" || "${{ needs.action-smoke.result }}" == "failure" ]]; then
             echo "One or more checks failed"
             exit 1
           fi

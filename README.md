@@ -95,6 +95,9 @@ ai-act export check examples/medical_diagnosis.yaml --target generic --json
 - `ai-act export check <system.yaml> --target jira|servicenow|generic [--output PATH] [--history-path PATH] [--json] [--push] [--push-mode create|upsert] [--dry-run] [--idempotency-path PATH] [--disable-idempotency]`
 - `ai-act export history <event_id> --target jira|servicenow|generic [--output PATH] [--history-path PATH] [--json] [--push] [--push-mode create|upsert] [--dry-run] [--idempotency-path PATH] [--disable-idempotency]`
 - `ai-act export batch <descriptor_dir> --target jira|servicenow|generic [--recursive] [--output PATH] [--json] [--push] [--push-mode create|upsert] [--dry-run] [--idempotency-path PATH] [--disable-idempotency]`
+- `ai-act export replay --target jira|servicenow [--since-hours N] [--system NAME] [--requirement-id ID] [--limit N] [--push-mode create|upsert] [--dry-run] [--max-retries N] [--retry-backoff-seconds F] [--timeout-seconds F] [--idempotency-path PATH] [--disable-idempotency] [--ops-path PATH] [--output PATH] [--json]`
+- `ai-act export rollup [--target jira|servicenow|generic] [--system NAME] [--since-hours N] [--limit N] [--ops-path PATH] [--idempotency-path PATH] [--output PATH] [--json]`
+- `ai-act export gate --target jira|servicenow [--system NAME] [--since-hours N] [--limit N] [--mode observe|enforce] [--policy PATH] [--open-failures-max N] [--drift-max N] [--min-success-rate F] [--ops-path PATH] [--reconcile-log-path PATH] [--output PATH] [--json]`
 - `ai-act export reconcile --target jira|servicenow [--idempotency-path PATH] [--system NAME] [--requirement-id ID] [--limit N] [--output PATH] [--json]`
 - `ai-act export ledger list [--idempotency-path PATH] [--target jira|servicenow|generic] [--system NAME] [--requirement-id ID] [--limit N] [--json]`
 - `ai-act export ledger stats [--idempotency-path PATH] [--json]`
@@ -110,6 +113,7 @@ Full reference: [docs/cli-reference.md](docs/cli-reference.md)
 - `history` events can persist `security_summary`; `history diff` includes security delta metrics.
 - `export check|history|batch` payloads include additive top-level `security_mapping`.
 - Security policy remains backward-compatible: default mode is `observe`, default profile is `balanced`.
+- Export operations governance supports policy-based gate evaluation via `ai-act export gate` (default `observe`, optional `enforce`).
 
 ## Example Systems
 
@@ -236,6 +240,7 @@ pre-commit run --hook-stage pre-push --all-files
 - Phase 24: security ops integration completed (`dashboard/history/export` now include additive security mapping snapshots)
 - Phase 25: enforceable security gate completed (observe-by-default + optional enforce mode across CLI/action/CI)
 - Phase 26: security gate v2 completed (profiles + tier-aware policy, observe default preserved)
+- Phase 27: export ops governance completed (`export gate` + reconcile log continuity + observe-only CI smoke gate)
 
 ## Disclaimer
 
