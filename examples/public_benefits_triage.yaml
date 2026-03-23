@@ -1,0 +1,43 @@
+name: "Public Benefits Eligibility Triage AI"
+version: "0.9.0"
+description: |
+  AI-assisted triage system used by a public authority to prioritize social
+  benefit applications for review queues. The system ranks applicants by
+  predicted fraud risk and urgency and can trigger autonomous queue placement
+  before caseworker review.
+
+use_cases:
+  - domain: law_enforcement
+    description: |
+      Scores and prioritizes applications that are flagged as potentially
+      fraudulent. High-risk applicants are automatically routed to enhanced
+      scrutiny queues before manual review.
+    autonomous_decision: true
+    impacts_fundamental_rights: true
+    affected_population: "EU residents applying for public benefits"
+
+data_practices:
+  - type: "sensitive"
+    retention_period: 730
+    sharing_third_parties: true
+    explicit_consent: false
+    anonymization: null
+
+  - type: "personal"
+    retention_period: 730
+    sharing_third_parties: false
+    explicit_consent: false
+    anonymization: "Pseudonymized identifiers in analytics logs"
+
+human_oversight:
+  oversight_mechanism: "none"
+  fallback_procedure: "Applications remain in automated queue placement with no override workflow."
+  review_frequency: "never"
+  human_authority: false
+
+training_data_source: |
+  Trained on historical public-benefit applications, fraud investigations,
+  sanctions outcomes, and administrative appeal records from regional agencies.
+
+documentation: false
+performance_monitoring: false

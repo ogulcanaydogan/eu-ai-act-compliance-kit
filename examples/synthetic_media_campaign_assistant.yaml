@@ -1,0 +1,37 @@
+name: "Synthetic Media Campaign Assistant"
+version: "1.2.0"
+description: |
+  Generative campaign assistant that produces synthetic marketing visuals and
+  generated promotional text for internal brand teams across EU product launches.
+  Output assets are prepared for downstream human editing before publication.
+
+use_cases:
+  - domain: general_purpose
+    description: |
+      Creates generated copy variants and synthetic image drafts from campaign
+      briefs. Teams use outputs to accelerate concept iteration for paid media.
+    autonomous_decision: false
+    impacts_fundamental_rights: false
+    affected_population: "Marketing teams and end users exposed to campaign content"
+
+data_practices:
+  - type: "personal"
+    retention_period: 45
+    sharing_third_parties: false
+    explicit_consent: true
+    anonymization: "Prompt telemetry is pseudonymized before analytics aggregation"
+
+human_oversight:
+  oversight_mechanism: "approval_required"
+  fallback_procedure: |
+    If generated assets violate brand policy or legal guidance, campaigns are
+    reverted to manual copywriting and design workflows.
+  review_frequency: "per_decision"
+  human_authority: true
+
+training_data_source: |
+  Broad training on large language and multimodal corpora curated for
+  marketing and creative drafting use cases.
+
+documentation: false
+performance_monitoring: true

@@ -8,6 +8,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT_PATH = REPO_ROOT / "scripts" / "quickstart_smoke.sh"
 EXAMPLES_DIR = REPO_ROOT / "examples"
@@ -28,13 +30,17 @@ def _wrapper_env(tmp_path: Path) -> dict[str, str]:
     return env
 
 
-def test_quickstart_smoke_success_generates_expected_outputs(tmp_path):
-    """Smoke script should succeed for a valid descriptor and produce expected files."""
+@pytest.mark.parametrize(
+    "descriptor_name",
+    ["medical_diagnosis.yaml", "synthetic_media_campaign_assistant.yaml"],
+)
+def test_quickstart_smoke_success_generates_expected_outputs(tmp_path, descriptor_name):
+    """Smoke script should succeed across multiple descriptor profiles."""
     output_dir = tmp_path / "out"
     env = _wrapper_env(tmp_path)
 
     result = subprocess.run(
-        [str(SCRIPT_PATH), str(EXAMPLES_DIR / "medical_diagnosis.yaml"), str(output_dir)],
+        [str(SCRIPT_PATH), str(EXAMPLES_DIR / descriptor_name), str(output_dir)],
         cwd=REPO_ROOT,
         env=env,
         capture_output=True,
