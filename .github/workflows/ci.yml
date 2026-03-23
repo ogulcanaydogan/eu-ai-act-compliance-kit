@@ -280,6 +280,8 @@ jobs:
         with:
           system_yaml: examples/spam_filter.yaml
           fail_on_high_risk: "true"
+          security_gate_mode: "observe"
+          security_gate_profile: "balanced"
           report_format: json
           report_path: minimal_report.json
 
@@ -288,6 +290,8 @@ jobs:
           test "${{ steps.minimal.outputs.risk_tier }}" = "minimal"
           test "${{ steps.minimal.outputs.non_compliant_count }}" = "0"
           test "${{ steps.minimal.outputs.security_non_compliant_count }}" = "0"
+          test "${{ steps.minimal.outputs.security_partial_count }}" = "0"
+          test "${{ steps.minimal.outputs.security_not_assessed_count }}" = "0"
           test -f minimal_report.json
 
       - name: Create high-risk non-compliant fixture
@@ -341,6 +345,7 @@ jobs:
           system_yaml: /tmp/high_risk_noncompliant.yaml
           fail_on_high_risk: "false"
           security_gate_mode: "enforce"
+          security_gate_profile: "balanced"
           report_format: json
           report_path: security_gate_report.json
 

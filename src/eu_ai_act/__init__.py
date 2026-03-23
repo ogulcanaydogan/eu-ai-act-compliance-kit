@@ -43,6 +43,7 @@ __all__ = [
     "SecurityControlResult",
     "SecurityGateEvaluator",
     "SecurityGateMode",
+    "SecurityGateProfile",
     "SecurityGateResult",
     "HistoryEvent",
     "append_event",
@@ -66,7 +67,12 @@ from eu_ai_act.gpai import GPAIAssessment, GPAIAssessor, GPAIModelInfo
 from eu_ai_act.history import HistoryEvent, append_event, diff_events, get_event, list_events
 from eu_ai_act.reporter import ReportGenerator
 from eu_ai_act.schema import AISystemDescriptor, RiskTier, UseCaseDomain
-from eu_ai_act.security_gate import SecurityGateEvaluator, SecurityGateMode, SecurityGateResult
+from eu_ai_act.security_gate import (
+    SecurityGateEvaluator,
+    SecurityGateMode,
+    SecurityGateProfile,
+    SecurityGateResult,
+)
 from eu_ai_act.security_mapping import (
     SecurityControlResult,
     SecurityMapper,

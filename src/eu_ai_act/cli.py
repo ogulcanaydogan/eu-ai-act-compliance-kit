@@ -169,9 +169,21 @@ def classify(system_yaml: str, output_json: bool) -> None:
     type=click.Choice(["observe", "enforce"], case_sensitive=False),
     default="observe",
     show_default=True,
-    help="Security gate mode. enforce fails when security non-compliant controls are present.",
+    help="Security gate mode. observe never blocks, enforce applies profile thresholds.",
 )
-def check(system_yaml: str, output_json: bool, security_gate_mode: str) -> None:
+@click.option(
+    "--security-gate-profile",
+    type=click.Choice(["strict", "balanced", "lenient"], case_sensitive=False),
+    default="balanced",
+    show_default=True,
+    help="Security gate profile. Used when --security-gate=enforce.",
+)
+def check(
+    system_yaml: str,
+    output_json: bool,
+    security_gate_mode: str,
+    security_gate_profile: str,
+) -> None:
     """
     Perform full compliance check on an AI system.
 
@@ -214,6 +226,8 @@ def check(system_yaml: str, output_json: bool, security_gate_mode: str) -> None:
     security_gate_result = security_gate_evaluator.evaluate(
         security_summary=security_summary_payload,
         mode=security_gate_mode,
+        profile=security_gate_profile,
+        risk_tier=report_result.risk_tier.value,
     )
 
     history_warning = None
@@ -353,8 +367,13 @@ def check(system_yaml: str, output_json: bool, security_gate_mode: str) -> None:
         gate_table.add_column("Metric", style="cyan")
         gate_table.add_column("Value", justify="right")
         gate_table.add_row("Mode", security_gate_result.mode)
+        gate_table.add_row("Profile", security_gate_result.profile)
+        gate_table.add_row("Effective Profile", security_gate_result.effective_profile)
         gate_table.add_row("Failed", "yes" if security_gate_result.failed else "no")
         gate_table.add_row("Reason", security_gate_result.reason)
+        gate_table.add_row("Non-compliant Controls", str(security_gate_result.non_compliant_count))
+        gate_table.add_row("Partial Controls", str(security_gate_result.partial_count))
+        gate_table.add_row("Not Assessed Controls", str(security_gate_result.not_assessed_count))
         console.print(gate_table)
 
     if history_warning:
@@ -365,7 +384,10 @@ def check(system_yaml: str, output_json: bool, security_gate_mode: str) -> None:
             click.echo(
                 (
                     "Security gate enforcement failed: "
-                    f"{security_gate_result.non_compliant_count} non-compliant security controls detected."
+                    f"mode={security_gate_result.mode}, "
+                    f"profile={security_gate_result.profile}, "
+                    f"effective_profile={security_gate_result.effective_profile}, "
+                    f"reason={security_gate_result.reason}."
                 ),
                 err=True,
             )
