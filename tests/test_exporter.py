@@ -1457,7 +1457,10 @@ def test_reconcile_export_push_records_classifies_exists_missing_and_error(monke
 
     def handler(request: httpx.Request) -> httpx.Response:
         if str(request.url).endswith("/EUAI-1"):
-            return httpx.Response(status_code=200, json={"key": "EUAI-1"})
+            return httpx.Response(
+                status_code=200,
+                json={"key": "EUAI-1", "fields": {"labels": ["status-non_compliant"]}},
+            )
         if str(request.url).endswith("/EUAI-404"):
             return httpx.Response(status_code=404, text="not found")
         return httpx.Response(status_code=500, text="unexpected path")
@@ -1478,10 +1481,19 @@ def test_reconcile_export_push_records_classifies_exists_missing_and_error(monke
 
     assert payload["checked_count"] == 3
     assert payload["exists_count"] == 1
+    assert payload["in_sync_count"] == 1
+    assert payload["drift_count"] == 0
     assert payload["missing_count"] == 1
     assert payload["error_count"] == 1
+    assert payload["repair_planned_count"] == 0
+    assert payload["repair_applied_count"] == 0
+    assert payload["repair_failed_count"] == 0
     statuses = sorted(item["status"] for item in payload["results"])
     assert statuses == ["check_error", "exists", "missing"]
+    exists_entry = next(item for item in payload["results"] if item["status"] == "exists")
+    assert exists_entry["drift_status"] == "in_sync"
+    assert exists_entry["expected_status"] == "non_compliant"
+    assert exists_entry["remote_status"] == "non_compliant"
 
 
 def test_reconcile_export_push_records_retries_on_5xx_then_exists(monkeypatch, tmp_path):
@@ -1515,7 +1527,10 @@ def test_reconcile_export_push_records_retries_on_5xx_then_exists(monkeypatch, t
         call_counter["count"] += 1
         if call_counter["count"] == 1:
             return httpx.Response(status_code=503, text="temporary outage")
-        return httpx.Response(status_code=200, json={"key": "EUAI-1"})
+        return httpx.Response(
+            status_code=200,
+            json={"key": "EUAI-1", "fields": {"labels": ["status-non_compliant"]}},
+        )
 
     transport = httpx.MockTransport(handler)
     original_client = httpx.Client
@@ -1534,6 +1549,8 @@ def test_reconcile_export_push_records_retries_on_5xx_then_exists(monkeypatch, t
 
     assert payload["checked_count"] == 1
     assert payload["exists_count"] == 1
+    assert payload["in_sync_count"] == 1
+    assert payload["drift_count"] == 0
     assert payload["missing_count"] == 0
     assert payload["error_count"] == 0
     assert payload["results"][0]["attempts"] == 2
@@ -1589,9 +1606,240 @@ def test_reconcile_export_push_records_non_retryable_4xx_is_check_error(monkeypa
 
     assert payload["checked_count"] == 1
     assert payload["exists_count"] == 0
+    assert payload["in_sync_count"] == 0
+    assert payload["drift_count"] == 0
     assert payload["missing_count"] == 0
     assert payload["error_count"] == 1
     assert payload["results"][0]["status"] == "check_error"
     assert payload["results"][0]["attempts"] == 1
     assert "HTTP 400" in payload["results"][0]["failure_reason"]
     assert call_counter["count"] == 1
+
+
+def test_reconcile_repair_plan_for_drift_without_apply_does_not_write(monkeypatch, tmp_path):
+    """Repair mode without apply should plan drift fixes and avoid write calls."""
+    ledger_path = tmp_path / ".eu_ai_act" / "export_push_ledger.jsonl"
+    ledger_path.parent.mkdir(parents=True, exist_ok=True)
+    ledger_path.write_text(
+        json.dumps(
+            {
+                "idempotency_key": "k1",
+                "target": "jira",
+                "system_name": "System Drift",
+                "descriptor_path": "/tmp/drift.yaml",
+                "requirement_id": "Art. 13",
+                "status": "partial",
+                "remote_ref": "EUAI-77",
+                "pushed_at": "2026-03-22T10:00:00+00:00",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("EU_AI_ACT_JIRA_BASE_URL", "https://example.atlassian.net")
+    monkeypatch.setenv("EU_AI_ACT_JIRA_EMAIL", "ops@example.com")
+    monkeypatch.setenv("EU_AI_ACT_JIRA_API_TOKEN", "secret")
+
+    call_counter = {"get": 0, "put": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET":
+            call_counter["get"] += 1
+            return httpx.Response(
+                status_code=200,
+                json={"key": "EUAI-77", "fields": {"labels": ["status-non_compliant", "keep-me"]}},
+            )
+        if request.method == "PUT":
+            call_counter["put"] += 1
+            return httpx.Response(status_code=500, text="write should not happen")
+        return httpx.Response(status_code=500, text="unexpected request")
+
+    transport = httpx.MockTransport(handler)
+    original_client = httpx.Client
+
+    def _fake_client(*args, **kwargs):
+        return original_client(transport=transport)
+
+    monkeypatch.setattr("eu_ai_act.exporter.httpx.Client", _fake_client)
+
+    payload = reconcile_export_push_records(
+        target="jira",
+        idempotency_path=ledger_path,
+        max_retries=0,
+        repair_enabled=True,
+        apply=False,
+    )
+
+    assert payload["checked_count"] == 1
+    assert payload["exists_count"] == 1
+    assert payload["in_sync_count"] == 0
+    assert payload["drift_count"] == 1
+    assert payload["repair_planned_count"] == 1
+    assert payload["repair_applied_count"] == 0
+    assert payload["repair_failed_count"] == 0
+    assert call_counter["get"] == 1
+    assert call_counter["put"] == 0
+    repair_entry = payload["results"][0]
+    assert repair_entry["drift_status"] == "status_mismatch"
+    assert repair_entry["repair_result"]["status"] == "planned"
+    repair_labels = repair_entry["repair_plan"]["payload"]["fields"]["labels"]
+    assert "keep-me" in repair_labels
+    assert "status-partial" in repair_labels
+    assert "status-non_compliant" not in repair_labels
+
+
+def test_reconcile_repair_apply_servicenow_retries_and_succeeds(monkeypatch, tmp_path):
+    """Applying ServiceNow repair should use retry policy and succeed after transient errors."""
+    ledger_path = tmp_path / ".eu_ai_act" / "export_push_ledger.jsonl"
+    ledger_path.parent.mkdir(parents=True, exist_ok=True)
+    ledger_path.write_text(
+        json.dumps(
+            {
+                "idempotency_key": "k1",
+                "target": "servicenow",
+                "system_name": "System Drift",
+                "descriptor_path": "/tmp/drift.yaml",
+                "requirement_id": "Art. 14",
+                "status": "partial",
+                "remote_ref": "SYS001",
+                "pushed_at": "2026-03-22T10:00:00+00:00",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("EU_AI_ACT_SERVICENOW_INSTANCE_URL", "https://example.service-now.com")
+    monkeypatch.setenv("EU_AI_ACT_SERVICENOW_USERNAME", "ops")
+    monkeypatch.setenv("EU_AI_ACT_SERVICENOW_PASSWORD", "secret")
+
+    call_counter = {"get": 0, "patch": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET":
+            call_counter["get"] += 1
+            return httpx.Response(status_code=200, json={"result": {"u_status": "non_compliant"}})
+        if request.method == "PATCH":
+            call_counter["patch"] += 1
+            if call_counter["patch"] == 1:
+                return httpx.Response(status_code=503, text="temporary outage")
+            return httpx.Response(status_code=200, json={"result": {"sys_id": "SYS001"}})
+        return httpx.Response(status_code=500, text="unexpected request")
+
+    transport = httpx.MockTransport(handler)
+    original_client = httpx.Client
+
+    def _fake_client(*args, **kwargs):
+        return original_client(transport=transport)
+
+    monkeypatch.setattr("eu_ai_act.exporter.httpx.Client", _fake_client)
+    monkeypatch.setattr(ExportPusher, "_sleep_before_retry", lambda _self, _attempts: None)
+
+    payload = reconcile_export_push_records(
+        target="servicenow",
+        idempotency_path=ledger_path,
+        max_retries=3,
+        repair_enabled=True,
+        apply=True,
+    )
+
+    assert payload["checked_count"] == 1
+    assert payload["exists_count"] == 1
+    assert payload["drift_count"] == 1
+    assert payload["repair_planned_count"] == 1
+    assert payload["repair_applied_count"] == 1
+    assert payload["repair_failed_count"] == 0
+    assert call_counter["get"] == 1
+    assert call_counter["patch"] == 2
+    repair_entry = payload["results"][0]
+    assert repair_entry["repair_result"]["status"] == "applied"
+    assert repair_entry["repair_result"]["attempts"] == 2
+    assert repair_entry["repair_result"]["retries_used"] == 1
+
+
+def test_reconcile_repair_apply_continues_when_one_record_fails(monkeypatch, tmp_path):
+    """Repair apply should continue across records and aggregate failures deterministically."""
+    ledger_path = tmp_path / ".eu_ai_act" / "export_push_ledger.jsonl"
+    ledger_path.parent.mkdir(parents=True, exist_ok=True)
+    ledger_path.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "idempotency_key": "k1",
+                        "target": "jira",
+                        "system_name": "System A",
+                        "descriptor_path": "/tmp/a.yaml",
+                        "requirement_id": "Art. 10",
+                        "status": "partial",
+                        "remote_ref": "EUAI-1",
+                        "pushed_at": "2026-03-22T10:00:00+00:00",
+                    }
+                ),
+                json.dumps(
+                    {
+                        "idempotency_key": "k2",
+                        "target": "jira",
+                        "system_name": "System B",
+                        "descriptor_path": "/tmp/b.yaml",
+                        "requirement_id": "Art. 11",
+                        "status": "not_assessed",
+                        "remote_ref": "EUAI-2",
+                        "pushed_at": "2026-03-22T11:00:00+00:00",
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("EU_AI_ACT_JIRA_BASE_URL", "https://example.atlassian.net")
+    monkeypatch.setenv("EU_AI_ACT_JIRA_EMAIL", "ops@example.com")
+    monkeypatch.setenv("EU_AI_ACT_JIRA_API_TOKEN", "secret")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if request.method == "GET" and url.endswith("/EUAI-1"):
+            return httpx.Response(
+                status_code=200,
+                json={"key": "EUAI-1", "fields": {"labels": ["status-non_compliant"]}},
+            )
+        if request.method == "GET" and url.endswith("/EUAI-2"):
+            return httpx.Response(
+                status_code=200,
+                json={"key": "EUAI-2", "fields": {"labels": ["status-non_compliant"]}},
+            )
+        if request.method == "PUT" and url.endswith("/EUAI-1"):
+            return httpx.Response(status_code=204, text="")
+        if request.method == "PUT" and url.endswith("/EUAI-2"):
+            return httpx.Response(status_code=400, text="bad update")
+        return httpx.Response(status_code=500, text="unexpected request")
+
+    transport = httpx.MockTransport(handler)
+    original_client = httpx.Client
+
+    def _fake_client(*args, **kwargs):
+        return original_client(transport=transport)
+
+    monkeypatch.setattr("eu_ai_act.exporter.httpx.Client", _fake_client)
+    monkeypatch.setattr(ExportPusher, "_sleep_before_retry", lambda _self, _attempts: None)
+
+    payload = reconcile_export_push_records(
+        target="jira",
+        idempotency_path=ledger_path,
+        max_retries=0,
+        repair_enabled=True,
+        apply=True,
+    )
+
+    assert payload["checked_count"] == 2
+    assert payload["exists_count"] == 2
+    assert payload["drift_count"] == 2
+    assert payload["repair_planned_count"] == 2
+    assert payload["repair_applied_count"] == 1
+    assert payload["repair_failed_count"] == 1
+    failed = [item for item in payload["results"] if item.get("repair_result", {}).get("status") == "failed"]
+    assert len(failed) == 1
+    assert "HTTP 400" in failed[0]["repair_result"]["failure_reason"]

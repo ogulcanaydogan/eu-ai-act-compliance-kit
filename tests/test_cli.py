@@ -591,6 +591,7 @@ class TestCLI:
                             "target": "jira",
                             "system_name": "System A",
                             "requirement_id": "Art. 10",
+                            "status": "non_compliant",
                             "remote_ref": "EUAI-1",
                             "pushed_at": "2026-03-22T10:00:00+00:00",
                         }
@@ -601,6 +602,7 @@ class TestCLI:
                             "target": "jira",
                             "system_name": "System B",
                             "requirement_id": "Art. 11",
+                            "status": "partial",
                             "remote_ref": "EUAI-404",
                             "pushed_at": "2026-03-22T11:00:00+00:00",
                         }
@@ -617,7 +619,10 @@ class TestCLI:
 
         def handler(request):
             if str(request.url).endswith("/EUAI-1"):
-                return httpx.Response(status_code=200, json={"key": "EUAI-1"})
+                return httpx.Response(
+                    status_code=200,
+                    json={"key": "EUAI-1", "fields": {"labels": ["status-non_compliant"]}},
+                )
             return httpx.Response(status_code=404, text="not found")
 
         transport = httpx.MockTransport(handler)
@@ -646,8 +651,15 @@ class TestCLI:
         assert payload["target"] == "jira"
         assert payload["checked_count"] == 2
         assert payload["exists_count"] == 1
+        assert payload["in_sync_count"] == 1
+        assert payload["drift_count"] == 0
         assert payload["missing_count"] == 1
         assert payload["error_count"] == 0
+        assert payload["repair_planned_count"] == 0
+        assert payload["repair_applied_count"] == 0
+        assert payload["repair_failed_count"] == 0
+        assert payload["repair_enabled"] is False
+        assert payload["apply"] is False
 
     def test_export_reconcile_output_file(self, monkeypatch, tmp_path):
         """Reconcile should support output file mode and preserve exit-zero success behavior."""
@@ -662,10 +674,17 @@ class TestCLI:
                 "target": "jira",
                 "ledger_path": "/tmp/ledger.jsonl",
                 "filters": {"system_name": None, "requirement_id": None, "limit": 50},
+                "repair_enabled": False,
+                "apply": False,
                 "checked_count": 1,
                 "exists_count": 1,
+                "in_sync_count": 1,
+                "drift_count": 0,
                 "missing_count": 0,
                 "error_count": 0,
+                "repair_planned_count": 0,
+                "repair_applied_count": 0,
+                "repair_failed_count": 0,
                 "results": [{"record_index": 1, "status": "exists"}],
             },
         )
@@ -687,8 +706,110 @@ class TestCLI:
         assert output_path.exists()
         payload = json.loads(output_path.read_text(encoding="utf-8"))
         assert payload["exists_count"] == 1
+        assert payload["drift_count"] == 0
         assert payload["missing_count"] == 0
         assert payload["error_count"] == 0
+
+    def test_export_reconcile_apply_without_repair_fails(self):
+        """`--apply` should be rejected unless `--repair` is explicitly enabled."""
+        runner = CliRunner()
+        result = runner.invoke(
+            main,
+            ["export", "reconcile", "--target", "jira", "--apply", "--json"],
+        )
+
+        assert result.exit_code != 0
+        output = result.output + getattr(result, "stderr", "")
+        assert "--apply can only be used together with --repair" in output
+
+    def test_export_reconcile_json_contract_and_nonzero_on_drift(self, monkeypatch):
+        """Drift findings should produce non-zero exit even without missing/error records."""
+        runner = CliRunner()
+
+        monkeypatch.setattr(
+            cli_module,
+            "reconcile_export_push_records",
+            lambda **_kwargs: {
+                "generated_at": "2026-03-23T00:00:00+00:00",
+                "target": "jira",
+                "ledger_path": "/tmp/ledger.jsonl",
+                "filters": {"system_name": None, "requirement_id": None, "limit": 50},
+                "repair_enabled": True,
+                "apply": False,
+                "checked_count": 1,
+                "exists_count": 1,
+                "in_sync_count": 0,
+                "drift_count": 1,
+                "missing_count": 0,
+                "error_count": 0,
+                "repair_planned_count": 1,
+                "repair_applied_count": 0,
+                "repair_failed_count": 0,
+                "results": [
+                    {
+                        "record_index": 1,
+                        "status": "exists",
+                        "drift_status": "status_mismatch",
+                    }
+                ],
+            },
+        )
+
+        result = runner.invoke(
+            main,
+            ["export", "reconcile", "--target", "jira", "--repair", "--json"],
+        )
+
+        assert result.exit_code != 0
+        payload = json.loads(result.output[result.output.find("{") :])
+        assert payload["drift_count"] == 1
+        assert payload["missing_count"] == 0
+        assert payload["error_count"] == 0
+
+    def test_export_reconcile_forwards_repair_and_apply_flags(self, monkeypatch):
+        """Reconcile command should pass repair/apply flags to exporter runtime."""
+        runner = CliRunner()
+        captured: dict[str, object] = {}
+
+        def _fake_reconcile(**kwargs):
+            captured.update(kwargs)
+            return {
+                "generated_at": "2026-03-23T00:00:00+00:00",
+                "target": "jira",
+                "ledger_path": "/tmp/ledger.jsonl",
+                "filters": {"system_name": None, "requirement_id": None, "limit": 50},
+                "repair_enabled": kwargs.get("repair_enabled", False),
+                "apply": kwargs.get("apply", False),
+                "checked_count": 1,
+                "exists_count": 1,
+                "in_sync_count": 1,
+                "drift_count": 0,
+                "missing_count": 0,
+                "error_count": 0,
+                "repair_planned_count": 0,
+                "repair_applied_count": 0,
+                "repair_failed_count": 0,
+                "results": [{"record_index": 1, "status": "exists"}],
+            }
+
+        monkeypatch.setattr(cli_module, "reconcile_export_push_records", _fake_reconcile)
+
+        result = runner.invoke(
+            main,
+            [
+                "export",
+                "reconcile",
+                "--target",
+                "jira",
+                "--repair",
+                "--apply",
+                "--json",
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert captured["repair_enabled"] is True
+        assert captured["apply"] is True
 
     def test_export_reconcile_invalid_limit_fails(self):
         """Reconcile should validate non-positive limit values."""

@@ -211,6 +211,7 @@ pre-commit run --hook-stage pre-push --all-files
 - Phase 18: export operator observability + upsert push completed (`export ledger list|stats` + lookup-first upsert mode)
 - Phase 19: export ops hardening completed (`export batch` + `export reconcile` for operational reliability)
 - Phase 20: quality and coverage hardening completed (example matrix + CI/test contract gates)
+- Phase 21: export v3 reliability in progress (reconcile drift detection + guarded repair with explicit `--apply`)
 
 ## Disclaimer
 

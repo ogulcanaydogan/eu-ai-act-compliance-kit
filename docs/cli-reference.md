@@ -207,6 +207,8 @@ Subcommands:
     - `--max-retries INT` (default: `3`, must be `>= 0`)
     - `--retry-backoff-seconds FLOAT` (default: `1.0`, must be `> 0`)
     - `--timeout-seconds FLOAT` (default: `30.0`, must be `> 0`)
+    - `--repair` (build repair plan for drifted records; no write by default)
+    - `--apply` (execute remote repair updates; requires `--repair`)
     - `-o, --output PATH`
     - `--json` (JSON is default output shape)
 - `export ledger list`
@@ -235,7 +237,7 @@ Output contract:
 - `export batch` top-level contract:
   - `generated_at`, `scan_root`, `target`, `recursive`, `total_files`, `processed_count`, `success_count`, `failure_count`, `invalid_count`, `results`
 - `export reconcile` top-level contract:
-  - `generated_at`, `target`, `ledger_path`, `filters`, `checked_count`, `exists_count`, `missing_count`, `error_count`, `results`
+  - `generated_at`, `target`, `ledger_path`, `filters`, `repair_enabled`, `apply`, `checked_count`, `exists_count`, `in_sync_count`, `drift_count`, `missing_count`, `error_count`, `repair_planned_count`, `repair_applied_count`, `repair_failed_count`, `results`
 
 Push behavior policy:
 
@@ -246,7 +248,14 @@ Push behavior policy:
 - in `create` mode with idempotency enabled, duplicate actionable items are skipped before remote API call
 - in `upsert` mode, Jira/ServiceNow always perform lookup-first and then update existing records or create new ones
 - `export batch` continues processing after invalid descriptor/push failures and exits non-zero when any invalid/failure exists
-- `export reconcile` is read-only and exits non-zero when `missing_count > 0` or `error_count > 0`
+- `export reconcile` supports guarded repair:
+  - `--repair` plans changes only (no write)
+  - `--repair --apply` executes remote updates
+- `export reconcile` exits non-zero when any of these are true:
+  - `missing_count > 0`
+  - `error_count > 0`
+  - `drift_count > 0`
+  - `repair_failed_count > 0`
 
 Live push environment variables:
 

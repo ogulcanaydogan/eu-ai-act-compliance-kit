@@ -8,7 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- No changes yet.
+- Reconcile drift detection contract for export ledger checks:
+  - result-level `expected_status`, `remote_status`, `drift_status`
+  - top-level `in_sync_count`, `drift_count`
+- Guarded reconcile repair controls:
+  - `ai-act export reconcile --repair`
+  - `ai-act export reconcile --repair --apply`
+
+### Changed
+- Reconcile exit policy hardened to fail when drift or repair failures exist.
+- Phase 21 status synchronized as in progress across README, docs index, and roadmap snapshot.
+
+### Tests
+- Added exporter coverage for drift parity, repair planning, apply retries, and partial repair failures.
+- Added CLI coverage for `--repair/--apply` flag contract and non-zero drift behavior.
 
 ## [0.1.11] - 2026-03-23
 

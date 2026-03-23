@@ -1410,6 +1410,16 @@ def export_batch(
     show_default=True,
     help="HTTP request timeout in seconds for reconcile calls.",
 )
+@click.option(
+    "--repair",
+    is_flag=True,
+    help="Generate repair plan for drifted records without remote writes.",
+)
+@click.option(
+    "--apply",
+    is_flag=True,
+    help="Apply repair plan updates to remote records (requires --repair).",
+)
 @click.option("--output", "-o", type=click.Path(), help="Write JSON payload to a file")
 @click.option("--json", "output_json", is_flag=True, help="Output JSON payload (default behavior)")
 def export_reconcile(
@@ -1421,6 +1431,8 @@ def export_reconcile(
     max_retries: int,
     retry_backoff_seconds: float,
     timeout_seconds: float,
+    repair: bool,
+    apply: bool,
     output: str | None,
     output_json: bool,
 ) -> None:
@@ -1439,6 +1451,9 @@ def export_reconcile(
     if timeout_seconds <= 0:
         console.print("[red]Error: --timeout-seconds must be > 0[/red]")
         sys.exit(1)
+    if apply and not repair:
+        console.print("[red]Error: --apply can only be used together with --repair[/red]")
+        sys.exit(1)
 
     try:
         payload = reconcile_export_push_records(
@@ -1450,6 +1465,8 @@ def export_reconcile(
             max_retries=max_retries,
             retry_backoff_seconds=retry_backoff_seconds,
             timeout_seconds=timeout_seconds,
+            repair_enabled=repair,
+            apply=apply,
         )
     except Exception as e:
         console.print(f"[red]Error running export reconcile: {e}[/red]")
@@ -1458,7 +1475,12 @@ def export_reconcile(
     payload_json = json.dumps(payload, indent=2)
     _emit_export_output(payload_json, output)
 
-    if payload["missing_count"] > 0 or payload["error_count"] > 0:
+    if (
+        payload.get("missing_count", 0) > 0
+        or payload.get("error_count", 0) > 0
+        or payload.get("drift_count", 0) > 0
+        or payload.get("repair_failed_count", 0) > 0
+    ):
         sys.exit(1)
 
 
