@@ -17,6 +17,26 @@ inputs:
     description: "Security gate profile (strict, balanced, lenient)"
     required: false
     default: "balanced"
+  export_ops_gate_mode:
+    description: "Export ops gate mode (observe or enforce)"
+    required: false
+    default: "observe"
+  export_ops_gate_target:
+    description: "Export ops gate target (jira or servicenow)"
+    required: false
+    default: "jira"
+  export_ops_gate_policy_path:
+    description: "Path to export ops gate policy file, relative to action root unless absolute"
+    required: false
+    default: "config/export_ops_gate_policy.yaml"
+  export_ops_ops_path:
+    description: "Path to export ops log JSONL used by export gate"
+    required: false
+    default: ".eu_ai_act/export_ops_log.jsonl"
+  export_ops_reconcile_log_path:
+    description: "Path to export reconcile log JSONL used by export gate"
+    required: false
+    default: ".eu_ai_act/export_reconcile_log.jsonl"
   report_format:
     description: "Report output format (json, md, html)"
     required: false
@@ -66,6 +86,24 @@ outputs:
   security_gate_failed:
     description: "Security gate failure flag (true/false)"
     value: ${{ steps.analyze.outputs.security_gate_failed }}
+  export_ops_gate_failed:
+    description: "Export ops gate failure flag (true/false)"
+    value: ${{ steps.analyze.outputs.export_ops_gate_failed }}
+  export_ops_gate_reason_codes:
+    description: "Comma-separated export ops gate reason codes"
+    value: ${{ steps.analyze.outputs.export_ops_gate_reason_codes }}
+  export_ops_open_failures_count:
+    description: "Open failures count seen by export ops gate"
+    value: ${{ steps.analyze.outputs.export_ops_open_failures_count }}
+  export_ops_drift_count:
+    description: "Drift count seen by export ops gate"
+    value: ${{ steps.analyze.outputs.export_ops_drift_count }}
+  export_ops_success_rate:
+    description: "Success rate seen by export ops gate"
+    value: ${{ steps.analyze.outputs.export_ops_success_rate }}
+  export_ops_gate_exit_code:
+    description: "Raw exit code from export ops gate command execution"
+    value: ${{ steps.analyze.outputs.export_ops_gate_exit_code }}
 
 runs:
   using: "composite"
@@ -88,6 +126,30 @@ runs:
       run: |
         ai-act classify "${{ inputs.system_yaml }}" --json > /tmp/classification.json
         ai-act check "${{ inputs.system_yaml }}" --json > /tmp/check.json
+        EXPORT_OPS_POLICY_INPUT="${{ inputs.export_ops_gate_policy_path }}"
+        if [[ "$EXPORT_OPS_POLICY_INPUT" = /* ]]; then
+          EXPORT_OPS_POLICY_PATH="$EXPORT_OPS_POLICY_INPUT"
+        else
+          EXPORT_OPS_POLICY_PATH="$GITHUB_ACTION_PATH/$EXPORT_OPS_POLICY_INPUT"
+        fi
+        EXPORT_OPS_POLICY_ARGS=()
+        if [[ -f "$EXPORT_OPS_POLICY_PATH" ]]; then
+          EXPORT_OPS_POLICY_ARGS=(--policy "$EXPORT_OPS_POLICY_PATH")
+        else
+          echo "Warning: Export ops policy file not found: $EXPORT_OPS_POLICY_PATH"
+        fi
+
+        set +e
+        ai-act export gate \
+          --target "${{ inputs.export_ops_gate_target }}" \
+          --mode "${{ inputs.export_ops_gate_mode }}" \
+          --ops-path "${{ inputs.export_ops_ops_path }}" \
+          --reconcile-log-path "${{ inputs.export_ops_reconcile_log_path }}" \
+          "${EXPORT_OPS_POLICY_ARGS[@]}" \
+          --json > /tmp/export_ops_gate.json
+        EXPORT_OPS_GATE_EXIT_CODE=$?
+        set -e
+        echo "export_ops_gate_exit_code=$EXPORT_OPS_GATE_EXIT_CODE" >> "$GITHUB_OUTPUT"
 
         SECURITY_GATE_MODE="${{ inputs.security_gate_mode }}" SECURITY_GATE_PROFILE="${{ inputs.security_gate_profile }}" python - <<'PY' >> "$GITHUB_OUTPUT"
         import json
@@ -115,6 +177,23 @@ runs:
         security_partial_count = gate_result.partial_count
         security_not_assessed_count = gate_result.not_assessed_count
         security_gate_failed = gate_result.failed
+        try:
+            export_ops_gate = json.loads(pathlib.Path("/tmp/export_ops_gate.json").read_text())
+        except Exception:
+            export_ops_gate = {}
+        if not isinstance(export_ops_gate, dict):
+            export_ops_gate = {}
+        rollup_metrics = export_ops_gate.get("rollup_metrics", {}) or {}
+        reconcile_metrics = export_ops_gate.get("reconcile_metrics", {}) or {}
+        reason_codes = export_ops_gate.get("reason_codes", [])
+        if not isinstance(reason_codes, list):
+            reason_codes = []
+        export_ops_gate_mode = str(export_ops_gate.get("mode", "observe")).strip().lower()
+        export_ops_gate_failed = bool(export_ops_gate.get("failed", False))
+        export_ops_gate_reason_codes = ",".join(str(code) for code in reason_codes if str(code))
+        export_ops_open_failures_count = int(rollup_metrics.get("open_failures_count", 0) or 0)
+        export_ops_success_rate = float(rollup_metrics.get("success_rate", 0.0) or 0.0)
+        export_ops_drift_count = int(reconcile_metrics.get("drift_count", 0) or 0)
 
         print(f"risk_tier={classification.get('risk_tier', '')}")
         print(f"articles_applicable={', '.join(classification.get('articles_applicable', []))}")
@@ -132,6 +211,12 @@ runs:
         print(f"security_gate_failed={'true' if security_gate_failed else 'false'}")
         print(f"security_gate_reason={gate_result.reason}")
         print(f"security_gate_effective_profile={gate_result.effective_profile}")
+        print(f"export_ops_gate_mode={export_ops_gate_mode}")
+        print(f"export_ops_gate_failed={'true' if export_ops_gate_failed else 'false'}")
+        print(f"export_ops_gate_reason_codes={export_ops_gate_reason_codes}")
+        print(f"export_ops_open_failures_count={export_ops_open_failures_count}")
+        print(f"export_ops_drift_count={export_ops_drift_count}")
+        print(f"export_ops_success_rate={export_ops_success_rate}")
         PY
 
     - name: "Generate report"
@@ -200,6 +285,13 @@ runs:
         SECURITY_GATE_FAILED="${{ steps.analyze.outputs.security_gate_failed }}"
         SECURITY_GATE_REASON="${{ steps.analyze.outputs.security_gate_reason }}"
         SECURITY_GATE_EFFECTIVE_PROFILE="${{ steps.analyze.outputs.security_gate_effective_profile }}"
+        EXPORT_OPS_GATE_MODE="${{ steps.analyze.outputs.export_ops_gate_mode }}"
+        EXPORT_OPS_GATE_FAILED="${{ steps.analyze.outputs.export_ops_gate_failed }}"
+        EXPORT_OPS_GATE_EXIT_CODE="${{ steps.analyze.outputs.export_ops_gate_exit_code }}"
+        EXPORT_OPS_GATE_REASON_CODES="${{ steps.analyze.outputs.export_ops_gate_reason_codes }}"
+        EXPORT_OPS_OPEN_FAILURES_COUNT="${{ steps.analyze.outputs.export_ops_open_failures_count }}"
+        EXPORT_OPS_DRIFT_COUNT="${{ steps.analyze.outputs.export_ops_drift_count }}"
+        EXPORT_OPS_SUCCESS_RATE="${{ steps.analyze.outputs.export_ops_success_rate }}"
 
         if [[ "$RISK_TIER" == "unacceptable" ]]; then
           echo "❌ Workflow failed: System classified as UNACCEPTABLE"
@@ -218,6 +310,14 @@ runs:
           echo "   mode=$SECURITY_GATE_MODE effective_profile=$SECURITY_GATE_EFFECTIVE_PROFILE reason=$SECURITY_GATE_REASON"
           echo "   non_compliant_controls=$SECURITY_NON_COMPLIANT_COUNT"
           echo "   Address security-mapped findings before merging."
+          exit 1
+        fi
+
+        if [[ "$EXPORT_OPS_GATE_MODE" == "enforce" && ( "$EXPORT_OPS_GATE_FAILED" == "true" || "$EXPORT_OPS_GATE_EXIT_CODE" != "0" ) ]]; then
+          echo "❌ Workflow failed: Export ops gate policy blocked this run"
+          echo "   mode=$EXPORT_OPS_GATE_MODE exit_code=$EXPORT_OPS_GATE_EXIT_CODE reason_codes=$EXPORT_OPS_GATE_REASON_CODES"
+          echo "   open_failures=$EXPORT_OPS_OPEN_FAILURES_COUNT drift=$EXPORT_OPS_DRIFT_COUNT success_rate=$EXPORT_OPS_SUCCESS_RATE"
+          echo "   Address export operational governance findings before merging."
           exit 1
         fi
 

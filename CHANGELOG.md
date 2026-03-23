@@ -10,6 +10,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - No changes yet.
 
+## [0.1.19] - 2026-03-23
+
+### Added
+- Added reusable action controls for export operations governance:
+  - `export_ops_gate_mode`
+  - `export_ops_gate_target`
+  - `export_ops_gate_policy_path`
+  - `export_ops_ops_path`
+  - `export_ops_reconcile_log_path`
+- Added additive action outputs for export ops governance visibility:
+  - `export_ops_gate_failed`
+  - `export_ops_gate_reason_codes`
+  - `export_ops_open_failures_count`
+  - `export_ops_drift_count`
+  - `export_ops_success_rate`
+- Added canonical repository policy file:
+  - `config/export_ops_gate_policy.yaml`
+
+### Changed
+- Composite action now runs `ai-act export gate --json` and enforces export-ops blocking only when `export_ops_gate_mode=enforce`.
+- CI `export-ops-gate-smoke` now uses tiered rollout:
+  - pull requests run in `observe`
+  - push/tag runs in `enforce`
+- CI smoke fixtures and contract assertions updated for policy-file driven export gate evaluation.
+- `README`, `docs/index`, and `ROADMAP` status synchronized to mark Phase 28 as completed.
+
+### Tests
+- Extended `tests/test_ci_contract.py` for new action input/output contract and PR-observe/main-enforce CI rollout assertions.
+- Updated CLI version regression expectation to `0.1.19`.
+
 ## [0.1.18] - 2026-03-23
 
 ### Added

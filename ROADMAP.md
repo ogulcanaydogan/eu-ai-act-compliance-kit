@@ -31,6 +31,7 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
 - Phase 25 completed (enforceable security gate v1 with observe-by-default policy and optional enforce mode)
 - Phase 26 completed (security gate v2 with profile-based thresholds and tier-aware enforcement)
 - Phase 27 completed (export ops governance with policy-based `export gate` and reconcile log continuity)
+- Phase 28 completed (export ops governance enforce rollout with shared policy file and PR-observe/main-enforce CI-action integration)
 
 ## Phase 1: Risk Classification Engine (Weeks 1-2) ✅ Completed
 
@@ -517,6 +518,20 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
   - enforce-only fail when reconcile data is missing (`missing_reconcile_data`)
 - Added CI observe-only contract validation:
   - `export-ops-gate-smoke` required in `all-checks`
+
+## Phase 28: Export Ops Governance Enforce Rollout ✅ Completed
+
+- Standardized export ops governance policy in repository config:
+  - `config/export_ops_gate_policy.yaml`
+- Extended reusable action with additive export-ops gate controls:
+  - inputs: `export_ops_gate_mode`, `export_ops_gate_target`, `export_ops_gate_policy_path`, `export_ops_ops_path`, `export_ops_reconcile_log_path`
+  - outputs: `export_ops_gate_failed`, `export_ops_gate_reason_codes`, `export_ops_open_failures_count`, `export_ops_drift_count`, `export_ops_success_rate`
+- Integrated `ai-act export gate --json` into composite action flow:
+  - observe mode reports only
+  - enforce mode blocks with non-zero on policy violations
+- Rolled out CI tiered enforcement using the same policy source:
+  - pull requests run `export-ops-gate-smoke` in `observe`
+  - push/tag runs `export-ops-gate-smoke` in `enforce`
 
 ## Timeline Summary (Historical Plan)
 - **Week 1-2**: Risk Classification Engine (Phases 1.1-1.5)

@@ -45,6 +45,7 @@ checks transparency and GPAI obligations, and renders audit-oriented reports.
 - Phase 25: Enforceable security gate completed (observe-by-default + optional enforce mode in `check` and action gate surfaces)
 - Phase 26: Security gate V2 completed (profile-based thresholds + tier-aware evaluation in CLI/action/CI)
 - Phase 27: Export ops governance completed (`export gate`, reconcile log continuity, observe-first CI smoke)
+- Phase 28: Export ops governance enforce rollout completed (shared policy file + PR observe/main-tag enforce across action and CI)
 
 ## End-to-End Flow
 

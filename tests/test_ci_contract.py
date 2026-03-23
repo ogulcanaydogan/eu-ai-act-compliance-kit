@@ -94,7 +94,7 @@ def test_all_checks_treats_examples_smoke_as_required():
 
 
 def test_ci_contains_export_ops_gate_smoke_job():
-    """CI must include export-ops-gate-smoke job validating observe-mode gate payload."""
+    """CI must include export-ops-gate-smoke job with tiered mode rollout and policy file."""
     jobs = _load_ci_jobs()
     assert "export-ops-gate-smoke" in jobs
 
@@ -105,7 +105,11 @@ def test_ci_contains_export_ops_gate_smoke_job():
     run_blocks = [step.get("run", "") for step in steps if isinstance(step, dict)]
     joined_run = "\n".join(run_blocks)
     assert "ai-act export gate" in joined_run
-    assert "--mode observe" in joined_run
+    assert '--mode "$GATE_MODE"' in joined_run
+    assert "--policy config/export_ops_gate_policy.yaml" in joined_run
+
+    step_payload = "\n".join(str(step) for step in steps if isinstance(step, dict))
+    assert "github.event_name == 'pull_request' && 'observe' || 'enforce'" in step_payload
 
 
 def test_all_checks_treats_export_ops_gate_smoke_as_required():
@@ -125,7 +129,7 @@ def test_all_checks_treats_export_ops_gate_smoke_as_required():
 
 
 def test_action_exposes_security_gate_input_and_outputs():
-    """Composite action should expose non-breaking security gate controls and outputs."""
+    """Composite action should expose additive security and export-ops gate controls/outputs."""
     action_payload = _load_action_payload()
     inputs = action_payload.get("inputs", {})
     outputs = action_payload.get("outputs", {})
@@ -139,6 +143,24 @@ def test_action_exposes_security_gate_input_and_outputs():
     assert "security_partial_count" in outputs
     assert "security_not_assessed_count" in outputs
     assert "security_gate_failed" in outputs
+
+    assert "export_ops_gate_mode" in inputs
+    assert inputs["export_ops_gate_mode"].get("default") == "observe"
+    assert "export_ops_gate_target" in inputs
+    assert inputs["export_ops_gate_target"].get("default") == "jira"
+    assert "export_ops_gate_policy_path" in inputs
+    assert (
+        inputs["export_ops_gate_policy_path"].get("default") == "config/export_ops_gate_policy.yaml"
+    )
+    assert "export_ops_ops_path" in inputs
+    assert "export_ops_reconcile_log_path" in inputs
+
+    assert "export_ops_gate_failed" in outputs
+    assert "export_ops_gate_reason_codes" in outputs
+    assert "export_ops_open_failures_count" in outputs
+    assert "export_ops_drift_count" in outputs
+    assert "export_ops_success_rate" in outputs
+    assert "export_ops_gate_exit_code" in outputs
 
 
 def test_ci_action_smoke_exercises_security_gate_enforcement():
@@ -157,3 +179,4 @@ def test_ci_action_smoke_exercises_security_gate_enforcement():
     assert "steps.securitygate.outcome" in step_text
     assert "security_gate_mode" in uses_payload
     assert "security_gate_profile" in uses_payload
+    assert "export_ops_gate_mode" in uses_payload

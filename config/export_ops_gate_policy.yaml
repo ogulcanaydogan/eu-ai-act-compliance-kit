@@ -1,0 +1,8 @@
+mode: observe
+window:
+  since_hours: 24
+  limit: 200
+thresholds:
+  open_failures_max: 0
+  drift_max: 0
+  min_success_rate: 95.0

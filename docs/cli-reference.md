@@ -305,6 +305,9 @@ Subcommands:
   - policy precedence:
     - CLI flags override policy file values
     - policy file values override built-in defaults
+  - canonical policy:
+    - repository default policy file: `config/export_ops_gate_policy.yaml`
+    - action/CI consume the same policy source for governance consistency
   - enforce behavior:
     - exits non-zero when any threshold is violated
     - exits non-zero when reconcile data is missing (`missing_reconcile_data`)
@@ -371,6 +374,9 @@ Push behavior policy:
   - `drift_count > drift_max`
   - `success_rate < min_success_rate`
   - enforce-only fail when reconcile data is missing
+- CI rollout policy:
+  - pull requests run export-ops gate in `observe`
+  - push/tag pipelines run export-ops gate in `enforce`
 
 Live push environment variables:
 
