@@ -31,11 +31,15 @@ def _finding(
 def _report(findings: dict[str, ComplianceFinding]) -> ComplianceReport:
     summary = ComplianceSummary(
         total_requirements=len(findings),
-        compliant_count=sum(1 for finding in findings.values() if finding.status == ComplianceStatus.COMPLIANT),
+        compliant_count=sum(
+            1 for finding in findings.values() if finding.status == ComplianceStatus.COMPLIANT
+        ),
         non_compliant_count=sum(
             1 for finding in findings.values() if finding.status == ComplianceStatus.NON_COMPLIANT
         ),
-        partial_count=sum(1 for finding in findings.values() if finding.status == ComplianceStatus.PARTIAL),
+        partial_count=sum(
+            1 for finding in findings.values() if finding.status == ComplianceStatus.PARTIAL
+        ),
         not_assessed_count=sum(
             1 for finding in findings.values() if finding.status == ComplianceStatus.NOT_ASSESSED
         ),

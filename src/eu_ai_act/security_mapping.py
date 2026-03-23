@@ -257,7 +257,9 @@ class SecurityMapper:
     def _summarize(self, controls: list[SecurityControlResult]) -> SecurityMappingSummary:
         """Summarize mapped OWASP control statuses."""
         total = len(controls)
-        compliant_count = sum(1 for control in controls if control.status == ComplianceStatus.COMPLIANT)
+        compliant_count = sum(
+            1 for control in controls if control.status == ComplianceStatus.COMPLIANT
+        )
         non_compliant_count = sum(
             1 for control in controls if control.status == ComplianceStatus.NON_COMPLIANT
         )
