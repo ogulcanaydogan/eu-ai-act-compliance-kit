@@ -1840,6 +1840,10 @@ def test_reconcile_repair_apply_continues_when_one_record_fails(monkeypatch, tmp
     assert payload["repair_planned_count"] == 2
     assert payload["repair_applied_count"] == 1
     assert payload["repair_failed_count"] == 1
-    failed = [item for item in payload["results"] if item.get("repair_result", {}).get("status") == "failed"]
+    failed = [
+        item
+        for item in payload["results"]
+        if item.get("repair_result", {}).get("status") == "failed"
+    ]
     assert len(failed) == 1
     assert "HTTP 400" in failed[0]["repair_result"]["failure_reason"]
