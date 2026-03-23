@@ -51,6 +51,26 @@ ai-act classify examples/social_scoring.yaml
 ai-act check examples/spam_filter.yaml --json
 ```
 
+### `examples/public_benefits_triage.yaml`
+
+- Typical outcome: `high_risk`
+- Focus areas: autonomous rights-impacting triage with expected non-compliance gaps
+
+```bash
+ai-act classify examples/public_benefits_triage.yaml --json
+ai-act check examples/public_benefits_triage.yaml --json
+```
+
+### `examples/synthetic_media_campaign_assistant.yaml`
+
+- Typical outcome: `limited`
+- Focus areas: Art. 50 synthetic/generated content disclosure gap
+
+```bash
+ai-act classify examples/synthetic_media_campaign_assistant.yaml --json
+ai-act check examples/synthetic_media_campaign_assistant.yaml --json
+```
+
 ## GPAI Examples
 
 ### `examples/gpai_model.yaml`
@@ -69,6 +89,15 @@ ai-act gpai examples/gpai_model.yaml --json
 
 ```bash
 ai-act gpai examples/gpai_model_low_risk.yaml --json
+```
+
+### `examples/gpai_model_unknown_thresholds.yaml`
+
+- Intended for `Art. 53 = not_assessed` threshold-evidence scenario
+- Useful for conservative GPAI uncertainty handling checks
+
+```bash
+ai-act gpai examples/gpai_model_unknown_thresholds.yaml --json
 ```
 
 ## Recommended Smoke Run

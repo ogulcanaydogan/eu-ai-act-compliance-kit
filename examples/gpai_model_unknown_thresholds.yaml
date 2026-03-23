@@ -1,0 +1,9 @@
+model_name: "Open Assistant Mid-Scale"
+provider: "Example Labs"
+supports_tool_use: true
+autonomous_task_execution: false
+generates_synthetic_media: false
+model_card_available: true
+training_data_documented: true
+systemic_risk_mitigation_plan: false
+post_market_monitoring: true

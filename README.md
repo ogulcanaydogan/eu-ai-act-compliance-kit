@@ -104,7 +104,9 @@ Full reference: [docs/cli-reference.md](docs/cli-reference.md)
 - `examples/social_scoring.yaml` (unacceptable)
 - `examples/chatbot.yaml` (minimal)
 - `examples/spam_filter.yaml` (minimal)
-- `examples/gpai_model.yaml` / `examples/gpai_model_low_risk.yaml`
+- `examples/public_benefits_triage.yaml` (high risk with expected compliance gaps)
+- `examples/synthetic_media_campaign_assistant.yaml` (limited/transparency-heavy)
+- `examples/gpai_model.yaml` / `examples/gpai_model_low_risk.yaml` / `examples/gpai_model_unknown_thresholds.yaml`
 
 ## GitHub Action Contract
 
@@ -208,6 +210,7 @@ pre-commit run --hook-stage pre-push --all-files
 - Phase 17: export push production hardening completed (create-only idempotency ledger + duplicate-safe push)
 - Phase 18: export operator observability + upsert push completed (`export ledger list|stats` + lookup-first upsert mode)
 - Phase 19: export ops hardening completed (`export batch` + `export reconcile` for operational reliability)
+- Phase 20: quality and coverage hardening in progress (example matrix + CI/test contract gates)
 
 ## Disclaimer
 

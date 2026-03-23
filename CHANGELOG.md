@@ -8,7 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- No changes yet.
+- New example descriptors:
+  - `examples/public_benefits_triage.yaml`
+  - `examples/synthetic_media_campaign_assistant.yaml`
+  - `examples/gpai_model_unknown_thresholds.yaml`
+- New example contract test suite for system and GPAI example matrices.
+- New required CI `examples-smoke` job for deterministic example validation/classify/check coverage.
+
+### Changed
+- Coverage gate hardened to enforce a minimum threshold of `80%` in CI.
+- Quickstart smoke tests now cover multiple descriptor profiles.
+- Phase 20 status synchronized as in progress across README, docs index, and roadmap snapshot.
+
+### Tests
+- Added contracts for:
+  - all system example descriptor validate/classify/check JSON shapes
+  - explicit expectations for new high-risk and transparency-heavy examples
+  - GPAI unknown-threshold `Art. 53 = not_assessed` behavior
 
 ## [0.1.10] - 2026-03-23
 
