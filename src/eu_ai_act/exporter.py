@@ -623,7 +623,7 @@ def _calculate_drift_status(
 def _extract_jira_remote_status(
     *,
     response: httpx.Response,
-    pusher: "ExportPusher",
+    pusher: ExportPusher,
 ) -> tuple[str | None, list[str]]:
     response_json = pusher._safe_json(response)  # noqa: SLF001
     labels: list[str] = []
@@ -669,7 +669,7 @@ def _normalize_jira_labels_for_status(
 def _extract_servicenow_remote_status(
     *,
     response: httpx.Response,
-    pusher: "ExportPusher",
+    pusher: ExportPusher,
     status_field: str,
 ) -> str | None:
     response_json = pusher._safe_json(response)  # noqa: SLF001
