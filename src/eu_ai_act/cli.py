@@ -30,8 +30,10 @@ from eu_ai_act.exporter import (
     build_simulated_push_result,
     list_export_push_ledger_records,
     reconcile_export_push_records,
+    replay_export_push_failures,
     resolve_export_push_ledger_path,
     run_export_batch,
+    summarize_export_ops_rollup,
     summarize_export_push_ledger,
 )
 from eu_ai_act.gpai import (
@@ -1079,7 +1081,9 @@ def export_check(
                 dry_run=dry_run,
                 push_mode=cast(PushMode, push_mode),
             )
+            _emit_ops_log_warning(push_result)
         except ExportPushError as e:
+            _emit_ops_log_warning(e.push_result)
             console.print(f"[red]Error pushing export payload: {e}[/red]")
             sys.exit(1)
         except Exception as e:
@@ -1224,7 +1228,9 @@ def export_history(
                 dry_run=dry_run,
                 push_mode=cast(PushMode, push_mode),
             )
+            _emit_ops_log_warning(push_result)
         except ExportPushError as e:
+            _emit_ops_log_warning(e.push_result)
             console.print(f"[red]Error pushing export payload: {e}[/red]")
             sys.exit(1)
         except Exception as e:
@@ -1363,6 +1369,9 @@ def export_batch(
 
     payload_json = json.dumps(payload, indent=2)
     _emit_export_output(payload_json, output)
+    for warning in payload.get("ops_log_warnings", []):
+        if isinstance(warning, str) and warning.strip():
+            click.echo(f"Warning: {warning}", err=True)
 
     if (
         payload["invalid_count"] > 0
@@ -1370,6 +1379,198 @@ def export_batch(
         or payload["success_count"] == 0
     ):
         sys.exit(1)
+
+
+@export.command("replay")
+@click.option(
+    "--target",
+    type=click.Choice(["jira", "servicenow"]),
+    required=True,
+    help="Export target adapter",
+)
+@click.option(
+    "--since-hours",
+    type=float,
+    help="Only replay failed records generated within the last N hours.",
+)
+@click.option("--system", "system_name", help="Filter by system name")
+@click.option("--requirement-id", help="Filter by requirement id")
+@click.option(
+    "--limit",
+    type=int,
+    default=25,
+    show_default=True,
+    help="Maximum number of failed records to replay after dedupe.",
+)
+@click.option(
+    "--push-mode",
+    type=click.Choice(["create", "upsert"]),
+    default="create",
+    show_default=True,
+    help="Push strategy for replayed records.",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Do not call remote APIs; replay selection is still computed.",
+)
+@click.option(
+    "--max-retries",
+    type=int,
+    default=3,
+    show_default=True,
+    help="Maximum retry attempts for retryable push failures (429/5xx/transport).",
+)
+@click.option(
+    "--retry-backoff-seconds",
+    type=float,
+    default=1.0,
+    show_default=True,
+    help="Base backoff in seconds for exponential retry delay.",
+)
+@click.option(
+    "--timeout-seconds",
+    type=float,
+    default=30.0,
+    show_default=True,
+    help="HTTP request timeout in seconds for live push calls.",
+)
+@click.option(
+    "--idempotency-path",
+    type=click.Path(),
+    help="Override export push idempotency ledger path.",
+)
+@click.option(
+    "--disable-idempotency",
+    is_flag=True,
+    help="Disable duplicate-skip idempotency checks for live push replay.",
+)
+@click.option("--ops-path", type=click.Path(), help="Override export operations log path")
+@click.option("--output", "-o", type=click.Path(), help="Write JSON payload to a file")
+@click.option("--json", "output_json", is_flag=True, help="Output JSON payload (default behavior)")
+def export_replay(
+    target: str,
+    since_hours: float | None,
+    system_name: str | None,
+    requirement_id: str | None,
+    limit: int,
+    push_mode: str,
+    dry_run: bool,
+    max_retries: int,
+    retry_backoff_seconds: float,
+    timeout_seconds: float,
+    idempotency_path: str | None,
+    disable_idempotency: bool,
+    ops_path: str | None,
+    output: str | None,
+    output_json: bool,
+) -> None:
+    """Replay failed export push records from persistent ops log."""
+    _ = output_json
+
+    if limit < 1:
+        console.print("[red]Error: --limit must be >= 1[/red]")
+        sys.exit(1)
+    if since_hours is not None and since_hours < 0:
+        console.print("[red]Error: --since-hours must be >= 0[/red]")
+        sys.exit(1)
+    if max_retries < 0:
+        console.print("[red]Error: --max-retries must be >= 0[/red]")
+        sys.exit(1)
+    if retry_backoff_seconds <= 0:
+        console.print("[red]Error: --retry-backoff-seconds must be > 0[/red]")
+        sys.exit(1)
+    if timeout_seconds <= 0:
+        console.print("[red]Error: --timeout-seconds must be > 0[/red]")
+        sys.exit(1)
+
+    try:
+        payload = replay_export_push_failures(
+            target=cast(ExportTarget, target),
+            ops_path=ops_path,
+            system_name=system_name,
+            requirement_id=requirement_id,
+            since_hours=since_hours,
+            limit=limit,
+            push_mode=cast(PushMode, push_mode),
+            dry_run=dry_run,
+            max_retries=max_retries,
+            retry_backoff_seconds=retry_backoff_seconds,
+            timeout_seconds=timeout_seconds,
+            idempotency_path=idempotency_path,
+            idempotency_enabled=not disable_idempotency,
+        )
+    except Exception as e:
+        console.print(f"[red]Error running export replay: {e}[/red]")
+        sys.exit(1)
+
+    payload_json = json.dumps(payload, indent=2)
+    _emit_export_output(payload_json, output)
+
+    for result in payload.get("results", []):
+        if isinstance(result, dict) and isinstance(result.get("ops_log_warning"), str):
+            click.echo(f"Warning: {result['ops_log_warning']}", err=True)
+
+    if payload.get("failed_count", 0) > 0 or payload.get("unreplayable_count", 0) > 0:
+        sys.exit(1)
+
+
+@export.command("rollup")
+@click.option(
+    "--target",
+    type=click.Choice(["jira", "servicenow", "generic"]),
+    help="Optional target filter",
+)
+@click.option("--system", "system_name", help="Filter by system name")
+@click.option(
+    "--since-hours",
+    type=float,
+    help="Only include ops generated within the last N hours.",
+)
+@click.option(
+    "--limit",
+    type=int,
+    help="Maximum number of recent operation records to include before aggregation.",
+)
+@click.option("--ops-path", type=click.Path(), help="Override export operations log path")
+@click.option("--idempotency-path", type=click.Path(), help="Override ledger path")
+@click.option("--output", "-o", type=click.Path(), help="Write JSON payload to a file")
+@click.option("--json", "output_json", is_flag=True, help="Output JSON payload (default behavior)")
+def export_rollup(
+    target: str | None,
+    system_name: str | None,
+    since_hours: float | None,
+    limit: int | None,
+    ops_path: str | None,
+    idempotency_path: str | None,
+    output: str | None,
+    output_json: bool,
+) -> None:
+    """Summarize export operations from ops log + idempotency ledger."""
+    _ = output_json
+
+    if since_hours is not None and since_hours < 0:
+        console.print("[red]Error: --since-hours must be >= 0[/red]")
+        sys.exit(1)
+    if limit is not None and limit < 1:
+        console.print("[red]Error: --limit must be >= 1[/red]")
+        sys.exit(1)
+
+    try:
+        payload = summarize_export_ops_rollup(
+            ops_path=ops_path,
+            idempotency_path=idempotency_path,
+            target=cast(ExportTarget | None, target),
+            system_name=system_name,
+            since_hours=since_hours,
+            limit=limit,
+        )
+    except Exception as e:
+        console.print(f"[red]Error running export rollup: {e}[/red]")
+        sys.exit(1)
+
+    payload_json = json.dumps(payload, indent=2)
+    _emit_export_output(payload_json, output)
 
 
 @export.command("reconcile")
@@ -1630,6 +1831,15 @@ def _emit_export_output(payload_json: str, output: str | None) -> None:
         console.print(f"[green]Export payload saved to: {output_path}[/green]")
         return
     click.echo(payload_json)
+
+
+def _emit_ops_log_warning(push_result: dict | None) -> None:
+    """Emit best-effort export ops-log warning without changing command outcome."""
+    if not isinstance(push_result, dict):
+        return
+    warning = push_result.get("ops_log_warning")
+    if isinstance(warning, str) and warning.strip():
+        click.echo(f"Warning: {warning}", err=True)
 
 
 def _collect_transparency_findings(

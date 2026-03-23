@@ -37,6 +37,7 @@ checks transparency and GPAI obligations, and renders audit-oriented reports.
 - Phase 19: Export ops hardening completed (`export batch` + `export reconcile` for multi-system operations)
 - Phase 20: Quality and coverage hardening completed (example matrix + CI/test contract gates)
 - Phase 21: Export V3 reliability completed (reconcile drift detection + guarded repair with explicit `--apply`)
+- Phase 22: Export V4 ops completed (persistent ops log + replay/rollup operational flows)
 
 ## End-to-End Flow
 

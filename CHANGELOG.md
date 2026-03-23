@@ -10,6 +10,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - No changes yet.
 
+## [0.1.13] - 2026-03-23
+
+### Added
+- Persistent export operations log (`.eu_ai_act/export_ops_log.jsonl`) for per-item push attempt tracking in `export check|history|batch --push` flows.
+- New CLI command: `ai-act export replay` for deterministic replay of failed push operations from ops log.
+- New CLI command: `ai-act export rollup` for read-only operational metrics/distributions from ops log + push ledger.
+
+### Changed
+- Export push flows now surface best-effort ops-log write warnings without changing command success/failure behavior.
+- Phase 22 status synchronized as completed across README, docs index, and roadmap snapshot.
+
+### Tests
+- Added exporter coverage for ops log parse errors, replay dedupe/unreplayable paths, rollup aggregation, and best-effort ops-log warning behavior.
+- Added CLI coverage for replay/rollup contracts, output mode, dry-run forwarding, and flag validation paths.
+
 ## [0.1.12] - 2026-03-23
 
 ### Added

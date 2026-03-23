@@ -25,6 +25,7 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
 - Phase 19 completed (batch export orchestration + reconcile checks for live push operations)
 - Phase 20 completed (quality and coverage hardening for examples, tests, and CI gates)
 - Phase 21 completed (reconcile drift detection + guarded repair with explicit apply contract)
+- Phase 22 completed (persistent export ops log + replay and rollup operations)
 
 ## Phase 1: Risk Classification Engine (Weeks 1-2) ✅ Completed
 
@@ -447,6 +448,15 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
 - Preserved deterministic retry + continue-all behavior for reconcile checks and repair attempts.
 - Enforced stricter reconcile exit contract:
   - non-zero on `missing_count`, `error_count`, `drift_count`, or `repair_failed_count`.
+
+## Phase 22: Export V4 Ops ✅ Completed
+
+- Added persistent export operations log (`.eu_ai_act/export_ops_log.jsonl`) for per-item push attempt tracking.
+- Added replay runtime + CLI (`ai-act export replay`) to retry failed push attempts from ops log with deterministic filtering/dedupe.
+- Added rollup runtime + CLI (`ai-act export rollup`) to summarize operational metrics/distributions from ops log + push ledger.
+- Preserved strict existing export policies:
+  - `generic` remains payload-only for live operations
+  - replay uses continue-all with final non-zero when replay failures/unreplayable sources exist
 
 ## Timeline Summary (Historical Plan)
 - **Week 1-2**: Risk Classification Engine (Phases 1.1-1.5)

@@ -13,8 +13,11 @@ from eu_ai_act.exporter import (
     ExportGenerator,
     ExportPusher,
     ExportPushError,
+    list_export_ops_log_records,
     reconcile_export_push_records,
+    replay_export_push_failures,
     run_export_batch,
+    summarize_export_ops_rollup,
 )
 from eu_ai_act.history import build_event
 from eu_ai_act.schema import load_system_descriptor_from_file
@@ -1847,3 +1850,291 @@ def test_reconcile_repair_apply_continues_when_one_record_fails(monkeypatch, tmp
     ]
     assert len(failed) == 1
     assert "HTTP 400" in failed[0]["repair_result"]["failure_reason"]
+
+
+def test_list_export_ops_log_records_and_invalid_json(tmp_path):
+    """Ops log listing should filter deterministically and fail on malformed JSON lines."""
+    ops_path = tmp_path / ".eu_ai_act" / "export_ops_log.jsonl"
+    ops_path.parent.mkdir(parents=True, exist_ok=True)
+    ops_path.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "attempt_id": "a1",
+                        "generated_at": "2026-03-23T10:00:00+00:00",
+                        "target": "jira",
+                        "system_name": "System A",
+                        "requirement_id": "Art. 10",
+                        "result": "failed",
+                    }
+                ),
+                json.dumps(
+                    {
+                        "attempt_id": "a2",
+                        "generated_at": "2026-03-23T11:00:00+00:00",
+                        "target": "jira",
+                        "system_name": "System B",
+                        "requirement_id": "Art. 11",
+                        "result": "success",
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    resolved_path, records = list_export_ops_log_records(
+        ops_path=ops_path,
+        target="jira",
+        result="failed",
+        limit=10,
+    )
+    assert resolved_path == ops_path
+    assert len(records) == 1
+    assert records[0]["attempt_id"] == "a1"
+
+    ops_path.write_text("{not-json}\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="Invalid JSON in export ops log"):
+        list_export_ops_log_records(ops_path=ops_path)
+
+
+def test_replay_export_push_failures_dedupes_and_marks_unreplayable(tmp_path):
+    """Replay should dedupe failed keys, replay actionable check records, and continue on unreplayable."""
+    descriptor = load_system_descriptor_from_file(EXAMPLES_DIR / "medical_diagnosis.yaml")
+    report = ComplianceChecker().check(descriptor)
+    actionable_requirement = next(
+        requirement_id
+        for requirement_id, finding in report.findings.items()
+        if finding.status != ComplianceStatus.COMPLIANT
+    )
+
+    ops_path = tmp_path / ".eu_ai_act" / "export_ops_log.jsonl"
+    ops_path.parent.mkdir(parents=True, exist_ok=True)
+    ops_path.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "attempt_id": "old-failed",
+                        "generated_at": "2026-03-23T09:00:00+00:00",
+                        "target": "jira",
+                        "push_mode": "create",
+                        "source_type": "check",
+                        "system_name": descriptor.name,
+                        "descriptor_path": str(EXAMPLES_DIR / "medical_diagnosis.yaml"),
+                        "event_id": None,
+                        "requirement_id": actionable_requirement,
+                        "status": "non_compliant",
+                        "article": "Art. 10",
+                        "idempotency_key": "same-key",
+                        "operation": "create",
+                        "result": "failed",
+                        "http_status": 503,
+                        "attempts": 3,
+                        "retries_used": 2,
+                        "remote_ref": None,
+                        "failure_reason": "jira API returned HTTP 503",
+                    }
+                ),
+                json.dumps(
+                    {
+                        "attempt_id": "new-failed",
+                        "generated_at": "2026-03-23T10:00:00+00:00",
+                        "target": "jira",
+                        "push_mode": "create",
+                        "source_type": "check",
+                        "system_name": descriptor.name,
+                        "descriptor_path": str(EXAMPLES_DIR / "medical_diagnosis.yaml"),
+                        "event_id": None,
+                        "requirement_id": actionable_requirement,
+                        "status": "non_compliant",
+                        "article": "Art. 10",
+                        "idempotency_key": "same-key",
+                        "operation": "create",
+                        "result": "failed",
+                        "http_status": 503,
+                        "attempts": 3,
+                        "retries_used": 2,
+                        "remote_ref": None,
+                        "failure_reason": "jira API returned HTTP 503",
+                    }
+                ),
+                json.dumps(
+                    {
+                        "attempt_id": "missing-history",
+                        "generated_at": "2026-03-23T11:00:00+00:00",
+                        "target": "jira",
+                        "push_mode": "create",
+                        "source_type": "history",
+                        "system_name": "History System",
+                        "descriptor_path": None,
+                        "event_id": "missing-event-id",
+                        "requirement_id": actionable_requirement,
+                        "status": "partial",
+                        "article": "Art. 13",
+                        "idempotency_key": "history-key",
+                        "operation": "create",
+                        "result": "failed",
+                        "http_status": 500,
+                        "attempts": 1,
+                        "retries_used": 0,
+                        "remote_ref": None,
+                        "failure_reason": "history source failed",
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    payload = replay_export_push_failures(
+        target="jira",
+        ops_path=ops_path,
+        limit=10,
+        dry_run=True,
+    )
+
+    assert payload["selected_count"] == 2
+    assert payload["replayed_count"] == 1
+    assert payload["failed_count"] == 0
+    assert payload["unreplayable_count"] == 1
+    replayed = [item for item in payload["results"] if item["status"] == "replayed"]
+    assert len(replayed) == 1
+    assert replayed[0]["push_result"]["dry_run"] is True
+
+
+def test_summarize_export_ops_rollup_counts_open_failures(tmp_path):
+    """Rollup should aggregate metrics/distributions and compute open failures from latest key state."""
+    ops_path = tmp_path / ".eu_ai_act" / "export_ops_log.jsonl"
+    ledger_path = tmp_path / ".eu_ai_act" / "export_push_ledger.jsonl"
+    ops_path.parent.mkdir(parents=True, exist_ok=True)
+    ops_path.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "attempt_id": "a1",
+                        "generated_at": "2026-03-23T09:00:00+00:00",
+                        "target": "jira",
+                        "push_mode": "create",
+                        "operation": "create",
+                        "result": "failed",
+                        "system_name": "System A",
+                        "idempotency_key": "k1",
+                        "failure_reason": "HTTP 503",
+                    }
+                ),
+                json.dumps(
+                    {
+                        "attempt_id": "a2",
+                        "generated_at": "2026-03-23T10:00:00+00:00",
+                        "target": "jira",
+                        "push_mode": "create",
+                        "operation": "create",
+                        "result": "success",
+                        "system_name": "System A",
+                        "idempotency_key": "k1",
+                        "failure_reason": None,
+                    }
+                ),
+                json.dumps(
+                    {
+                        "attempt_id": "a3",
+                        "generated_at": "2026-03-23T11:00:00+00:00",
+                        "target": "jira",
+                        "push_mode": "upsert",
+                        "operation": "update",
+                        "result": "failed",
+                        "system_name": "System B",
+                        "idempotency_key": "k2",
+                        "failure_reason": "HTTP 400",
+                    }
+                ),
+                json.dumps(
+                    {
+                        "attempt_id": "a4",
+                        "generated_at": "2026-03-23T12:00:00+00:00",
+                        "target": "jira",
+                        "push_mode": "create",
+                        "operation": "skip_duplicate",
+                        "result": "skipped_duplicate",
+                        "system_name": "System C",
+                        "idempotency_key": "k3",
+                        "failure_reason": None,
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    ledger_path.write_text(
+        json.dumps(
+            {
+                "idempotency_key": "k1",
+                "target": "jira",
+                "system_name": "System A",
+                "descriptor_path": "/tmp/a.yaml",
+                "requirement_id": "Art. 10",
+                "status": "non_compliant",
+                "remote_ref": "EUAI-1",
+                "pushed_at": "2026-03-23T10:00:00+00:00",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    payload = summarize_export_ops_rollup(
+        ops_path=ops_path,
+        idempotency_path=ledger_path,
+    )
+
+    metrics = payload["metrics"]
+    assert metrics["total_attempts"] == 4
+    assert metrics["success_count"] == 1
+    assert metrics["failed_count"] == 2
+    assert metrics["skipped_duplicate_count"] == 1
+    assert metrics["open_failures_count"] == 1
+    assert payload["distributions"]["by_operation"]["create"] == 2
+    assert payload["distributions"]["by_operation"]["update"] == 1
+    assert payload["distributions"]["by_operation"]["skip_duplicate"] == 1
+    assert "System B" in payload["systems_with_failures"]
+
+
+def test_push_success_with_ops_log_write_error_keeps_success(monkeypatch):
+    """Ops log write failures should not fail push and should surface warning in push result."""
+    descriptor = load_system_descriptor_from_file(EXAMPLES_DIR / "medical_diagnosis.yaml")
+    report = ComplianceChecker().check(descriptor)
+    for requirement_id in list(report.findings.keys()):
+        report.findings[requirement_id].status = ComplianceStatus.NON_COMPLIANT
+    envelope = ExportGenerator().from_check(report=report, target="jira")
+
+    monkeypatch.setenv("EU_AI_ACT_JIRA_BASE_URL", "https://example.atlassian.net")
+    monkeypatch.setenv("EU_AI_ACT_JIRA_EMAIL", "ops@example.com")
+    monkeypatch.setenv("EU_AI_ACT_JIRA_API_TOKEN", "secret")
+    monkeypatch.setenv("EU_AI_ACT_JIRA_PROJECT_KEY", "EUAI")
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(status_code=201, json={"key": "EUAI-100"})
+
+    transport = httpx.MockTransport(handler)
+    original_client = httpx.Client
+
+    def _fake_client(*args, **kwargs):
+        return original_client(transport=transport)
+
+    monkeypatch.setattr("eu_ai_act.exporter.httpx.Client", _fake_client)
+
+    def _raise_ops_write_error(_self, _record):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(ExportPusher, "_append_ops_log_record", _raise_ops_write_error)
+
+    result = ExportPusher(idempotency_enabled=False).push(envelope)
+    assert result["pushed_count"] == len(envelope.adapter_payload["issues"])
+    assert isinstance(result.get("ops_log_warning"), str)
+    assert "export ops log" in result["ops_log_warning"]
