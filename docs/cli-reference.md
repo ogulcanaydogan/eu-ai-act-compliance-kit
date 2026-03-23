@@ -33,8 +33,23 @@ Options:
 
 - `--json`: machine-readable output
 
-JSON includes `summary`, `findings`, `transparency`, `gpai_summary`, and `audit_trail`.
+JSON includes `summary`, `findings`, `transparency`, `gpai_summary`, `security_summary`, and `audit_trail`.
 Each successful run also attempts a best-effort history append to `.eu_ai_act/history.jsonl`.
+
+## `security-map`
+
+Maps compliance findings to OWASP LLM Top 10 controls.
+
+```bash
+ai-act security-map <system.yaml>
+ai-act security-map <system.yaml> --json
+ai-act security-map <system.yaml> --json -o security_map.json
+```
+
+Options:
+
+- `--json`: machine-readable output
+- `-o, --output PATH`: write JSON payload to file
 
 ## `checklist`
 
@@ -73,6 +88,7 @@ PDF notes:
 - install optional dependency: `pip install -e ".[reporting]"`
 
 `report` runs also append a history event (best effort). History write failures emit warning output but do not fail the command.
+Report payloads include non-breaking `security_mapping` output alongside compliance, transparency, and GPAI sections.
 
 ## `dashboard build`
 

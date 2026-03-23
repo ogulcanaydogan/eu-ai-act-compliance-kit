@@ -26,6 +26,10 @@ From `eu_ai_act`:
 - `GPAIModelInfo`
 - `GPAIAssessment`
 - `GPAIAssessor`
+- `SecurityMapper`
+- `SecurityMappingResult`
+- `SecurityMappingSummary`
+- `SecurityControlResult`
 
 ## Loading Descriptors
 
@@ -127,3 +131,14 @@ with open("report.pdf", "wb") as f:
 Supported report formats: `json`, `md`, `html`.
 PDF is available via `generate_pdf_report(...) -> bytes` and requires optional dependency:
 `pip install -e ".[reporting]"`.
+
+## OWASP Security Mapping
+
+```python
+from eu_ai_act.security_mapping import SecurityMapper
+
+security_mapping = SecurityMapper().map_from_compliance(report)
+print(security_mapping.framework)
+print(security_mapping.summary.to_dict())
+print(security_mapping.controls[0].to_dict())
+```

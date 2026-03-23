@@ -71,6 +71,7 @@ pip install -e ".[reporting]"
 ai-act validate examples/medical_diagnosis.yaml
 ai-act classify examples/medical_diagnosis.yaml --json
 ai-act check examples/medical_diagnosis.yaml --json
+ai-act security-map examples/medical_diagnosis.yaml --json
 ai-act checklist examples/medical_diagnosis.yaml --format md -o checklist.md
 ai-act report examples/medical_diagnosis.yaml --format html -o report.html
 ai-act export check examples/medical_diagnosis.yaml --target generic --json
@@ -80,6 +81,7 @@ ai-act export check examples/medical_diagnosis.yaml --target generic --json
 
 - `ai-act classify <system.yaml> [--json]`
 - `ai-act check <system.yaml> [--json]`
+- `ai-act security-map <system.yaml> [--json] [--output PATH]`
 - `ai-act checklist <system.yaml> [--format json|md|html]`
 - `ai-act transparency <system.yaml> [--json]`
 - `ai-act gpai <model.yaml> [--json]`
@@ -213,6 +215,7 @@ pre-commit run --hook-stage pre-push --all-files
 - Phase 20: quality and coverage hardening completed (example matrix + CI/test contract gates)
 - Phase 21: export v3 reliability completed (reconcile drift detection + guarded repair with explicit `--apply`)
 - Phase 22: export v4 ops completed (persistent ops log + `export replay` and `export rollup`)
+- Phase 23: OWASP security mapping core completed (`security-map` command + `check/report` security integration)
 
 ## Disclaimer
 

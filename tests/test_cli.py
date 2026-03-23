@@ -30,7 +30,7 @@ class TestCLI:
 
         assert result.exit_code == 0
         assert "version" in result.output.lower()
-        assert "0.1.13" in result.output
+        assert "0.1.14" in result.output
         assert "runtimeerror" not in result.output.lower()
 
     def test_articles_uses_normalized_mapping(self):
@@ -60,6 +60,7 @@ class TestCLI:
         assert "findings" in payload
         assert "transparency" in payload
         assert "gpai_summary" in payload
+        assert "security_summary" in payload
         assert "audit_trail" in payload
         assert "generated_at" in payload
 
@@ -70,6 +71,41 @@ class TestCLI:
         assert "partial_count" in summary
         assert "not_assessed_count" in summary
         assert "compliance_percentage" in summary
+
+        security_summary = payload["security_summary"]
+        assert security_summary["framework"] == "owasp-llm-top-10"
+        assert security_summary["total_controls"] == 10
+        assert "coverage_percentage" in security_summary
+
+    def test_security_map_json_contract_and_output_file(self):
+        """`security-map --json` should return OWASP payload and support file output."""
+        runner = CliRunner()
+        system_yaml = EXAMPLES_DIR / "medical_diagnosis.yaml"
+
+        with runner.isolated_filesystem():
+            output_path = Path("security_map.json")
+            result = runner.invoke(
+                main,
+                [
+                    "security-map",
+                    str(system_yaml),
+                    "--json",
+                    "--output",
+                    str(output_path),
+                ],
+            )
+
+            assert result.exit_code == 0
+            assert output_path.exists()
+            payload = json.loads(output_path.read_text(encoding="utf-8"))
+
+        assert payload["system_name"] == "Medical Imaging Diagnosis AI"
+        assert payload["framework"] == "owasp-llm-top-10"
+        assert payload["risk_tier"] == "high_risk"
+        assert "generated_at" in payload
+        assert "summary" in payload
+        assert isinstance(payload["controls"], list)
+        assert len(payload["controls"]) == 10
 
     def test_markdown_outputs_use_real_timestamps(self):
         """Checklist/report markdown outputs should not contain literal shell placeholders."""
@@ -162,6 +198,7 @@ class TestCLI:
         json_payload = json.loads(json_result.output[json_result.output.find("{") :])
         assert "transparency_findings" in json_payload
         assert "gpai_assessment" in json_payload
+        assert "security_mapping" in json_payload
         assert "compliance_findings" in json_payload
         assert "audit_trail" in json_payload
         assert "recommended_actions" in json_payload
@@ -170,10 +207,12 @@ class TestCLI:
 
         assert "## Transparency Findings" in md_result.output
         assert "## GPAI Assessment" in md_result.output
+        assert "## Security Mapping (OWASP LLM Top 10)" in md_result.output
         assert "## Recommended Actions" in md_result.output
         assert "## Audit Trail" in md_result.output
         assert "Transparency Findings" in html_result.output
         assert "GPAI Assessment" in html_result.output
+        assert "Security Mapping (OWASP LLM Top 10)" in html_result.output
         assert "Recommended Actions" in html_result.output
         assert "Audit Trail" in html_result.output
 
