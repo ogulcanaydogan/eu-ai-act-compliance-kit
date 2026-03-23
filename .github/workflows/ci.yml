@@ -195,26 +195,32 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
-      - name: Run export gate observe-mode smoke
+      - name: Run export gate rollout smoke (PR observe, main/tag enforce)
+        env:
+          GATE_MODE: ${{ github.event_name == 'pull_request' && 'observe' || 'enforce' }}
         run: |
           mkdir -p /tmp/export-gate-smoke/.eu_ai_act
           cat > /tmp/export-gate-smoke/.eu_ai_act/export_ops_log.jsonl <<'JSONL'
-          {"attempt_id":"a1","generated_at":"2026-03-23T10:00:00+00:00","target":"jira","push_mode":"create","operation":"create","result":"failed","system_name":"Smoke System","idempotency_key":"k1","failure_reason":"HTTP 503"}
-          {"attempt_id":"a2","generated_at":"2026-03-23T11:00:00+00:00","target":"jira","push_mode":"create","operation":"create","result":"success","system_name":"Smoke System","idempotency_key":"k1","failure_reason":null}
+          {"attempt_id":"a1","generated_at":"2026-03-23T10:00:00+00:00","target":"jira","push_mode":"create","operation":"create","result":"success","system_name":"Smoke System","idempotency_key":"k1","failure_reason":null}
+          {"attempt_id":"a2","generated_at":"2026-03-23T11:00:00+00:00","target":"jira","push_mode":"create","operation":"create","result":"success","system_name":"Smoke System","idempotency_key":"k2","failure_reason":null}
           JSONL
           cat > /tmp/export-gate-smoke/.eu_ai_act/export_push_ledger.jsonl <<'JSONL'
           {"idempotency_key":"k1","target":"jira","system_name":"Smoke System","descriptor_path":"/tmp/smoke.yaml","requirement_id":"Art. 10","status":"non_compliant","remote_ref":"EUAI-1","pushed_at":"2026-03-23T11:00:00+00:00"}
+          {"idempotency_key":"k2","target":"jira","system_name":"Smoke System","descriptor_path":"/tmp/smoke.yaml","requirement_id":"Art. 11","status":"partial","remote_ref":"EUAI-2","pushed_at":"2026-03-23T11:05:00+00:00"}
           JSONL
           cat > /tmp/export-gate-smoke/.eu_ai_act/export_reconcile_log.jsonl <<'JSONL'
           {"reconcile_id":"r1","generated_at":"2026-03-23T12:00:00+00:00","target":"jira","system_name":"Smoke System","requirement_id":"Art. 10","status":"exists","drift_status":"in_sync","http_status":200,"failure_reason":null,"repair_enabled":false,"apply":false}
+          {"reconcile_id":"r2","generated_at":"2026-03-23T12:01:00+00:00","target":"jira","system_name":"Smoke System","requirement_id":"Art. 11","status":"exists","drift_status":"in_sync","http_status":200,"failure_reason":null,"repair_enabled":false,"apply":false}
           JSONL
-          ai-act export gate --target jira --mode observe --ops-path /tmp/export-gate-smoke/.eu_ai_act/export_ops_log.jsonl --reconcile-log-path /tmp/export-gate-smoke/.eu_ai_act/export_reconcile_log.jsonl --json > /tmp/export-gate-smoke/gate.json
+          ai-act export gate --target jira --mode "$GATE_MODE" --policy config/export_ops_gate_policy.yaml --ops-path /tmp/export-gate-smoke/.eu_ai_act/export_ops_log.jsonl --reconcile-log-path /tmp/export-gate-smoke/.eu_ai_act/export_reconcile_log.jsonl --json > /tmp/export-gate-smoke/gate.json
           python - <<'PY'
           import json
           from pathlib import Path
 
           payload = json.loads(Path("/tmp/export-gate-smoke/gate.json").read_text())
-          assert payload["mode"] == "observe"
+          assert payload["mode"] in {"observe", "enforce"}
+          assert payload["failed"] is False
+          assert payload["reason_codes"] == []
           assert "effective_policy" in payload
           assert "rollup_metrics" in payload
           assert "reconcile_metrics" in payload
@@ -326,6 +332,8 @@ jobs:
           fail_on_high_risk: "true"
           security_gate_mode: "observe"
           security_gate_profile: "balanced"
+          export_ops_gate_mode: "observe"
+          export_ops_gate_target: "jira"
           report_format: json
           report_path: minimal_report.json
 
@@ -336,6 +344,9 @@ jobs:
           test "${{ steps.minimal.outputs.security_non_compliant_count }}" = "0"
           test "${{ steps.minimal.outputs.security_partial_count }}" = "0"
           [[ "${{ steps.minimal.outputs.security_not_assessed_count }}" =~ ^[0-9]+$ ]]
+          [[ "${{ steps.minimal.outputs.export_ops_gate_failed }}" =~ ^(true|false)$ ]]
+          [[ "${{ steps.minimal.outputs.export_ops_open_failures_count }}" =~ ^[0-9]+$ ]]
+          [[ "${{ steps.minimal.outputs.export_ops_drift_count }}" =~ ^[0-9]+$ ]]
           test -f minimal_report.json
 
       - name: Create high-risk non-compliant fixture

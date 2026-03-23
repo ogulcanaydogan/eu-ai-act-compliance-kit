@@ -114,6 +114,9 @@ Full reference: [docs/cli-reference.md](docs/cli-reference.md)
 - `export check|history|batch` payloads include additive top-level `security_mapping`.
 - Security policy remains backward-compatible: default mode is `observe`, default profile is `balanced`.
 - Export operations governance supports policy-based gate evaluation via `ai-act export gate` (default `observe`, optional `enforce`).
+- Action + CI rollout now uses a shared export-ops policy file with tiered mode:
+  - pull requests: `observe`
+  - main/tag flows: `enforce`
 
 ## Example Systems
 
@@ -145,12 +148,18 @@ Outputs:
 - `security_partial_count`
 - `security_not_assessed_count`
 - `security_gate_failed`
+- `export_ops_gate_failed`
+- `export_ops_gate_reason_codes`
+- `export_ops_open_failures_count`
+- `export_ops_drift_count`
+- `export_ops_success_rate`
 
 Fail policy:
 
 - `unacceptable` always fails
 - `high_risk` fails only when `fail_on_high_risk=true` and `non_compliant_count > 0`
 - security gate fails only when `security_gate_mode=enforce` and action-evaluated `security_gate_failed=true`
+- export-ops gate fails only when `export_ops_gate_mode=enforce` and action-evaluated export governance result is failed
 
 ## For UK Global Talent Evidence
 
@@ -241,6 +250,7 @@ pre-commit run --hook-stage pre-push --all-files
 - Phase 25: enforceable security gate completed (observe-by-default + optional enforce mode across CLI/action/CI)
 - Phase 26: security gate v2 completed (profiles + tier-aware policy, observe default preserved)
 - Phase 27: export ops governance completed (`export gate` + reconcile log continuity + observe-only CI smoke gate)
+- Phase 28: export ops governance enforce rollout completed (shared policy file + PR observe/main-tag enforce across action and CI)
 
 ## Disclaimer
 
