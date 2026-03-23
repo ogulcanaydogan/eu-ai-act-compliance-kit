@@ -287,6 +287,7 @@ jobs:
         run: |
           test "${{ steps.minimal.outputs.risk_tier }}" = "minimal"
           test "${{ steps.minimal.outputs.non_compliant_count }}" = "0"
+          test "${{ steps.minimal.outputs.security_non_compliant_count }}" = "0"
           test -f minimal_report.json
 
       - name: Create high-risk non-compliant fixture
@@ -329,6 +330,24 @@ jobs:
         run: |
           if [[ "${{ steps.highrisk.outcome }}" != "failure" ]]; then
             echo "Expected high-risk non-compliant gate failure"
+            exit 1
+          fi
+
+      - name: Security gate enforce mode should fail on non-compliant controls
+        id: securitygate
+        continue-on-error: true
+        uses: ./
+        with:
+          system_yaml: /tmp/high_risk_noncompliant.yaml
+          fail_on_high_risk: "false"
+          security_gate_mode: "enforce"
+          report_format: json
+          report_path: security_gate_report.json
+
+      - name: Assert security gate enforcement failure
+        run: |
+          if [[ "${{ steps.securitygate.outcome }}" != "failure" ]]; then
+            echo "Expected security-gate enforce mode failure"
             exit 1
           fi
 

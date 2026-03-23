@@ -41,6 +41,7 @@ checks transparency and GPAI obligations, and renders audit-oriented reports.
 - Phase 22: Export V4 ops completed (persistent ops log + replay/rollup operational flows)
 - Phase 23: OWASP security mapping core completed (`security-map` command + `check/report` integration)
 - Phase 24: Security ops integration completed (additive security snapshots in dashboard/history/export, observe-only gate policy)
+- Phase 25: Enforceable security gate completed (observe-by-default + optional enforce mode in `check` and action gate surfaces)
 
 ## End-to-End Flow
 

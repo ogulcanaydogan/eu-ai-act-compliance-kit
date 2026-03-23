@@ -30,7 +30,7 @@ class TestCLI:
 
         assert result.exit_code == 0
         assert "version" in result.output.lower()
-        assert "0.1.15" in result.output
+        assert "0.1.16" in result.output
         assert "runtimeerror" not in result.output.lower()
 
     def test_articles_uses_normalized_mapping(self):
@@ -61,6 +61,7 @@ class TestCLI:
         assert "transparency" in payload
         assert "gpai_summary" in payload
         assert "security_summary" in payload
+        assert "security_gate" in payload
         assert "audit_trail" in payload
         assert "generated_at" in payload
 
@@ -76,6 +77,39 @@ class TestCLI:
         assert security_summary["framework"] == "owasp-llm-top-10"
         assert security_summary["total_controls"] == 10
         assert "coverage_percentage" in security_summary
+
+        security_gate = payload["security_gate"]
+        assert security_gate["mode"] == "observe"
+        assert security_gate["failed"] is False
+        assert security_gate["reason"] == "observe_mode_no_blocking"
+
+    def test_check_security_gate_enforce_returns_nonzero_for_non_compliant_controls(self):
+        """`check --security-gate enforce` should fail when security non-compliant controls exist."""
+        runner = CliRunner()
+        system_yaml = EXAMPLES_DIR / "public_benefits_triage.yaml"
+        result = runner.invoke(
+            main,
+            ["check", str(system_yaml), "--json", "--security-gate", "enforce"],
+        )
+
+        assert result.exit_code != 0
+        json_start = result.output.find("{")
+        payload = json.loads(result.output[json_start:])
+        assert payload["security_gate"]["mode"] == "enforce"
+        assert payload["security_gate"]["failed"] is True
+        assert payload["security_gate"]["non_compliant_count"] > 0
+
+    def test_check_rejects_invalid_security_gate_mode(self):
+        """`check --security-gate` should validate allowed values."""
+        runner = CliRunner()
+        system_yaml = EXAMPLES_DIR / "medical_diagnosis.yaml"
+        result = runner.invoke(
+            main,
+            ["check", str(system_yaml), "--security-gate", "invalid-mode"],
+        )
+
+        assert result.exit_code != 0
+        assert "Invalid value for '--security-gate'" in result.output
 
     def test_security_map_json_contract_and_output_file(self):
         """`security-map --json` should return OWASP payload and support file output."""

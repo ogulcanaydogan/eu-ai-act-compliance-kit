@@ -27,15 +27,18 @@ Runs requirement-level compliance checks.
 ```bash
 ai-act check <system.yaml>
 ai-act check <system.yaml> --json
+ai-act check <system.yaml> --json --security-gate observe
+ai-act check <system.yaml> --json --security-gate enforce
 ```
 
 Options:
 
 - `--json`: machine-readable output
+- `--security-gate [observe|enforce]`: security gate mode (default: `observe`)
 
-JSON includes `summary`, `findings`, `transparency`, `gpai_summary`, `security_summary`, and `audit_trail`.
+JSON includes `summary`, `findings`, `transparency`, `gpai_summary`, `security_summary`, `security_gate`, and `audit_trail`.
 Each successful run also attempts a best-effort history append to `.eu_ai_act/history.jsonl`.
-Security signals are observe-only in this phase and do not alter CI fail policy.
+Default mode is observe-only. In `enforce` mode, command exits non-zero when `security_summary.non_compliant_count > 0`.
 
 ## `security-map`
 
