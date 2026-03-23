@@ -212,6 +212,7 @@ pre-commit run --hook-stage pre-push --all-files
 - Phase 19: export ops hardening completed (`export batch` + `export reconcile` for operational reliability)
 - Phase 20: quality and coverage hardening completed (example matrix + CI/test contract gates)
 - Phase 21: export v3 reliability completed (reconcile drift detection + guarded repair with explicit `--apply`)
+- Phase 22: export v4 ops completed (persistent ops log + `export replay` and `export rollup`)
 
 ## Disclaimer
 

@@ -8,14 +8,15 @@ import os
 import re
 import time
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal
+from uuid import uuid4
 
 import httpx
 
 from eu_ai_act.checker import ComplianceChecker, ComplianceReport
-from eu_ai_act.history import HistoryEvent
+from eu_ai_act.history import HistoryEvent, get_event
 from eu_ai_act.schema import load_system_descriptor_from_file
 
 ExportTarget = Literal["generic", "jira", "servicenow"]
@@ -72,6 +73,31 @@ def resolve_export_push_ledger_path(
     return base_dir / ".eu_ai_act" / "export_push_ledger.jsonl"
 
 
+def resolve_export_ops_log_path(
+    ops_path: str | Path | None = None,
+    *,
+    cwd: str | Path | None = None,
+) -> Path:
+    """Resolve explicit or default export operations log path."""
+    current_dir = Path(cwd).resolve() if cwd else Path.cwd().resolve()
+    path_input: str | Path | None = ops_path
+
+    if path_input is None:
+        env_path = os.getenv("EU_AI_ACT_EXPORT_OPS_LOG_PATH")
+        if env_path:
+            path_input = env_path
+
+    if path_input is not None:
+        candidate = Path(path_input).expanduser()
+        if not candidate.is_absolute():
+            candidate = (current_dir / candidate).resolve()
+        return candidate
+
+    project_root = _find_project_root(current_dir)
+    base_dir = project_root if project_root else current_dir
+    return base_dir / ".eu_ai_act" / "export_ops_log.jsonl"
+
+
 def _read_export_push_ledger_records(ledger_path: Path) -> list[dict[str, Any]]:
     if not ledger_path.exists():
         return []
@@ -94,6 +120,94 @@ def _read_export_push_ledger_records(ledger_path: Path) -> list[dict[str, Any]]:
                 )
             records.append(record)
     return records
+
+
+def _read_export_ops_log_records(ops_log_path: Path) -> list[dict[str, Any]]:
+    if not ops_log_path.exists():
+        return []
+
+    records: list[dict[str, Any]] = []
+    with ops_log_path.open("r", encoding="utf-8") as handle:
+        for line_number, line in enumerate(handle, start=1):
+            payload_line = line.strip()
+            if not payload_line:
+                continue
+            try:
+                record = json.loads(payload_line)
+            except json.JSONDecodeError as exc:
+                raise ValueError(
+                    f"Invalid JSON in export ops log at line {line_number}: {exc.msg}"
+                ) from exc
+            if not isinstance(record, dict):
+                raise ValueError(
+                    f"Invalid export ops log record at line {line_number}: expected object."
+                )
+            records.append(record)
+    return records
+
+
+def _parse_iso_datetime(value: str | None) -> datetime | None:
+    if value is None:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
+
+
+def list_export_ops_log_records(
+    *,
+    ops_path: str | Path | None = None,
+    cwd: str | Path | None = None,
+    target: ExportTarget | None = None,
+    system_name: str | None = None,
+    requirement_id: str | None = None,
+    result: str | None = None,
+    since_hours: float | None = None,
+    limit: int | None = None,
+) -> tuple[Path, list[dict[str, Any]]]:
+    """List export operation records with deterministic filtering."""
+    if since_hours is not None and since_hours < 0:
+        raise ValueError("since_hours must be >= 0.")
+    if limit is not None and limit < 1:
+        raise ValueError("limit must be >= 1.")
+
+    ops_log_path = resolve_export_ops_log_path(ops_path, cwd=cwd)
+    records = _read_export_ops_log_records(ops_log_path)
+
+    if target:
+        records = [record for record in records if record.get("target") == target]
+    if system_name:
+        records = [record for record in records if record.get("system_name") == system_name]
+    if requirement_id:
+        records = [record for record in records if record.get("requirement_id") == requirement_id]
+    if result:
+        records = [record for record in records if record.get("result") == result]
+    if since_hours is not None:
+        threshold = datetime.now(UTC) - timedelta(hours=since_hours)
+        filtered: list[dict[str, Any]] = []
+        for record in records:
+            generated_at = record.get("generated_at")
+            generated_at_dt = (
+                _parse_iso_datetime(str(generated_at)) if isinstance(generated_at, str) else None
+            )
+            if generated_at_dt is None or generated_at_dt >= threshold:
+                filtered.append(record)
+        records = filtered
+
+    records.sort(
+        key=lambda record: (
+            str(record.get("generated_at") or ""),
+            str(record.get("attempt_id") or ""),
+        ),
+        reverse=True,
+    )
+    if limit is not None:
+        records = records[:limit]
+    return ops_log_path, records
 
 
 def list_export_push_ledger_records(
@@ -271,6 +385,7 @@ def run_export_batch(
     success_count = 0
     failure_count = 0
     invalid_count = 0
+    ops_log_warnings: list[str] = []
     results: list[dict[str, Any]] = []
 
     for descriptor_file in descriptor_files:
@@ -310,11 +425,17 @@ def run_export_batch(
                     dry_run=dry_run,
                     push_mode=push_mode,
                 )
+                ops_warning = result_entry["push_result"].get("ops_log_warning")
+                if isinstance(ops_warning, str) and ops_warning:
+                    ops_log_warnings.append(f"{descriptor_path}: {ops_warning}")
             except ExportPushError as exc:
                 failure_count += 1
                 result_entry["status"] = "failed"
                 result_entry["error"] = str(exc)
                 result_entry["push_result"] = exc.push_result
+                ops_warning = exc.push_result.get("ops_log_warning")
+                if isinstance(ops_warning, str) and ops_warning:
+                    ops_log_warnings.append(f"{descriptor_path}: {ops_warning}")
                 results.append(result_entry)
                 continue
             except Exception as exc:
@@ -349,7 +470,386 @@ def run_export_batch(
         "success_count": success_count,
         "failure_count": failure_count,
         "invalid_count": invalid_count,
+        "ops_log_warnings": ops_log_warnings,
         "results": results,
+    }
+
+
+def _filter_envelope_to_requirement(
+    envelope: ExportEnvelope,
+    *,
+    requirement_id: str,
+) -> ExportEnvelope | None:
+    matching_item = next(
+        (item for item in envelope.items if item.requirement_id == requirement_id), None
+    )
+    if matching_item is None or not matching_item.actionable:
+        return None
+
+    filtered_envelope = ExportEnvelope(
+        schema_version=envelope.schema_version,
+        generated_at=envelope.generated_at,
+        source_type=envelope.source_type,
+        target=envelope.target,
+        system_name=envelope.system_name,
+        risk_tier=envelope.risk_tier,
+        summary=dict(envelope.summary),
+        items=[matching_item],
+        event_id=envelope.event_id,
+        event_type=envelope.event_type,
+        descriptor_path=envelope.descriptor_path,
+        history_generated_at=envelope.history_generated_at,
+    )
+
+    adapter_payload = envelope.adapter_payload or {}
+    if envelope.target == "jira":
+        issues = adapter_payload.get("issues")
+        if not isinstance(issues, list):
+            return None
+        actionable_items = [item for item in envelope.items if item.actionable]
+        try:
+            actionable_index = next(
+                index
+                for index, item in enumerate(actionable_items)
+                if item.requirement_id == requirement_id
+            )
+        except StopIteration:
+            return None
+        if actionable_index >= len(issues):
+            return None
+        filtered_envelope.adapter_payload = {
+            "format": "jira/issues/v1",
+            "issues": [issues[actionable_index]],
+            "actionable_count": 1,
+            "skipped_compliant_count": 0,
+        }
+        return filtered_envelope
+
+    if envelope.target == "servicenow":
+        records = adapter_payload.get("records")
+        table = adapter_payload.get("table", "u_ai_act_compliance")
+        if not isinstance(records, list):
+            return None
+        actionable_items = [item for item in envelope.items if item.actionable]
+        try:
+            actionable_index = next(
+                index
+                for index, item in enumerate(actionable_items)
+                if item.requirement_id == requirement_id
+            )
+        except StopIteration:
+            return None
+        if actionable_index >= len(records):
+            return None
+        filtered_envelope.adapter_payload = {
+            "format": "servicenow/records/v1",
+            "table": table,
+            "records": [records[actionable_index]],
+            "actionable_count": 1,
+            "skipped_compliant_count": 0,
+        }
+        return filtered_envelope
+
+    return None
+
+
+def replay_export_push_failures(
+    *,
+    target: ExportTarget,
+    ops_path: str | Path | None = None,
+    system_name: str | None = None,
+    requirement_id: str | None = None,
+    since_hours: float | None = None,
+    limit: int = 25,
+    push_mode: PushMode = "create",
+    dry_run: bool = False,
+    max_retries: int = 3,
+    retry_backoff_seconds: float = 1.0,
+    timeout_seconds: float = 30.0,
+    idempotency_path: str | Path | None = None,
+    idempotency_enabled: bool = True,
+    cwd: str | Path | None = None,
+) -> dict[str, Any]:
+    """Replay failed export push operations from persistent ops log."""
+    if target == "generic":
+        raise ValueError("Replay is not supported for target 'generic'.")
+    if limit < 1:
+        raise ValueError("limit must be >= 1.")
+    if since_hours is not None and since_hours < 0:
+        raise ValueError("since_hours must be >= 0.")
+
+    ops_log_path, failed_records = list_export_ops_log_records(
+        ops_path=ops_path,
+        cwd=cwd,
+        target=target,
+        system_name=system_name,
+        requirement_id=requirement_id,
+        result="failed",
+        since_hours=since_hours,
+    )
+
+    selected_records: list[dict[str, Any]] = []
+    seen_keys: set[str] = set()
+    for record in failed_records:
+        raw_key = record.get("idempotency_key")
+        if isinstance(raw_key, str) and raw_key.strip():
+            dedupe_key = raw_key.strip()
+        else:
+            dedupe_key = f"attempt:{record.get('attempt_id')}"
+        if dedupe_key in seen_keys:
+            continue
+        seen_keys.add(dedupe_key)
+        selected_records.append(record)
+        if len(selected_records) >= limit:
+            break
+
+    checker = ComplianceChecker()
+    exporter = ExportGenerator()
+    pusher = ExportPusher(
+        timeout_seconds=timeout_seconds,
+        max_retries=max_retries,
+        retry_backoff_seconds=retry_backoff_seconds,
+        idempotency_path=idempotency_path,
+        idempotency_enabled=idempotency_enabled,
+        cwd=cwd,
+    )
+
+    replayed_count = 0
+    failed_count = 0
+    unreplayable_count = 0
+    results: list[dict[str, Any]] = []
+
+    for record in selected_records:
+        replay_entry: dict[str, Any] = {
+            "attempt_id": record.get("attempt_id"),
+            "source_type": record.get("source_type"),
+            "system_name": record.get("system_name"),
+            "descriptor_path": record.get("descriptor_path"),
+            "event_id": record.get("event_id"),
+            "requirement_id": record.get("requirement_id"),
+            "idempotency_key": record.get("idempotency_key"),
+            "status": "replayed",
+        }
+
+        source_type_raw = record.get("source_type")
+        source_type = str(source_type_raw) if source_type_raw is not None else ""
+        requirement_raw = record.get("requirement_id")
+        requirement = str(requirement_raw).strip() if requirement_raw is not None else ""
+        if not requirement:
+            unreplayable_count += 1
+            replay_entry["status"] = "unreplayable"
+            replay_entry["error"] = "Missing requirement_id in failed ops record."
+            results.append(replay_entry)
+            continue
+
+        try:
+            if source_type == "check":
+                descriptor_path_raw = record.get("descriptor_path")
+                descriptor_path = (
+                    str(descriptor_path_raw).strip() if descriptor_path_raw is not None else ""
+                )
+                if not descriptor_path:
+                    raise ValueError("Missing descriptor_path for check replay source.")
+                descriptor = load_system_descriptor_from_file(descriptor_path)
+                base_envelope = exporter.from_check(
+                    report=checker.check(descriptor),
+                    target=target,
+                    descriptor_path=str(Path(descriptor_path).resolve()),
+                )
+            elif source_type == "history":
+                event_id_raw = record.get("event_id")
+                event_id = str(event_id_raw).strip() if event_id_raw is not None else ""
+                if not event_id:
+                    raise ValueError("Missing event_id for history replay source.")
+                event = get_event(event_id)
+                base_envelope = exporter.from_history(event=event, target=target)
+            else:
+                raise ValueError(f"Unsupported source_type in failed ops record: {source_type}")
+        except Exception as exc:
+            unreplayable_count += 1
+            replay_entry["status"] = "unreplayable"
+            replay_entry["error"] = str(exc)
+            results.append(replay_entry)
+            continue
+
+        replay_envelope = _filter_envelope_to_requirement(
+            base_envelope,
+            requirement_id=requirement,
+        )
+        if replay_envelope is None:
+            unreplayable_count += 1
+            replay_entry["status"] = "unreplayable"
+            replay_entry["error"] = (
+                "Requirement not found or no longer actionable for replay source."
+            )
+            results.append(replay_entry)
+            continue
+
+        try:
+            push_result = pusher.push(
+                replay_envelope,
+                dry_run=dry_run,
+                push_mode=push_mode,
+            )
+            replayed_count += 1
+            replay_entry["push_result"] = push_result
+            if isinstance(push_result.get("ops_log_warning"), str):
+                replay_entry["ops_log_warning"] = push_result["ops_log_warning"]
+            results.append(replay_entry)
+        except ExportPushError as exc:
+            failed_count += 1
+            replay_entry["status"] = "failed"
+            replay_entry["error"] = str(exc)
+            replay_entry["push_result"] = exc.push_result
+            if isinstance(exc.push_result.get("ops_log_warning"), str):
+                replay_entry["ops_log_warning"] = exc.push_result["ops_log_warning"]
+            results.append(replay_entry)
+        except Exception as exc:
+            failed_count += 1
+            replay_entry["status"] = "failed"
+            replay_entry["error"] = str(exc)
+            results.append(replay_entry)
+
+    return {
+        "generated_at": _utc_now_iso(),
+        "target": target,
+        "ops_path": str(ops_log_path),
+        "selected_count": len(selected_records),
+        "replayed_count": replayed_count,
+        "failed_count": failed_count,
+        "unreplayable_count": unreplayable_count,
+        "results": results,
+    }
+
+
+def summarize_export_ops_rollup(
+    *,
+    ops_path: str | Path | None = None,
+    idempotency_path: str | Path | None = None,
+    cwd: str | Path | None = None,
+    target: ExportTarget | None = None,
+    system_name: str | None = None,
+    since_hours: float | None = None,
+    limit: int | None = None,
+) -> dict[str, Any]:
+    """Summarize export operations using ops log + idempotency ledger."""
+    if since_hours is not None and since_hours < 0:
+        raise ValueError("since_hours must be >= 0.")
+    if limit is not None and limit < 1:
+        raise ValueError("limit must be >= 1.")
+
+    ops_log_path, records = list_export_ops_log_records(
+        ops_path=ops_path,
+        cwd=cwd,
+        target=target,
+        system_name=system_name,
+        since_hours=since_hours,
+        limit=limit,
+    )
+    ledger_path, ledger_records = list_export_push_ledger_records(
+        idempotency_path=idempotency_path,
+        cwd=cwd,
+        target=target,
+        system_name=system_name,
+    )
+
+    total_attempts = len(records)
+    success_count = sum(1 for record in records if record.get("result") == "success")
+    failed_count = sum(1 for record in records if record.get("result") == "failed")
+    skipped_duplicate_count = sum(
+        1 for record in records if record.get("result") == "skipped_duplicate"
+    )
+    success_rate = round((success_count / total_attempts) * 100, 2) if total_attempts else 0.0
+
+    by_target: dict[str, int] = {}
+    by_push_mode: dict[str, int] = {}
+    by_operation: dict[str, int] = {}
+    failure_reason_counts: dict[str, int] = {}
+    systems_with_failures: set[str] = set()
+
+    latest_success_at: str | None = None
+    latest_failure_at: str | None = None
+
+    latest_by_idempotency_key: dict[str, dict[str, Any]] = {}
+    for record in records:
+        target_key = str(record.get("target") or "unknown")
+        push_mode_key = str(record.get("push_mode") or "unknown")
+        operation_key = str(record.get("operation") or "unknown")
+        result_key = str(record.get("result") or "unknown")
+
+        by_target[target_key] = by_target.get(target_key, 0) + 1
+        by_push_mode[push_mode_key] = by_push_mode.get(push_mode_key, 0) + 1
+        by_operation[operation_key] = by_operation.get(operation_key, 0) + 1
+
+        generated_at = str(record.get("generated_at") or "")
+        if result_key == "success":
+            latest_success_at = max(latest_success_at or generated_at, generated_at)
+        elif result_key == "failed":
+            latest_failure_at = max(latest_failure_at or generated_at, generated_at)
+            failure_reason = str(record.get("failure_reason") or "unknown")
+            failure_reason_counts[failure_reason] = failure_reason_counts.get(failure_reason, 0) + 1
+            system_value = str(record.get("system_name") or "").strip()
+            if system_value:
+                systems_with_failures.add(system_value)
+
+        idempotency_key = record.get("idempotency_key")
+        if isinstance(idempotency_key, str) and idempotency_key.strip():
+            current = latest_by_idempotency_key.get(idempotency_key)
+            if current is None:
+                latest_by_idempotency_key[idempotency_key] = record
+                continue
+            current_generated_at = str(current.get("generated_at") or "")
+            if generated_at >= current_generated_at:
+                latest_by_idempotency_key[idempotency_key] = record
+
+    ledger_keys: set[str] = set()
+    for ledger_record in ledger_records:
+        key = ledger_record.get("idempotency_key")
+        if isinstance(key, str) and key.strip():
+            ledger_keys.add(key)
+
+    failed_latest_keys = {
+        key
+        for key, record in latest_by_idempotency_key.items()
+        if str(record.get("result") or "") == "failed"
+    }
+    open_failures_count = len(failed_latest_keys - ledger_keys)
+
+    top_failure_reason_pairs = sorted(
+        failure_reason_counts.items(),
+        key=lambda item: (-item[1], item[0]),
+    )[:10]
+    top_failure_reasons = [
+        {"reason": reason, "count": count} for reason, count in top_failure_reason_pairs
+    ]
+
+    return {
+        "generated_at": _utc_now_iso(),
+        "window": {
+            "target": target,
+            "system_name": system_name,
+            "since_hours": since_hours,
+            "limit": limit,
+        },
+        "metrics": {
+            "total_attempts": total_attempts,
+            "success_count": success_count,
+            "failed_count": failed_count,
+            "skipped_duplicate_count": skipped_duplicate_count,
+            "success_rate": success_rate,
+            "latest_success_at": latest_success_at,
+            "latest_failure_at": latest_failure_at,
+            "open_failures_count": open_failures_count,
+        },
+        "distributions": {
+            "by_target": dict(sorted(by_target.items())),
+            "by_push_mode": dict(sorted(by_push_mode.items())),
+            "by_operation": dict(sorted(by_operation.items())),
+        },
+        "systems_with_failures": sorted(systems_with_failures),
+        "top_failure_reasons": top_failure_reasons,
+        "ops_path": str(ops_log_path),
+        "idempotency_path": str(ledger_path),
     }
 
 
@@ -1026,6 +1526,7 @@ class ExportPusher:
         max_retries: int = 3,
         retry_backoff_seconds: float = 1.0,
         idempotency_path: str | Path | None = None,
+        ops_path: str | Path | None = None,
         idempotency_enabled: bool = True,
         cwd: str | Path | None = None,
     ):
@@ -1045,6 +1546,7 @@ class ExportPusher:
             if idempotency_enabled
             else None
         )
+        self.ops_log_path = resolve_export_ops_log_path(ops_path, cwd=cwd)
 
     def push(
         self,
@@ -1080,6 +1582,7 @@ class ExportPusher:
                 "timeout_seconds": self.timeout_seconds,
                 "idempotency_enabled": self.idempotency_enabled,
                 "idempotency_path": self._idempotency_path_display(),
+                "ops_path": self._ops_path_display(),
                 "results": [],
             }
 
@@ -1131,6 +1634,7 @@ class ExportPusher:
                 "timeout_seconds": self.timeout_seconds,
                 "idempotency_enabled": self.idempotency_enabled,
                 "idempotency_path": self._idempotency_path_display(),
+                "ops_path": self._ops_path_display(),
                 "results": [],
             }
 
@@ -1184,10 +1688,16 @@ class ExportPusher:
                     results.append(
                         {
                             "status": "skipped_duplicate",
+                            "operation": "skipped_duplicate",
                             "item_index": issue_index,
                             "requirement_id": actionable_item.requirement_id,
                             "idempotency_key": idempotency_key,
                             "idempotency_label": idempotency_label,
+                            "attempts": 0,
+                            "retries_used": 0,
+                            "http_status": None,
+                            "failure_reason": None,
+                            "issue_key": None,
                         }
                     )
                     continue
@@ -1235,6 +1745,11 @@ class ExportPusher:
                             skipped_duplicate_count=skipped_duplicate_count,
                             failure_reason=failure_reason,
                             results=results,
+                        )
+                        push_result = self._finalize_push_result(
+                            envelope=envelope,
+                            push_mode=push_mode,
+                            push_result=push_result,
                         )
                         raise ExportPushError(
                             f"Jira push aborted on item {issue_index}: {failure_reason}",
@@ -1325,23 +1840,32 @@ class ExportPusher:
                     failure_reason=failure_reason,
                     results=results,
                 )
+                push_result = self._finalize_push_result(
+                    envelope=envelope,
+                    push_mode=push_mode,
+                    push_result=push_result,
+                )
                 raise ExportPushError(
                     f"Jira push aborted on item {issue_index}: {failure_reason}",
                     push_result=push_result,
                 )
 
-        return self._build_push_result(
-            target="jira",
+        return self._finalize_push_result(
+            envelope=envelope,
             push_mode=push_mode,
-            dry_run=False,
-            actionable_count=actionable_count,
-            pushed_count=pushed_count,
-            created_count=created_count,
-            updated_count=updated_count,
-            failed_count=0,
-            skipped_duplicate_count=skipped_duplicate_count,
-            failure_reason=None,
-            results=results,
+            push_result=self._build_push_result(
+                target="jira",
+                push_mode=push_mode,
+                dry_run=False,
+                actionable_count=actionable_count,
+                pushed_count=pushed_count,
+                created_count=created_count,
+                updated_count=updated_count,
+                failed_count=0,
+                skipped_duplicate_count=skipped_duplicate_count,
+                failure_reason=None,
+                results=results,
+            ),
         )
 
     def _push_servicenow(
@@ -1373,6 +1897,7 @@ class ExportPusher:
                 "timeout_seconds": self.timeout_seconds,
                 "idempotency_enabled": self.idempotency_enabled,
                 "idempotency_path": self._idempotency_path_display(),
+                "ops_path": self._ops_path_display(),
                 "results": [],
             }
 
@@ -1420,9 +1945,15 @@ class ExportPusher:
                     results.append(
                         {
                             "status": "skipped_duplicate",
+                            "operation": "skipped_duplicate",
                             "item_index": record_index,
                             "requirement_id": actionable_item.requirement_id,
                             "idempotency_key": idempotency_key,
+                            "attempts": 0,
+                            "retries_used": 0,
+                            "http_status": None,
+                            "failure_reason": None,
+                            "sys_id": None,
                         }
                     )
                     continue
@@ -1468,6 +1999,11 @@ class ExportPusher:
                             skipped_duplicate_count=skipped_duplicate_count,
                             failure_reason=failure_reason,
                             results=results,
+                        )
+                        push_result = self._finalize_push_result(
+                            envelope=envelope,
+                            push_mode=push_mode,
+                            push_result=push_result,
                         )
                         raise ExportPushError(
                             f"ServiceNow push aborted on item {record_index}: {failure_reason}",
@@ -1561,23 +2097,32 @@ class ExportPusher:
                     failure_reason=failure_reason,
                     results=results,
                 )
+                push_result = self._finalize_push_result(
+                    envelope=envelope,
+                    push_mode=push_mode,
+                    push_result=push_result,
+                )
                 raise ExportPushError(
                     f"ServiceNow push aborted on item {record_index}: {failure_reason}",
                     push_result=push_result,
                 )
 
-        return self._build_push_result(
-            target="servicenow",
+        return self._finalize_push_result(
+            envelope=envelope,
             push_mode=push_mode,
-            dry_run=False,
-            actionable_count=actionable_count,
-            pushed_count=pushed_count,
-            created_count=created_count,
-            updated_count=updated_count,
-            failed_count=0,
-            skipped_duplicate_count=skipped_duplicate_count,
-            failure_reason=None,
-            results=results,
+            push_result=self._build_push_result(
+                target="servicenow",
+                push_mode=push_mode,
+                dry_run=False,
+                actionable_count=actionable_count,
+                pushed_count=pushed_count,
+                created_count=created_count,
+                updated_count=updated_count,
+                failed_count=0,
+                skipped_duplicate_count=skipped_duplicate_count,
+                failure_reason=None,
+                results=results,
+            ),
         )
 
     def _request_with_retry(
@@ -1664,8 +2209,101 @@ class ExportPusher:
             "timeout_seconds": self.timeout_seconds,
             "idempotency_enabled": self.idempotency_enabled,
             "idempotency_path": self._idempotency_path_display(),
+            "ops_path": self._ops_path_display(),
             "results": results,
         }
+
+    def _finalize_push_result(
+        self,
+        *,
+        envelope: ExportEnvelope,
+        push_mode: PushMode,
+        push_result: dict[str, Any],
+    ) -> dict[str, Any]:
+        warning = self._record_ops_log_results(
+            envelope=envelope,
+            push_mode=push_mode,
+            push_result=push_result,
+        )
+        if warning:
+            push_result["ops_log_warning"] = warning
+        return push_result
+
+    def _record_ops_log_results(
+        self,
+        *,
+        envelope: ExportEnvelope,
+        push_mode: PushMode,
+        push_result: dict[str, Any],
+    ) -> str | None:
+        results = push_result.get("results")
+        if not isinstance(results, list) or not results:
+            return None
+
+        item_lookup = {item.requirement_id: item for item in envelope.items}
+        try:
+            for result in results:
+                if not isinstance(result, dict):
+                    continue
+                status_value = str(result.get("status") or "")
+                if status_value not in {"success", "failed", "skipped_duplicate"}:
+                    continue
+
+                requirement_id_raw = result.get("requirement_id")
+                requirement_id = (
+                    str(requirement_id_raw).strip() if requirement_id_raw is not None else ""
+                )
+                item = item_lookup.get(requirement_id)
+                if item is not None:
+                    item_status = item.status
+                    article = item.article
+                else:
+                    item_status = str(result.get("status") or "")
+                    article = str(result.get("article") or "")
+
+                record = {
+                    "attempt_id": str(uuid4()),
+                    "generated_at": _utc_now_iso(),
+                    "target": envelope.target,
+                    "push_mode": push_mode,
+                    "source_type": envelope.source_type,
+                    "system_name": envelope.system_name,
+                    "descriptor_path": envelope.descriptor_path,
+                    "event_id": envelope.event_id,
+                    "requirement_id": requirement_id,
+                    "status": item_status,
+                    "article": article,
+                    "idempotency_key": result.get("idempotency_key"),
+                    "operation": self._normalize_ops_operation(str(result.get("operation") or "")),
+                    "result": status_value,
+                    "http_status": result.get("http_status"),
+                    "attempts": result.get("attempts"),
+                    "retries_used": result.get("retries_used"),
+                    "remote_ref": self._remote_ref_from_result(result),
+                    "failure_reason": result.get("failure_reason"),
+                }
+                self._append_ops_log_record(record)
+        except Exception as exc:  # pragma: no cover - best-effort warning path
+            return f"Failed to write export ops log: {exc}"
+        return None
+
+    def _normalize_ops_operation(self, operation: str) -> str:
+        normalized = operation.strip().lower()
+        if normalized in {"created", "create"}:
+            return "create"
+        if normalized in {"updated", "update"}:
+            return "update"
+        if normalized == "lookup":
+            return "lookup"
+        if normalized in {"skipped_duplicate", "skip_duplicate"}:
+            return "skip_duplicate"
+        return "lookup"
+
+    def _remote_ref_from_result(self, result: dict[str, Any]) -> Any:
+        for candidate_key in ("issue_key", "sys_id", "remote_ref"):
+            if candidate_key in result:
+                return result.get(candidate_key)
+        return None
 
     def _jira_idempotency_label(self, idempotency_key: str) -> str:
         return f"eu-ai-act-idem-{idempotency_key[:12]}"
@@ -1713,6 +2351,9 @@ class ExportPusher:
 
     def _idempotency_path_display(self) -> str | None:
         return str(self.idempotency_path) if self.idempotency_path else None
+
+    def _ops_path_display(self) -> str:
+        return str(self.ops_log_path)
 
     def _load_existing_idempotency_keys(self) -> set[str]:
         if not self.idempotency_enabled or self.idempotency_path is None:
@@ -1820,6 +2461,11 @@ class ExportPusher:
             return
         self.idempotency_path.parent.mkdir(parents=True, exist_ok=True)
         with self.idempotency_path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+    def _append_ops_log_record(self, record: dict[str, Any]) -> None:
+        self.ops_log_path.parent.mkdir(parents=True, exist_ok=True)
+        with self.ops_log_path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(record, ensure_ascii=False) + "\n")
 
     def _safe_json(self, response: httpx.Response) -> dict[str, Any]:

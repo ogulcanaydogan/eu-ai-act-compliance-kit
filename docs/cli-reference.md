@@ -144,6 +144,9 @@ ai-act export check <system.yaml> --target jira --push --dry-run --json
 ai-act export check <system.yaml> --target jira --push --push-mode upsert --json
 ai-act export batch examples --target generic --json
 ai-act export batch examples --target jira --push --push-mode upsert --json
+ai-act export replay --target jira --limit 20 --json
+ai-act export replay --target servicenow --since-hours 24 --dry-run --json
+ai-act export rollup --target jira --since-hours 24 --json
 ai-act export reconcile --target jira --json
 ai-act export ledger list --json
 ai-act export ledger stats --json
@@ -211,6 +214,35 @@ Subcommands:
     - `--apply` (execute remote repair updates; requires `--repair`)
     - `-o, --output PATH`
     - `--json` (JSON is default output shape)
+- `export replay`
+  - source: failed operation records from persistent ops log (`.eu_ai_act/export_ops_log.jsonl`)
+  - options:
+    - `--target [jira|servicenow]` (required)
+    - `--since-hours FLOAT` (optional; must be `>= 0`)
+    - `--system <name>`
+    - `--requirement-id <id>`
+    - `--limit N` (default: `25`, must be `>= 1`)
+    - `--push-mode [create|upsert]` (default: `create`)
+    - `--dry-run` (selection + replay simulation, no network call)
+    - `--max-retries INT` (default: `3`, must be `>= 0`)
+    - `--retry-backoff-seconds FLOAT` (default: `1.0`, must be `> 0`)
+    - `--timeout-seconds FLOAT` (default: `30.0`, must be `> 0`)
+    - `--idempotency-path PATH` (override push ledger location)
+    - `--disable-idempotency`
+    - `--ops-path PATH` (override ops log location)
+    - `-o, --output PATH`
+    - `--json` (JSON is default output shape)
+- `export rollup`
+  - source: persistent ops log + push ledger aggregation (read-only analytics)
+  - options:
+    - `--target [jira|servicenow|generic]` (optional filter)
+    - `--system <name>`
+    - `--since-hours FLOAT` (optional; must be `>= 0`)
+    - `--limit N` (optional; must be `>= 1`)
+    - `--ops-path PATH` (override ops log location)
+    - `--idempotency-path PATH` (override ledger location)
+    - `-o, --output PATH`
+    - `--json` (JSON is default output shape)
 - `export ledger list`
   - source: persisted push idempotency ledger (`.eu_ai_act/export_push_ledger.jsonl`)
   - options:
@@ -238,6 +270,10 @@ Output contract:
   - `generated_at`, `scan_root`, `target`, `recursive`, `total_files`, `processed_count`, `success_count`, `failure_count`, `invalid_count`, `results`
 - `export reconcile` top-level contract:
   - `generated_at`, `target`, `ledger_path`, `filters`, `repair_enabled`, `apply`, `checked_count`, `exists_count`, `in_sync_count`, `drift_count`, `missing_count`, `error_count`, `repair_planned_count`, `repair_applied_count`, `repair_failed_count`, `results`
+- `export replay` top-level contract:
+  - `generated_at`, `target`, `ops_path`, `selected_count`, `replayed_count`, `failed_count`, `unreplayable_count`, `results`
+- `export rollup` top-level contract:
+  - `generated_at`, `window`, `metrics`, `distributions`, `systems_with_failures`, `top_failure_reasons`, `ops_path`, `idempotency_path`
 
 Push behavior policy:
 
@@ -247,7 +283,9 @@ Push behavior policy:
 - non-retryable `4xx` responses fail immediately
 - in `create` mode with idempotency enabled, duplicate actionable items are skipped before remote API call
 - in `upsert` mode, Jira/ServiceNow always perform lookup-first and then update existing records or create new ones
+- `export check|history|batch --push` writes per-item operation events to `.eu_ai_act/export_ops_log.jsonl` (best-effort warning on write failure, command outcome unchanged)
 - `export batch` continues processing after invalid descriptor/push failures and exits non-zero when any invalid/failure exists
+- `export replay` dedupes failed records by `idempotency_key` (latest record wins), continues across records, and exits non-zero when any replay failure or unreplayable source exists
 - `export reconcile` supports guarded repair:
   - `--repair` plans changes only (no write)
   - `--repair --apply` executes remote updates
@@ -270,6 +308,8 @@ Live push environment variables:
   - `EU_AI_ACT_SERVICENOW_PASSWORD`
   - `EU_AI_ACT_SERVICENOW_TABLE` (optional; default adapter table)
   - `EU_AI_ACT_SERVICENOW_IDEMPOTENCY_FIELD` (optional; default: `u_idempotency_key`)
+- Ops log:
+  - `EU_AI_ACT_EXPORT_OPS_LOG_PATH` (optional override for `.eu_ai_act/export_ops_log.jsonl`)
 
 ## `transparency`
 

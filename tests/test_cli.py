@@ -30,7 +30,7 @@ class TestCLI:
 
         assert result.exit_code == 0
         assert "version" in result.output.lower()
-        assert "0.1.12" in result.output
+        assert "0.1.13" in result.output
         assert "runtimeerror" not in result.output.lower()
 
     def test_articles_uses_normalized_mapping(self):
@@ -1475,3 +1475,131 @@ class TestCLI:
         output = result.output + getattr(result, "stderr", "")
         assert "Jira push aborted on item 1" in output
         assert "HTTP 503" in output
+
+    def test_export_replay_json_contract_and_nonzero_on_failure(self, monkeypatch):
+        """Replay should return payload contract and non-zero on failed/unreplayable counts."""
+        runner = CliRunner()
+
+        def _fake_replay(**_kwargs):
+            return {
+                "generated_at": "2026-03-23T12:00:00+00:00",
+                "target": "jira",
+                "ops_path": "/tmp/export_ops_log.jsonl",
+                "selected_count": 2,
+                "replayed_count": 1,
+                "failed_count": 1,
+                "unreplayable_count": 0,
+                "results": [],
+            }
+
+        monkeypatch.setattr(cli_module, "replay_export_push_failures", _fake_replay)
+
+        result = runner.invoke(main, ["export", "replay", "--target", "jira", "--json"])
+        assert result.exit_code != 0
+        payload = json.loads(result.output[result.output.find("{") :])
+        assert payload["selected_count"] == 2
+        assert payload["replayed_count"] == 1
+        assert payload["failed_count"] == 1
+
+    def test_export_replay_dry_run_is_forwarded(self, monkeypatch):
+        """Replay dry-run flag should be forwarded to replay runtime."""
+        runner = CliRunner()
+        captured: dict[str, object] = {}
+
+        def _fake_replay(**kwargs):
+            captured["dry_run"] = kwargs["dry_run"]
+            return {
+                "generated_at": "2026-03-23T12:00:00+00:00",
+                "target": "jira",
+                "ops_path": "/tmp/export_ops_log.jsonl",
+                "selected_count": 1,
+                "replayed_count": 1,
+                "failed_count": 0,
+                "unreplayable_count": 0,
+                "results": [
+                    {
+                        "status": "replayed",
+                        "push_result": {"dry_run": True, "push_mode": "create"},
+                    }
+                ],
+            }
+
+        monkeypatch.setattr(cli_module, "replay_export_push_failures", _fake_replay)
+
+        result = runner.invoke(
+            main,
+            ["export", "replay", "--target", "jira", "--dry-run", "--json"],
+        )
+        assert result.exit_code == 0
+        assert captured["dry_run"] is True
+        payload = json.loads(result.output[result.output.find("{") :])
+        assert payload["results"][0]["push_result"]["dry_run"] is True
+
+    def test_export_replay_invalid_flags_fail(self):
+        """Replay should validate since-hours/limit/retry inputs deterministically."""
+        runner = CliRunner()
+
+        invalid_cases = [
+            (["--limit", "0"], "--limit must be >= 1"),
+            (["--since-hours", "-1"], "--since-hours must be >= 0"),
+            (["--max-retries", "-1"], "--max-retries must be >= 0"),
+            (["--retry-backoff-seconds", "0"], "--retry-backoff-seconds must be > 0"),
+            (["--timeout-seconds", "0"], "--timeout-seconds must be > 0"),
+        ]
+        for flags, expected_error in invalid_cases:
+            result = runner.invoke(main, ["export", "replay", "--target", "jira", *flags, "--json"])
+            assert result.exit_code != 0
+            output = result.output + getattr(result, "stderr", "")
+            assert expected_error in output
+
+    def test_export_rollup_json_contract_and_output_file(self, monkeypatch, tmp_path):
+        """Rollup should support JSON payload contract and output file mode."""
+        runner = CliRunner()
+
+        def _fake_rollup(**_kwargs):
+            return {
+                "generated_at": "2026-03-23T12:00:00+00:00",
+                "window": {
+                    "target": "jira",
+                    "system_name": None,
+                    "since_hours": None,
+                    "limit": None,
+                },
+                "metrics": {
+                    "total_attempts": 10,
+                    "success_count": 8,
+                    "failed_count": 2,
+                    "skipped_duplicate_count": 1,
+                    "success_rate": 80.0,
+                    "latest_success_at": "2026-03-23T11:00:00+00:00",
+                    "latest_failure_at": "2026-03-23T10:00:00+00:00",
+                    "open_failures_count": 1,
+                },
+                "distributions": {
+                    "by_target": {"jira": 10},
+                    "by_push_mode": {"create": 7, "upsert": 3},
+                    "by_operation": {"create": 7, "update": 2, "skip_duplicate": 1},
+                },
+                "systems_with_failures": ["System A"],
+                "top_failure_reasons": [{"reason": "HTTP 503", "count": 2}],
+                "ops_path": "/tmp/export_ops_log.jsonl",
+                "idempotency_path": "/tmp/export_push_ledger.jsonl",
+            }
+
+        monkeypatch.setattr(cli_module, "summarize_export_ops_rollup", _fake_rollup)
+
+        result = runner.invoke(main, ["export", "rollup", "--target", "jira", "--json"])
+        assert result.exit_code == 0
+        payload = json.loads(result.output[result.output.find("{") :])
+        assert payload["metrics"]["total_attempts"] == 10
+        assert payload["distributions"]["by_operation"]["skip_duplicate"] == 1
+
+        output_file = tmp_path / "rollup.json"
+        file_result = runner.invoke(
+            main,
+            ["export", "rollup", "--target", "jira", "--output", str(output_file), "--json"],
+        )
+        assert file_result.exit_code == 0
+        assert output_file.exists()
+        file_payload = json.loads(output_file.read_text(encoding="utf-8"))
+        assert file_payload["metrics"]["failed_count"] == 2
