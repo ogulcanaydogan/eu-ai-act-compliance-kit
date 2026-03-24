@@ -49,15 +49,39 @@ __all__ = [
     "ExportOpsGateResult",
     "ExportOpsGateEvaluator",
     "HistoryEvent",
+    "CollaborationNote",
+    "CollaborationTask",
+    "CollaborationGatePolicy",
+    "CollaborationGateResult",
+    "CollaborationGateEvaluator",
     "append_event",
     "list_events",
     "get_event",
     "diff_events",
+    "sync_collaboration_tasks",
+    "list_collaboration_tasks",
+    "update_collaboration_task",
+    "summarize_collaboration_gate_metrics",
+    "summarize_collaboration_tasks",
 ]
 
 from eu_ai_act.checker import ComplianceChecker
 from eu_ai_act.checklist import ChecklistGenerator
 from eu_ai_act.classifier import RiskClassifier
+from eu_ai_act.collaboration import (
+    CollaborationNote,
+    CollaborationTask,
+    list_collaboration_tasks,
+    summarize_collaboration_gate_metrics,
+    summarize_collaboration_tasks,
+    sync_collaboration_tasks,
+    update_collaboration_task,
+)
+from eu_ai_act.collaboration_gate import (
+    CollaborationGateEvaluator,
+    CollaborationGatePolicy,
+    CollaborationGateResult,
+)
 from eu_ai_act.dashboard import DashboardGenerator
 from eu_ai_act.export_ops_gate import (
     ExportOpsGateEvaluator,

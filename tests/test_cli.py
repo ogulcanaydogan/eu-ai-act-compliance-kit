@@ -30,7 +30,7 @@ class TestCLI:
 
         assert result.exit_code == 0
         assert "version" in result.output.lower()
-        assert "0.1.19" in result.output
+        assert "0.1.21" in result.output
         assert "runtimeerror" not in result.output.lower()
 
     def test_articles_uses_normalized_mapping(self):
@@ -418,6 +418,218 @@ class TestCLI:
         assert result.exit_code == 0
         assert (output_dir / "dashboard.json").exists()
         assert (output_dir / "dashboard.html").exists()
+
+    def test_collaboration_sync_list_update_summary_contract(self, monkeypatch, tmp_path):
+        """`collaboration` commands should expose stable sync/list/update/summary JSON contracts."""
+        runner = CliRunner()
+        system_yaml = EXAMPLES_DIR / "medical_diagnosis.yaml"
+        collab_path = tmp_path / ".eu_ai_act" / "collaboration_tasks.jsonl"
+        monkeypatch.setenv("EU_AI_ACT_COLLABORATION_PATH", str(collab_path))
+
+        sync_output = tmp_path / "sync.json"
+        sync_result = runner.invoke(
+            main,
+            [
+                "collaboration",
+                "sync",
+                str(system_yaml),
+                "--owner-default",
+                "alice",
+                "--output",
+                str(sync_output),
+            ],
+        )
+        assert sync_result.exit_code == 0
+        assert sync_output.exists()
+        sync_payload = json.loads(sync_output.read_text(encoding="utf-8"))
+        assert "generated_at" in sync_payload
+        assert sync_payload["system_name"] == "Medical Imaging Diagnosis AI"
+        assert sync_payload["collaboration_path"].endswith("collaboration_tasks.jsonl")
+        assert "changes" in sync_payload
+        assert "summary" in sync_payload
+        assert sync_payload["summary"]["open_count"] >= 1
+        assert sync_payload["tasks"]
+
+        task_id = sync_payload["tasks"][0]["task_id"]
+
+        update_result = runner.invoke(
+            main,
+            [
+                "collaboration",
+                "update",
+                task_id,
+                "--status",
+                "in_review",
+                "--note",
+                "Triage started",
+                "--note-author",
+                "qa",
+                "--json",
+            ],
+        )
+        assert update_result.exit_code == 0
+        update_payload = json.loads(update_result.output[update_result.output.find("{") :])
+        assert update_payload["changed"] is True
+        assert update_payload["updated_task"]["workflow_status"] == "in_review"
+
+        list_result = runner.invoke(
+            main,
+            ["collaboration", "list", "--status", "in_review", "--json"],
+        )
+        assert list_result.exit_code == 0
+        list_payload = json.loads(list_result.output[list_result.output.find("{") :])
+        assert list_payload["count"] >= 1
+
+        summary_result = runner.invoke(main, ["collaboration", "summary", "--json"])
+        assert summary_result.exit_code == 0
+        summary_payload = json.loads(summary_result.output[summary_result.output.find("{") :])
+        assert "open_count" in summary_payload
+        assert "in_review_count" in summary_payload
+        assert "blocked_count" in summary_payload
+        assert "done_count" in summary_payload
+        assert summary_payload["in_review_count"] >= 1
+
+    def test_collaboration_invalid_inputs_fail_deterministically(self, monkeypatch, tmp_path):
+        """Collaboration CLI should fail with clear errors for invalid inputs."""
+        runner = CliRunner()
+        system_yaml = EXAMPLES_DIR / "spam_filter.yaml"
+        collab_path = tmp_path / ".eu_ai_act" / "collaboration_tasks.jsonl"
+        monkeypatch.setenv("EU_AI_ACT_COLLABORATION_PATH", str(collab_path))
+
+        sync_result = runner.invoke(main, ["collaboration", "sync", str(system_yaml), "--json"])
+        assert sync_result.exit_code == 0
+
+        no_update_flags = runner.invoke(
+            main,
+            ["collaboration", "update", "Spam Filter AI::Art. 69"],
+        )
+        assert no_update_flags.exit_code != 0
+        assert "provide at least one of --status, --owner, or --note" in no_update_flags.output
+
+        unknown_task = runner.invoke(
+            main,
+            ["collaboration", "update", "missing-task", "--status", "done"],
+        )
+        assert unknown_task.exit_code != 0
+        assert "Task not found" in unknown_task.output
+
+        invalid_limit = runner.invoke(main, ["collaboration", "list", "--limit", "0"])
+        assert invalid_limit.exit_code != 0
+        assert "limit must be >= 1" in invalid_limit.output
+
+    def test_collaboration_gate_observe_json_contract(self, monkeypatch, tmp_path):
+        """`collaboration gate --mode observe` should emit payload and keep zero exit."""
+        runner = CliRunner()
+        system_yaml = EXAMPLES_DIR / "medical_diagnosis.yaml"
+        collab_path = tmp_path / ".eu_ai_act" / "collaboration_tasks.jsonl"
+        monkeypatch.setenv("EU_AI_ACT_COLLABORATION_PATH", str(collab_path))
+
+        sync_result = runner.invoke(main, ["collaboration", "sync", str(system_yaml), "--json"])
+        assert sync_result.exit_code == 0
+
+        result = runner.invoke(
+            main,
+            [
+                "collaboration",
+                "gate",
+                "--mode",
+                "observe",
+                "--collab-path",
+                str(collab_path),
+                "--json",
+            ],
+        )
+        assert result.exit_code == 0
+        payload = json.loads(result.output[result.output.find("{") :])
+        assert payload["mode"] == "observe"
+        assert payload["failed"] is True
+        assert "unassigned_actionable_threshold_exceeded" in payload["reason_codes"]
+        assert "effective_policy" in payload
+        assert "metrics" in payload
+        assert payload["metrics"]["has_collaboration_data"] is True
+        assert payload["collaboration_path"] == str(collab_path)
+
+    def test_collaboration_gate_enforce_missing_data_nonzero(self, tmp_path):
+        """`collaboration gate --mode enforce` should fail when ledger data is missing."""
+        runner = CliRunner()
+        collab_path = tmp_path / ".eu_ai_act" / "collaboration_tasks.jsonl"
+
+        result = runner.invoke(
+            main,
+            [
+                "collaboration",
+                "gate",
+                "--mode",
+                "enforce",
+                "--collab-path",
+                str(collab_path),
+                "--json",
+            ],
+        )
+        assert result.exit_code != 0
+        payload = json.loads(result.output[result.output.find("{") :])
+        assert payload["mode"] == "enforce"
+        assert payload["failed"] is True
+        assert payload["reason_codes"] == ["missing_collaboration_data"]
+
+    def test_collaboration_gate_policy_file_and_cli_override_precedence(self, tmp_path):
+        """CLI overrides should take precedence over collaboration policy file values."""
+        runner = CliRunner()
+        policy_file = tmp_path / "collaboration_gate_policy.yaml"
+        policy_file.write_text(
+            (
+                "mode: enforce\n"
+                "scope:\n"
+                "  system: Medical Imaging Diagnosis AI\n"
+                "window:\n"
+                "  limit: 50\n"
+                "thresholds:\n"
+                "  blocked_max: 1\n"
+                "  unassigned_actionable_max: 1\n"
+            ),
+            encoding="utf-8",
+        )
+        collab_path = tmp_path / ".eu_ai_act" / "collaboration_tasks.jsonl"
+
+        result = runner.invoke(
+            main,
+            [
+                "collaboration",
+                "gate",
+                "--policy",
+                str(policy_file),
+                "--mode",
+                "observe",
+                "--blocked-max",
+                "0",
+                "--collab-path",
+                str(collab_path),
+                "--json",
+            ],
+        )
+
+        assert result.exit_code == 0
+        payload = json.loads(result.output[result.output.find("{") :])
+        assert payload["mode"] == "observe"
+        assert payload["effective_policy"]["window"]["limit"] == 50
+        assert payload["effective_policy"]["scope"]["system"] == "Medical Imaging Diagnosis AI"
+        assert payload["effective_policy"]["thresholds"]["blocked_max"] == 0
+        assert payload["effective_policy"]["thresholds"]["unassigned_actionable_max"] == 1
+
+    def test_collaboration_gate_invalid_flags_fail(self):
+        """Gate command should validate invalid threshold and limit values."""
+        runner = CliRunner()
+
+        invalid_cases = [
+            (["--limit", "0"], "--limit must be >= 1"),
+            (["--blocked-max", "-1"], "--blocked-max must be >= 0"),
+            (["--unassigned-actionable-max", "-1"], "--unassigned-actionable-max must be >= 0"),
+        ]
+        for flags, expected_error in invalid_cases:
+            result = runner.invoke(main, ["collaboration", "gate", *flags, "--json"])
+            assert result.exit_code != 0
+            output = result.output + getattr(result, "stderr", "")
+            assert expected_error in output
 
     def test_report_pdf_requires_output_path(self):
         """PDF format should fail fast when output path is not provided."""

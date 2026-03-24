@@ -1,0 +1,6 @@
+mode: observe
+window:
+  limit: 200
+thresholds:
+  blocked_max: 0
+  unassigned_actionable_max: 0

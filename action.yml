@@ -37,6 +37,18 @@ inputs:
     description: "Path to export reconcile log JSONL used by export gate"
     required: false
     default: ".eu_ai_act/export_reconcile_log.jsonl"
+  collaboration_path:
+    description: "Path to collaboration task ledger JSONL used for observe-only summaries"
+    required: false
+    default: ".eu_ai_act/collaboration_tasks.jsonl"
+  collaboration_gate_mode:
+    description: "Collaboration gate mode (observe or enforce)"
+    required: false
+    default: "observe"
+  collaboration_gate_policy_path:
+    description: "Path to collaboration gate policy file, relative to action root unless absolute"
+    required: false
+    default: "config/collaboration_gate_policy.yaml"
   report_format:
     description: "Report output format (json, md, html)"
     required: false
@@ -104,6 +116,27 @@ outputs:
   export_ops_gate_exit_code:
     description: "Raw exit code from export ops gate command execution"
     value: ${{ steps.analyze.outputs.export_ops_gate_exit_code }}
+  collaboration_open_count:
+    description: "Open collaboration task count from latest sync snapshot"
+    value: ${{ steps.analyze.outputs.collaboration_open_count }}
+  collaboration_in_review_count:
+    description: "In-review collaboration task count from latest sync snapshot"
+    value: ${{ steps.analyze.outputs.collaboration_in_review_count }}
+  collaboration_blocked_count:
+    description: "Blocked collaboration task count from latest sync snapshot"
+    value: ${{ steps.analyze.outputs.collaboration_blocked_count }}
+  collaboration_done_count:
+    description: "Done collaboration task count from latest sync snapshot"
+    value: ${{ steps.analyze.outputs.collaboration_done_count }}
+  collaboration_unassigned_actionable_count:
+    description: "Unassigned actionable collaboration task count from collaboration gate metrics"
+    value: ${{ steps.analyze.outputs.collaboration_unassigned_actionable_count }}
+  collaboration_gate_failed:
+    description: "Collaboration gate failure flag (true/false)"
+    value: ${{ steps.analyze.outputs.collaboration_gate_failed }}
+  collaboration_gate_reason_codes:
+    description: "Comma-separated collaboration gate reason codes"
+    value: ${{ steps.analyze.outputs.collaboration_gate_reason_codes }}
 
 runs:
   using: "composite"
@@ -126,6 +159,37 @@ runs:
       run: |
         ai-act classify "${{ inputs.system_yaml }}" --json > /tmp/classification.json
         ai-act check "${{ inputs.system_yaml }}" --json > /tmp/check.json
+        set +e
+        ai-act collaboration sync "${{ inputs.system_yaml }}" --collab-path "${{ inputs.collaboration_path }}" --json > /tmp/collaboration_sync.json
+        COLLAB_SYNC_EXIT_CODE=$?
+        set -e
+        if [[ "$COLLAB_SYNC_EXIT_CODE" != "0" ]]; then
+          echo "Warning: collaboration sync failed (observe-only). continuing with zero collaboration counters."
+        fi
+
+        COLLAB_GATE_POLICY_INPUT="${{ inputs.collaboration_gate_policy_path }}"
+        if [[ "$COLLAB_GATE_POLICY_INPUT" = /* ]]; then
+          COLLAB_GATE_POLICY_PATH="$COLLAB_GATE_POLICY_INPUT"
+        else
+          COLLAB_GATE_POLICY_PATH="$GITHUB_ACTION_PATH/$COLLAB_GATE_POLICY_INPUT"
+        fi
+        COLLAB_GATE_POLICY_ARGS=()
+        if [[ -f "$COLLAB_GATE_POLICY_PATH" ]]; then
+          COLLAB_GATE_POLICY_ARGS=(--policy "$COLLAB_GATE_POLICY_PATH")
+        else
+          echo "Warning: Collaboration gate policy file not found: $COLLAB_GATE_POLICY_PATH"
+        fi
+
+        set +e
+        ai-act collaboration gate \
+          --mode "${{ inputs.collaboration_gate_mode }}" \
+          --collab-path "${{ inputs.collaboration_path }}" \
+          "${COLLAB_GATE_POLICY_ARGS[@]}" \
+          --json > /tmp/collaboration_gate.json
+        COLLAB_GATE_EXIT_CODE=$?
+        set -e
+        echo "collaboration_gate_exit_code=$COLLAB_GATE_EXIT_CODE" >> "$GITHUB_OUTPUT"
+
         EXPORT_OPS_POLICY_INPUT="${{ inputs.export_ops_gate_policy_path }}"
         if [[ "$EXPORT_OPS_POLICY_INPUT" = /* ]]; then
           EXPORT_OPS_POLICY_PATH="$EXPORT_OPS_POLICY_INPUT"
@@ -151,7 +215,7 @@ runs:
         set -e
         echo "export_ops_gate_exit_code=$EXPORT_OPS_GATE_EXIT_CODE" >> "$GITHUB_OUTPUT"
 
-        SECURITY_GATE_MODE="${{ inputs.security_gate_mode }}" SECURITY_GATE_PROFILE="${{ inputs.security_gate_profile }}" python - <<'PY' >> "$GITHUB_OUTPUT"
+        SECURITY_GATE_MODE="${{ inputs.security_gate_mode }}" SECURITY_GATE_PROFILE="${{ inputs.security_gate_profile }}" COLLABORATION_GATE_MODE_INPUT="${{ inputs.collaboration_gate_mode }}" python - <<'PY' >> "$GITHUB_OUTPUT"
         import json
         import os
         import pathlib
@@ -183,6 +247,45 @@ runs:
             export_ops_gate = {}
         if not isinstance(export_ops_gate, dict):
             export_ops_gate = {}
+        try:
+            collaboration_sync = json.loads(pathlib.Path("/tmp/collaboration_sync.json").read_text())
+        except Exception:
+            collaboration_sync = {}
+        if not isinstance(collaboration_sync, dict):
+            collaboration_sync = {}
+        collaboration_summary = collaboration_sync.get("summary", {}) or {}
+        collaboration_open_count = int(collaboration_summary.get("open_count", 0) or 0)
+        collaboration_in_review_count = int(collaboration_summary.get("in_review_count", 0) or 0)
+        collaboration_blocked_count = int(collaboration_summary.get("blocked_count", 0) or 0)
+        collaboration_done_count = int(collaboration_summary.get("done_count", 0) or 0)
+        try:
+            collaboration_gate = json.loads(pathlib.Path("/tmp/collaboration_gate.json").read_text())
+        except Exception:
+            collaboration_gate = {}
+        if not isinstance(collaboration_gate, dict):
+            collaboration_gate = {}
+        collaboration_gate_metrics = collaboration_gate.get("metrics", {}) or {}
+        if not isinstance(collaboration_gate_metrics, dict):
+            collaboration_gate_metrics = {}
+        collaboration_gate_mode = str(
+            collaboration_gate.get(
+                "mode",
+                os.environ.get("COLLABORATION_GATE_MODE_INPUT", "observe"),
+            )
+        ).strip().lower()
+        collaboration_gate_failed = bool(collaboration_gate.get("failed", False))
+        collaboration_reason_codes = collaboration_gate.get("reason_codes", [])
+        if not isinstance(collaboration_reason_codes, list):
+            collaboration_reason_codes = []
+        collaboration_gate_reason_codes = ",".join(
+            str(code) for code in collaboration_reason_codes if str(code)
+        )
+        collaboration_unassigned_actionable_count = int(
+            collaboration_gate_metrics.get("unassigned_actionable_count", 0) or 0
+        )
+        collaboration_blocked_count = int(
+            collaboration_gate_metrics.get("blocked_count", collaboration_blocked_count) or 0
+        )
         rollup_metrics = export_ops_gate.get("rollup_metrics", {}) or {}
         reconcile_metrics = export_ops_gate.get("reconcile_metrics", {}) or {}
         reason_codes = export_ops_gate.get("reason_codes", [])
@@ -217,6 +320,14 @@ runs:
         print(f"export_ops_open_failures_count={export_ops_open_failures_count}")
         print(f"export_ops_drift_count={export_ops_drift_count}")
         print(f"export_ops_success_rate={export_ops_success_rate}")
+        print(f"collaboration_gate_mode={collaboration_gate_mode}")
+        print(f"collaboration_gate_failed={'true' if collaboration_gate_failed else 'false'}")
+        print(f"collaboration_gate_reason_codes={collaboration_gate_reason_codes}")
+        print(f"collaboration_open_count={collaboration_open_count}")
+        print(f"collaboration_in_review_count={collaboration_in_review_count}")
+        print(f"collaboration_blocked_count={collaboration_blocked_count}")
+        print(f"collaboration_done_count={collaboration_done_count}")
+        print(f"collaboration_unassigned_actionable_count={collaboration_unassigned_actionable_count}")
         PY
 
     - name: "Generate report"
@@ -292,6 +403,12 @@ runs:
         EXPORT_OPS_OPEN_FAILURES_COUNT="${{ steps.analyze.outputs.export_ops_open_failures_count }}"
         EXPORT_OPS_DRIFT_COUNT="${{ steps.analyze.outputs.export_ops_drift_count }}"
         EXPORT_OPS_SUCCESS_RATE="${{ steps.analyze.outputs.export_ops_success_rate }}"
+        COLLABORATION_GATE_MODE="${{ steps.analyze.outputs.collaboration_gate_mode }}"
+        COLLABORATION_GATE_FAILED="${{ steps.analyze.outputs.collaboration_gate_failed }}"
+        COLLABORATION_GATE_REASON_CODES="${{ steps.analyze.outputs.collaboration_gate_reason_codes }}"
+        COLLABORATION_GATE_EXIT_CODE="${{ steps.analyze.outputs.collaboration_gate_exit_code }}"
+        COLLABORATION_BLOCKED_COUNT="${{ steps.analyze.outputs.collaboration_blocked_count }}"
+        COLLABORATION_UNASSIGNED_ACTIONABLE_COUNT="${{ steps.analyze.outputs.collaboration_unassigned_actionable_count }}"
 
         if [[ "$RISK_TIER" == "unacceptable" ]]; then
           echo "❌ Workflow failed: System classified as UNACCEPTABLE"
@@ -318,6 +435,14 @@ runs:
           echo "   mode=$EXPORT_OPS_GATE_MODE exit_code=$EXPORT_OPS_GATE_EXIT_CODE reason_codes=$EXPORT_OPS_GATE_REASON_CODES"
           echo "   open_failures=$EXPORT_OPS_OPEN_FAILURES_COUNT drift=$EXPORT_OPS_DRIFT_COUNT success_rate=$EXPORT_OPS_SUCCESS_RATE"
           echo "   Address export operational governance findings before merging."
+          exit 1
+        fi
+
+        if [[ "$COLLABORATION_GATE_MODE" == "enforce" && ( "$COLLABORATION_GATE_FAILED" == "true" || "$COLLABORATION_GATE_EXIT_CODE" != "0" ) ]]; then
+          echo "❌ Workflow failed: Collaboration gate policy blocked this run"
+          echo "   mode=$COLLABORATION_GATE_MODE exit_code=$COLLABORATION_GATE_EXIT_CODE reason_codes=$COLLABORATION_GATE_REASON_CODES"
+          echo "   blocked=$COLLABORATION_BLOCKED_COUNT unassigned_actionable=$COLLABORATION_UNASSIGNED_ACTIONABLE_COUNT"
+          echo "   Address collaboration governance findings before merging."
           exit 1
         fi
 

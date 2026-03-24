@@ -227,10 +227,109 @@ jobs:
           assert "decision_details" in payload
           PY
 
+  collaboration-smoke:
+    runs-on: ubuntu-latest
+    name: Collaboration Smoke
+    needs: [lint, test]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run collaboration workflow smoke
+        run: |
+          mkdir -p /tmp/collaboration-smoke
+          ai-act collaboration sync examples/medical_diagnosis.yaml --json > /tmp/collaboration-smoke/sync.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          payload = json.loads(Path("/tmp/collaboration-smoke/sync.json").read_text())
+          assert "summary" in payload
+          assert payload["summary"]["open_count"] >= 1
+          tasks = payload.get("tasks", [])
+          assert tasks
+          task_id = tasks[0]["task_id"]
+          Path("/tmp/collaboration-smoke/task_id.txt").write_text(task_id)
+          PY
+          TASK_ID="$(cat /tmp/collaboration-smoke/task_id.txt)"
+          ai-act collaboration update "$TASK_ID" --status in_review --note "CI smoke review" --note-author ci --json > /tmp/collaboration-smoke/update.json
+          ai-act collaboration list --status in_review --json > /tmp/collaboration-smoke/list.json
+          ai-act collaboration summary --json > /tmp/collaboration-smoke/summary.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          update_payload = json.loads(Path("/tmp/collaboration-smoke/update.json").read_text())
+          assert update_payload["changed"] is True
+          assert update_payload["updated_task"]["workflow_status"] == "in_review"
+          list_payload = json.loads(Path("/tmp/collaboration-smoke/list.json").read_text())
+          assert list_payload["count"] >= 1
+          summary_payload = json.loads(Path("/tmp/collaboration-smoke/summary.json").read_text())
+          assert summary_payload["in_review_count"] >= 1
+          assert "open_count" in summary_payload
+          assert "blocked_count" in summary_payload
+          assert "done_count" in summary_payload
+          PY
+
+  collaboration-gate-smoke:
+    runs-on: ubuntu-latest
+    name: Collaboration Gate Smoke
+    needs: [lint, test]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run collaboration gate rollout smoke (PR observe, main/tag enforce)
+        env:
+          IS_MAIN_OR_TAG: ${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') }}
+        run: |
+          mkdir -p /tmp/collaboration-gate-smoke/.eu_ai_act
+          cat > /tmp/collaboration-gate-smoke/.eu_ai_act/collaboration_tasks.jsonl <<'JSONL'
+          {"task_id":"Smoke System::Art. 10","system_name":"Smoke System","descriptor_path":"/tmp/smoke.yaml","requirement_id":"Art. 10","article":"Art. 10","title":"Data governance","finding_status":"non_compliant","severity":"HIGH","workflow_status":"open","owner":"alice","notes":[],"created_at":"2026-03-24T10:00:00+00:00","updated_at":"2026-03-24T10:00:00+00:00"}
+          {"task_id":"Smoke System::Art. 11","system_name":"Smoke System","descriptor_path":"/tmp/smoke.yaml","requirement_id":"Art. 11","article":"Art. 11","title":"Documentation","finding_status":"partial","severity":"MEDIUM","workflow_status":"in_review","owner":"bob","notes":[],"created_at":"2026-03-24T10:05:00+00:00","updated_at":"2026-03-24T10:05:00+00:00"}
+          JSONL
+          GATE_MODE="observe"
+          if [[ "${{ github.event_name }}" != "pull_request" && "$IS_MAIN_OR_TAG" == "true" ]]; then
+            GATE_MODE="enforce"
+          fi
+          ai-act collaboration gate --mode "$GATE_MODE" --policy config/collaboration_gate_policy.yaml --collab-path /tmp/collaboration-gate-smoke/.eu_ai_act/collaboration_tasks.jsonl --json > /tmp/collaboration-gate-smoke/gate.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          payload = json.loads(Path("/tmp/collaboration-gate-smoke/gate.json").read_text())
+          assert payload["mode"] in {"observe", "enforce"}
+          assert payload["failed"] is False
+          assert payload["reason_codes"] == []
+          assert "effective_policy" in payload
+          assert "metrics" in payload
+          assert "decision_details" in payload
+          assert payload["metrics"]["blocked_count"] == 0
+          assert payload["metrics"]["unassigned_actionable_count"] == 0
+          PY
+
   build:
     runs-on: ubuntu-latest
     name: Build
-    needs: [lint, test, quickstart-smoke, examples-smoke, export-ops-gate-smoke]
+    needs: [lint, test, quickstart-smoke, examples-smoke, export-ops-gate-smoke, collaboration-smoke, collaboration-gate-smoke]
     steps:
       - uses: actions/checkout@v6
 
@@ -257,7 +356,7 @@ jobs:
   docker:
     runs-on: ubuntu-latest
     name: Build Docker Image
-    needs: [lint, test, quickstart-smoke, examples-smoke, export-ops-gate-smoke]
+    needs: [lint, test, quickstart-smoke, examples-smoke, export-ops-gate-smoke, collaboration-smoke, collaboration-gate-smoke]
     permissions:
       contents: read
     steps:
@@ -320,7 +419,7 @@ jobs:
   action-smoke:
     runs-on: ubuntu-latest
     name: Action Smoke
-    needs: [lint, test, quickstart-smoke, examples-smoke, export-ops-gate-smoke]
+    needs: [lint, test, quickstart-smoke, examples-smoke, export-ops-gate-smoke, collaboration-smoke, collaboration-gate-smoke]
     steps:
       - uses: actions/checkout@v6
 
@@ -347,6 +446,12 @@ jobs:
           [[ "${{ steps.minimal.outputs.export_ops_gate_failed }}" =~ ^(true|false)$ ]]
           [[ "${{ steps.minimal.outputs.export_ops_open_failures_count }}" =~ ^[0-9]+$ ]]
           [[ "${{ steps.minimal.outputs.export_ops_drift_count }}" =~ ^[0-9]+$ ]]
+          [[ "${{ steps.minimal.outputs.collaboration_open_count }}" =~ ^[0-9]+$ ]]
+          [[ "${{ steps.minimal.outputs.collaboration_in_review_count }}" =~ ^[0-9]+$ ]]
+          [[ "${{ steps.minimal.outputs.collaboration_blocked_count }}" =~ ^[0-9]+$ ]]
+          [[ "${{ steps.minimal.outputs.collaboration_done_count }}" =~ ^[0-9]+$ ]]
+          [[ "${{ steps.minimal.outputs.collaboration_unassigned_actionable_count }}" =~ ^[0-9]+$ ]]
+          [[ "${{ steps.minimal.outputs.collaboration_gate_failed }}" =~ ^(true|false)$ ]]
           test -f minimal_report.json
 
       - name: Create high-risk non-compliant fixture
@@ -411,15 +516,47 @@ jobs:
             exit 1
           fi
 
+      - name: Create collaboration gate enforce policy fixture
+        run: |
+          cat > /tmp/collaboration_gate_policy_enforce.yaml <<'YAML'
+          mode: enforce
+          window:
+            limit: 200
+          thresholds:
+            blocked_max: 0
+            unassigned_actionable_max: 0
+          YAML
+
+      - name: Collaboration gate enforce mode should fail on unassigned actionable tasks
+        id: collaborationgate
+        continue-on-error: true
+        uses: ./
+        with:
+          system_yaml: examples/medical_diagnosis.yaml
+          fail_on_high_risk: "false"
+          security_gate_mode: "observe"
+          export_ops_gate_mode: "observe"
+          collaboration_gate_mode: "enforce"
+          collaboration_gate_policy_path: /tmp/collaboration_gate_policy_enforce.yaml
+          report_format: json
+          report_path: collaboration_gate_report.json
+
+      - name: Assert collaboration gate enforcement failure
+        run: |
+          if [[ "${{ steps.collaborationgate.outcome }}" != "failure" ]]; then
+            echo "Expected collaboration-gate enforce mode failure"
+            exit 1
+          fi
+
   all-checks:
     runs-on: ubuntu-latest
     name: All Checks Passed
-    needs: [lint, test, quickstart-smoke, examples-smoke, export-ops-gate-smoke, build, docker, docs, security, action-smoke]
+    needs: [lint, test, quickstart-smoke, examples-smoke, export-ops-gate-smoke, collaboration-smoke, collaboration-gate-smoke, build, docker, docs, security, action-smoke]
     if: always()
     steps:
       - name: Check status
         run: |
-          if [[ "${{ needs.lint.result }}" == "failure" || "${{ needs.test.result }}" == "failure" || "${{ needs.quickstart-smoke.result }}" == "failure" || "${{ needs.examples-smoke.result }}" == "failure" || "${{ needs.export-ops-gate-smoke.result }}" == "failure" || "${{ needs.build.result }}" == "failure" || "${{ needs.docker.result }}" == "failure" || "${{ needs.action-smoke.result }}" == "failure" ]]; then
+          if [[ "${{ needs.lint.result }}" == "failure" || "${{ needs.test.result }}" == "failure" || "${{ needs.quickstart-smoke.result }}" == "failure" || "${{ needs.examples-smoke.result }}" == "failure" || "${{ needs.export-ops-gate-smoke.result }}" == "failure" || "${{ needs.collaboration-smoke.result }}" == "failure" || "${{ needs.collaboration-gate-smoke.result }}" == "failure" || "${{ needs.build.result }}" == "failure" || "${{ needs.docker.result }}" == "failure" || "${{ needs.action-smoke.result }}" == "failure" ]]; then
             echo "One or more checks failed"
             exit 1
           fi

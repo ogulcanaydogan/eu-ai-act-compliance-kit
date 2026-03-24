@@ -172,6 +172,82 @@ History payload notes:
 
 Default history path is project-local `.eu_ai_act/history.jsonl`, resolved from the nearest parent directory containing `pyproject.toml`. If no project root is found, the current working directory is used.
 
+## `collaboration`
+
+Manages local-first team collaboration tasks derived from compliance findings.
+
+```bash
+ai-act collaboration sync <system.yaml> --json
+ai-act collaboration list --json
+ai-act collaboration update <task_id> --status in_review --note "triage started" --note-author alice --json
+ai-act collaboration summary --json
+ai-act collaboration gate --mode observe --json
+ai-act collaboration gate --mode enforce --policy config/collaboration_gate_policy.yaml --json
+```
+
+Subcommands:
+
+- `collaboration sync`
+  - source: live `check` findings for descriptor
+  - options:
+    - `--owner-default TEXT` (applies only to newly created tasks)
+    - `--collab-path PATH` (override ledger location)
+    - `-o, --output PATH`
+    - `--json`
+- `collaboration list`
+  - options:
+    - `--system <name>`
+    - `--owner <name>`
+    - `--status [open|in_review|blocked|done]`
+    - `--limit N` (must be `>= 1`)
+    - `--collab-path PATH`
+    - `-o, --output PATH`
+    - `--json`
+- `collaboration update`
+  - options:
+    - `--status [open|in_review|blocked|done]`
+    - `--owner <name>`
+    - `--note <text>`
+    - `--note-author <name>` (requires `--note`; default author is `unknown`)
+    - `--collab-path PATH`
+    - `-o, --output PATH`
+    - `--json`
+  - validation:
+    - at least one of `--status`, `--owner`, or `--note` is required
+    - unknown task id returns non-zero with deterministic error
+- `collaboration summary`
+  - options:
+    - `--system <name>`
+    - `--owner <name>`
+    - `--collab-path PATH`
+    - `-o, --output PATH`
+    - `--json`
+- `collaboration gate`
+  - options:
+    - `--mode [observe|enforce]` (default from policy/defaults; observe never blocks)
+    - `--policy PATH` (optional YAML policy file)
+    - `--system <name>`
+    - `--blocked-max N` (must be `>= 0`)
+    - `--unassigned-actionable-max N` (must be `>= 0`)
+    - `--limit N` (must be `>= 1`)
+    - `--collab-path PATH`
+    - `-o, --output PATH`
+    - `--json`
+  - exit policy:
+    - observe mode always exits `0` and reports `failed` in payload
+    - enforce mode exits non-zero when policy violations are present
+    - enforce mode with missing collaboration data fails with `missing_collaboration_data`
+
+Workflow semantics:
+
+- task ledger is append-only JSONL: `.eu_ai_act/collaboration_tasks.jsonl`
+- task id is deterministic: `system_name::requirement_id`
+- actionable findings (`non_compliant|partial|not_assessed`) create/update tasks
+- previously `done` tasks are reopened as `open` when finding becomes actionable again
+- actionable resolution (`compliant`) auto-closes active tasks to `done`
+- owner and notes are preserved across sync updates
+- gate policy precedence is deterministic: `CLI flags > policy file > defaults`
+
 ## `export`
 
 Builds payload-first external artifacts for integration targets.
