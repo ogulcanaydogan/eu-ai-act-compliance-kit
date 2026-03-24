@@ -112,6 +112,74 @@ def test_ci_contains_export_ops_gate_smoke_job():
     assert "github.event_name == 'pull_request' && 'observe' || 'enforce'" in step_payload
 
 
+def test_ci_contains_collaboration_smoke_job():
+    """CI must include collaboration-smoke job for team workflow contracts."""
+    jobs = _load_ci_jobs()
+    assert "collaboration-smoke" in jobs
+
+    collaboration_job = jobs["collaboration-smoke"]
+    assert collaboration_job.get("name") == "Collaboration Smoke"
+
+    steps = collaboration_job.get("steps", [])
+    run_blocks = [step.get("run", "") for step in steps if isinstance(step, dict)]
+    joined_run = "\n".join(run_blocks)
+    assert "ai-act collaboration sync" in joined_run
+    assert "ai-act collaboration update" in joined_run
+    assert "ai-act collaboration list" in joined_run
+    assert "ai-act collaboration summary" in joined_run
+
+
+def test_ci_contains_collaboration_gate_smoke_job():
+    """CI must include collaboration-gate-smoke job with PR observe / main-tag enforce rollout."""
+    jobs = _load_ci_jobs()
+    assert "collaboration-gate-smoke" in jobs
+
+    gate_job = jobs["collaboration-gate-smoke"]
+    assert gate_job.get("name") == "Collaboration Gate Smoke"
+
+    steps = gate_job.get("steps", [])
+    run_blocks = [step.get("run", "") for step in steps if isinstance(step, dict)]
+    joined_run = "\n".join(run_blocks)
+    assert "ai-act collaboration gate" in joined_run
+    assert "--policy config/collaboration_gate_policy.yaml" in joined_run
+    assert (
+        'if [[ "${{ github.event_name }}" != "pull_request" && "$IS_MAIN_OR_TAG" == "true" ]]; then'
+        in joined_run
+    )
+
+
+def test_all_checks_treats_collaboration_smoke_as_required():
+    """All-checks gate must evaluate collaboration-smoke result as required."""
+    jobs = _load_ci_jobs()
+    assert "all-checks" in jobs
+
+    all_checks_job = jobs["all-checks"]
+    needs = all_checks_job.get("needs", [])
+    assert "collaboration-smoke" in needs
+
+    check_status_step = next(
+        step for step in all_checks_job.get("steps", []) if step.get("name") == "Check status"
+    )
+    run_script = check_status_step.get("run", "")
+    assert "needs.collaboration-smoke.result" in run_script
+
+
+def test_all_checks_treats_collaboration_gate_smoke_as_required():
+    """All-checks gate must evaluate collaboration-gate-smoke result as required."""
+    jobs = _load_ci_jobs()
+    assert "all-checks" in jobs
+
+    all_checks_job = jobs["all-checks"]
+    needs = all_checks_job.get("needs", [])
+    assert "collaboration-gate-smoke" in needs
+
+    check_status_step = next(
+        step for step in all_checks_job.get("steps", []) if step.get("name") == "Check status"
+    )
+    run_script = check_status_step.get("run", "")
+    assert "needs.collaboration-gate-smoke.result" in run_script
+
+
 def test_all_checks_treats_export_ops_gate_smoke_as_required():
     """All-checks gate must evaluate export-ops-gate-smoke result as required."""
     jobs = _load_ci_jobs()
@@ -161,6 +229,22 @@ def test_action_exposes_security_gate_input_and_outputs():
     assert "export_ops_drift_count" in outputs
     assert "export_ops_success_rate" in outputs
     assert "export_ops_gate_exit_code" in outputs
+    assert "collaboration_path" in inputs
+    assert inputs["collaboration_path"].get("default") == ".eu_ai_act/collaboration_tasks.jsonl"
+    assert "collaboration_gate_mode" in inputs
+    assert inputs["collaboration_gate_mode"].get("default") == "observe"
+    assert "collaboration_gate_policy_path" in inputs
+    assert (
+        inputs["collaboration_gate_policy_path"].get("default")
+        == "config/collaboration_gate_policy.yaml"
+    )
+    assert "collaboration_open_count" in outputs
+    assert "collaboration_in_review_count" in outputs
+    assert "collaboration_blocked_count" in outputs
+    assert "collaboration_done_count" in outputs
+    assert "collaboration_unassigned_actionable_count" in outputs
+    assert "collaboration_gate_failed" in outputs
+    assert "collaboration_gate_reason_codes" in outputs
 
 
 def test_ci_action_smoke_exercises_security_gate_enforcement():
@@ -180,3 +264,7 @@ def test_ci_action_smoke_exercises_security_gate_enforcement():
     assert "security_gate_mode" in uses_payload
     assert "security_gate_profile" in uses_payload
     assert "export_ops_gate_mode" in uses_payload
+    assert "collaboration_open_count" in step_text
+    assert "steps.collaborationgate.outcome" in step_text
+    assert "collaboration_gate_mode" in uses_payload
+    assert "collaboration_gate_policy_path" in uses_payload

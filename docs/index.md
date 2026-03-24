@@ -12,11 +12,12 @@ checks transparency and GPAI obligations, and renders audit-oriented reports.
 - Produce compliance reports (JSON, Markdown, HTML, PDF)
 - Generate payload-first external export artifacts (`generic`, `jira`, `servicenow`)
 - Evaluate export operational posture with policy-based gating (`export gate`)
+- Manage collaboration tasks with local-first assignment/review workflow and governance gating (`collaboration`, `collaboration gate`)
 - Map compliance findings to OWASP LLM Top 10 controls (`security-map`)
 - Assess transparency obligations and GPAI signals (`Art. 50`, `Art. 51-55`)
 - Integrate checks into CI/CD using the repository's composite GitHub Action
 
-## Current Delivery Status (March 23, 2026)
+## Current Delivery Status (March 24, 2026)
 
 - Phase 1: Risk classification complete
 - Phase 2: Compliance checker, checklist, transparency, GPAI complete
@@ -46,6 +47,8 @@ checks transparency and GPAI obligations, and renders audit-oriented reports.
 - Phase 26: Security gate V2 completed (profile-based thresholds + tier-aware evaluation in CLI/action/CI)
 - Phase 27: Export ops governance completed (`export gate`, reconcile log continuity, observe-first CI smoke)
 - Phase 28: Export ops governance enforce rollout completed (shared policy file + PR observe/main-tag enforce across action and CI)
+- Phase 29: Team collaboration core completed (local-first ledger + collaboration CLI + observe-only action/CI signals)
+- Phase 30: Collaboration governance completed (`collaboration gate`, policy file precedence, PR-observe/main-tag enforce rollout in action/CI)
 
 ## End-to-End Flow
 

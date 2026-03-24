@@ -3,7 +3,7 @@
 ## Vision
 Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifies AI systems by risk tier, generates compliance checklists, and produces audit-ready reports. The first open-source tool that makes EU AI Act compliance accessible to every AI team.
 
-## Status Snapshot (March 23, 2026)
+## Status Snapshot (March 24, 2026)
 - Phase 1 completed
 - Phase 2 completed
 - Phase 3 JSON/Markdown/HTML/PDF completed
@@ -32,6 +32,8 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
 - Phase 26 completed (security gate v2 with profile-based thresholds and tier-aware enforcement)
 - Phase 27 completed (export ops governance with policy-based `export gate` and reconcile log continuity)
 - Phase 28 completed (export ops governance enforce rollout with shared policy file and PR-observe/main-enforce CI-action integration)
+- Phase 29 completed (team collaboration core with local-first ledger and observe-only action/CI visibility)
+- Phase 30 completed (collaboration governance with `collaboration gate` policy evaluator and PR-observe/main-tag enforce rollout)
 
 ## Phase 1: Risk Classification Engine (Weeks 1-2) ✅ Completed
 
@@ -533,6 +535,47 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
   - pull requests run `export-ops-gate-smoke` in `observe`
   - push/tag runs `export-ops-gate-smoke` in `enforce`
 
+## Phase 29: Team Collaboration Core ✅ Completed
+
+- Added local-first collaboration ledger:
+  - `.eu_ai_act/collaboration_tasks.jsonl` (append-only, deterministic latest snapshot reads)
+  - deterministic task identity: `system_name::requirement_id`
+- Added collaboration workflow lifecycle:
+  - task fields: owner, workflow status (`open|in_review|blocked|done`), notes, timestamps
+  - sync semantics: actionable findings create/update; compliant findings auto-close active tasks
+  - reopen semantics: previously done tasks reopen when findings become actionable again
+- Added new CLI surface:
+  - `ai-act collaboration sync|list|update|summary`
+- Added observe-only collaboration operational rollout:
+  - composite action emits additive collaboration summary counters
+  - CI includes `collaboration-smoke` and enforces command contract via `all-checks`
+
+## Phase 30: Collaboration Governance V1 ✅ Completed
+
+- Added collaboration governance evaluator:
+  - new runtime module: `collaboration_gate.py`
+  - deterministic policy model (`observe|enforce`) with threshold decisions:
+    - `blocked_count > blocked_max`
+    - `unassigned_actionable_count > unassigned_actionable_max`
+  - enforce mode fails on missing data with reason code: `missing_collaboration_data`
+- Added collaboration metrics summarizer from local-first ledger:
+  - `total_tasks`, `actionable_count`, `open_count`, `in_review_count`, `blocked_count`, `done_count`
+  - `unassigned_actionable_count`, `has_collaboration_data`
+- Added new CLI command:
+  - `ai-act collaboration gate [--mode observe|enforce] [--policy PATH] [--system NAME] [--blocked-max N] [--unassigned-actionable-max N] [--limit N] [--collab-path PATH] [--output PATH] [--json]`
+  - deterministic policy precedence: `CLI flags > policy file > defaults`
+- Added canonical policy file:
+  - `config/collaboration_gate_policy.yaml`
+- Integrated collaboration governance into composite action:
+  - additive inputs: `collaboration_gate_mode`, `collaboration_gate_policy_path`
+  - additive outputs: `collaboration_gate_failed`, `collaboration_gate_reason_codes`, `collaboration_unassigned_actionable_count`
+  - enforce mode blocks action on governance violations; observe mode reports only
+- Added CI rollout for collaboration gate:
+  - new `collaboration-gate-smoke` job
+  - pull requests run in `observe`
+  - main/tag flows run in `enforce`
+  - required by `all-checks`
+
 ## Timeline Summary (Historical Plan)
 - **Week 1-2**: Risk Classification Engine (Phases 1.1-1.5)
 - **Week 2-3**: Compliance Checker Engine (Phase 2)
@@ -561,5 +604,4 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
 - AI-powered documentation generation
 - Integration with OWASP frameworks for security assessment
 - Audit trail and change history tracking
-- Team collaboration features
 - Export to external compliance tools (ServiceNow, Jira, etc.)

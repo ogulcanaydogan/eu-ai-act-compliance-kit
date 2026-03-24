@@ -17,6 +17,7 @@ Teams building AI for EU markets need a practical path from policy text to engin
 - **Risk classification** (`unacceptable`, `high_risk`, `limited`, `minimal`)
 - **Evidence-based compliance checks** (status model: `compliant`, `partial`, `non_compliant`, `not_assessed`)
 - **Checklist and remediation workflow** tied to article-level obligations
+- **Team collaboration workflow** with local task assignment, review states, notes, and summaries
 - **Auditable reporting** in `json`, `md`, `html`, `pdf`
 - **CI/CD + pre-push gates** aligned with deterministic fail policy
 - **History and dashboard artifacts** for trend visibility across systems
@@ -29,6 +30,7 @@ flowchart LR
     B --> C["classify --json"]
     C --> D["check --json"]
     D --> E["checklist"]
+    D --> J["collaboration sync/list/update/summary/gate"]
     D --> F["report (json|md|html|pdf)"]
     D --> G["history append (JSONL)"]
     C --> H["articles"]
@@ -47,7 +49,11 @@ flowchart LR
     D -- "yes" --> Z
     D -- "no" --> S{"security_gate_mode == enforce\nAND security_gate_failed == true?"}
     S -- "yes" --> Z
-    S -- "no" --> E["Pass"]
+    S -- "no" --> X{"export_ops_gate_mode == enforce\nAND export_ops_gate_failed == true?"}
+    X -- "yes" --> Z
+    X -- "no" --> Y{"collaboration_gate_mode == enforce\nAND collaboration_gate_failed == true?"}
+    Y -- "yes" --> Z
+    Y -- "no" --> E["Pass"]
     B --> F["Outputs: compliance %, counts, report path"]
 ```
 
@@ -91,6 +97,7 @@ ai-act export check examples/medical_diagnosis.yaml --target generic --json
 - `ai-act validate <system.yaml>`
 - `ai-act articles [--tier minimal|limited|high_risk|unacceptable]`
 - `ai-act history list|show|diff`
+- `ai-act collaboration sync|list|update|summary|gate`
 - `ai-act dashboard build <descriptor_dir> [--recursive] [--include-history]`
 - `ai-act export check <system.yaml> --target jira|servicenow|generic [--output PATH] [--history-path PATH] [--json] [--push] [--push-mode create|upsert] [--dry-run] [--idempotency-path PATH] [--disable-idempotency]`
 - `ai-act export history <event_id> --target jira|servicenow|generic [--output PATH] [--history-path PATH] [--json] [--push] [--push-mode create|upsert] [--dry-run] [--idempotency-path PATH] [--disable-idempotency]`
@@ -153,6 +160,13 @@ Outputs:
 - `export_ops_open_failures_count`
 - `export_ops_drift_count`
 - `export_ops_success_rate`
+- `collaboration_open_count`
+- `collaboration_in_review_count`
+- `collaboration_blocked_count`
+- `collaboration_done_count`
+- `collaboration_unassigned_actionable_count`
+- `collaboration_gate_failed`
+- `collaboration_gate_reason_codes`
 
 Fail policy:
 
@@ -160,6 +174,7 @@ Fail policy:
 - `high_risk` fails only when `fail_on_high_risk=true` and `non_compliant_count > 0`
 - security gate fails only when `security_gate_mode=enforce` and action-evaluated `security_gate_failed=true`
 - export-ops gate fails only when `export_ops_gate_mode=enforce` and action-evaluated export governance result is failed
+- collaboration gate fails only when `collaboration_gate_mode=enforce` and action-evaluated collaboration governance result is failed
 
 ## For UK Global Talent Evidence
 
@@ -251,6 +266,8 @@ pre-commit run --hook-stage pre-push --all-files
 - Phase 26: security gate v2 completed (profiles + tier-aware policy, observe default preserved)
 - Phase 27: export ops governance completed (`export gate` + reconcile log continuity + observe-only CI smoke gate)
 - Phase 28: export ops governance enforce rollout completed (shared policy file + PR observe/main-tag enforce across action and CI)
+- Phase 29: team collaboration core completed (local-first ledger + `collaboration` CLI + observe-only action/CI signals)
+- Phase 30: collaboration governance completed (`collaboration gate` policy evaluator + PR-observe/main-tag enforce rollout in action/CI)
 
 ## Disclaimer
 

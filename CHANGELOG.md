@@ -10,6 +10,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - No changes yet.
 
+## [0.1.21] - 2026-03-24
+
+### Added
+- Added collaboration governance policy evaluator runtime (`collaboration_gate.py`) with deterministic threshold rules:
+  - `blocked_count > blocked_max`
+  - `unassigned_actionable_count > unassigned_actionable_max`
+  - enforce mode missing-data failure: `missing_collaboration_data`
+- Added collaboration gate metrics summarizer over local-first ledger snapshots:
+  - `total_tasks`, `actionable_count`, `open_count`, `in_review_count`, `blocked_count`, `done_count`
+  - `unassigned_actionable_count`, `has_collaboration_data`
+- Added new CLI command:
+  - `ai-act collaboration gate [--mode observe|enforce] [--policy PATH] [--system NAME] [--blocked-max N] [--unassigned-actionable-max N] [--limit N] [--collab-path PATH] [--output PATH] [--json]`
+- Added canonical collaboration policy file:
+  - `config/collaboration_gate_policy.yaml`
+- Added additive composite action collaboration governance controls:
+  - inputs: `collaboration_gate_mode`, `collaboration_gate_policy_path`
+  - outputs: `collaboration_gate_failed`, `collaboration_gate_reason_codes`, `collaboration_unassigned_actionable_count`
+- Added CI `collaboration-gate-smoke` job with tiered rollout (PR observe, main/tag enforce) and required gate inclusion.
+- Added collaboration governance unit/CLI/CI contract tests.
+
+### Changed
+- Composite action now runs `ai-act collaboration gate --json` after collaboration sync and enforces failures only when `collaboration_gate_mode=enforce`.
+- CI action-smoke now validates collaboration governance enforcement behavior.
+- Documentation and roadmap status synchronized for Phase 30 completion.
+
+## [0.1.20] - 2026-03-24
+
+### Added
+- Added local-first team collaboration core with append-only task ledger:
+  - `.eu_ai_act/collaboration_tasks.jsonl`
+  - deterministic task identity (`system_name + requirement_id`)
+  - workflow states: `open`, `in_review`, `blocked`, `done`
+- Added new CLI group for collaboration workflow operations:
+  - `ai-act collaboration sync`
+  - `ai-act collaboration list`
+  - `ai-act collaboration update`
+  - `ai-act collaboration summary`
+- Added observe-only collaboration signals to composite action outputs:
+  - `collaboration_open_count`
+  - `collaboration_in_review_count`
+  - `collaboration_blocked_count`
+  - `collaboration_done_count`
+- Added CI `collaboration-smoke` job and required gate coverage in `all-checks`.
+- Added collaboration runtime and CLI contract tests.
+
+### Changed
+- Composite action now runs collaboration sync in observe-only mode and reports summary counters without changing gate fail policy.
+- Documentation and roadmap status synchronized for Phase 29 completion.
+
 ## [0.1.19] - 2026-03-23
 
 ### Added

@@ -22,6 +22,18 @@ from rich.table import Table
 from eu_ai_act.checker import ComplianceChecker
 from eu_ai_act.checklist import ChecklistGenerator
 from eu_ai_act.classifier import RiskClassifier
+from eu_ai_act.collaboration import (
+    WorkflowStatus,
+    list_collaboration_tasks,
+    summarize_collaboration_gate_metrics,
+    summarize_collaboration_tasks,
+    sync_collaboration_tasks,
+    update_collaboration_task,
+)
+from eu_ai_act.collaboration_gate import (
+    CollaborationGateEvaluator,
+    resolve_collaboration_gate_policy,
+)
 from eu_ai_act.dashboard import DashboardGenerator
 from eu_ai_act.export_ops_gate import (
     ExportOpsGateEvaluator,
@@ -896,6 +908,341 @@ def dashboard_build(
         console.print(
             "[red]No valid system descriptors found. Dashboard build marked as failed.[/red]"
         )
+        sys.exit(1)
+
+
+@main.group()
+def collaboration() -> None:
+    """Manage local-first collaboration workflow for compliance tasks."""
+    pass
+
+
+@collaboration.command("sync")
+@click.argument("system_yaml", type=click.Path(exists=True))
+@click.option("--owner-default", help="Default owner applied to newly created tasks")
+@click.option("--collab-path", type=click.Path(), help="Override collaboration ledger JSONL path")
+@click.option("--output", "-o", type=click.Path(), help="Write JSON payload to a file")
+@click.option("--json", "output_json", is_flag=True, help="Output as JSON")
+def collaboration_sync(
+    system_yaml: str,
+    owner_default: str | None,
+    collab_path: str | None,
+    output: str | None,
+    output_json: bool,
+) -> None:
+    """Sync collaboration tasks from current compliance findings."""
+    try:
+        descriptor = load_system_descriptor_from_file(system_yaml)
+        report = ComplianceChecker().check(descriptor)
+        payload = sync_collaboration_tasks(
+            report=report,
+            descriptor_path=system_yaml,
+            owner_default=owner_default,
+            collab_path=collab_path,
+        )
+    except Exception as e:
+        console.print(f"[red]Error syncing collaboration tasks: {e}[/red]")
+        sys.exit(1)
+
+    payload_json = json.dumps(payload, indent=2)
+    if output or output_json:
+        _emit_export_output(payload_json, output)
+        return
+
+    summary = payload["summary"]
+    changes = payload["changes"]
+    console.print(
+        Panel(
+            (
+                f"[bold]System:[/bold] {payload['system_name']}\n"
+                f"[bold]Ledger:[/bold] {payload['collaboration_path']}\n"
+                f"[bold]Total Tasks:[/bold] {payload['total_tasks']}\n"
+                f"[bold]System Tasks:[/bold] {payload['system_task_count']}"
+            ),
+            title="Collaboration Sync",
+            border_style="blue",
+        )
+    )
+    table = Table(title="Changes and Workflow Summary")
+    table.add_column("Metric")
+    table.add_column("Value", justify="right")
+    table.add_row("created_count", str(changes["created_count"]))
+    table.add_row("updated_count", str(changes["updated_count"]))
+    table.add_row("reopened_count", str(changes["reopened_count"]))
+    table.add_row("auto_closed_count", str(changes["auto_closed_count"]))
+    table.add_row("open_count", str(summary["open_count"]))
+    table.add_row("in_review_count", str(summary["in_review_count"]))
+    table.add_row("blocked_count", str(summary["blocked_count"]))
+    table.add_row("done_count", str(summary["done_count"]))
+    console.print(table)
+
+
+@collaboration.command("list")
+@click.option("--system", "system_name", help="Filter by exact system name")
+@click.option("--owner", help="Filter by exact owner")
+@click.option(
+    "--status",
+    "workflow_status",
+    type=click.Choice(["open", "in_review", "blocked", "done"]),
+    help="Filter by workflow status",
+)
+@click.option("--limit", type=int, help="Return at most N newest tasks")
+@click.option("--collab-path", type=click.Path(), help="Override collaboration ledger JSONL path")
+@click.option("--output", "-o", type=click.Path(), help="Write JSON payload to a file")
+@click.option("--json", "output_json", is_flag=True, help="Output as JSON")
+def collaboration_list(
+    system_name: str | None,
+    owner: str | None,
+    workflow_status: str | None,
+    limit: int | None,
+    collab_path: str | None,
+    output: str | None,
+    output_json: bool,
+) -> None:
+    """List latest collaboration task snapshots."""
+    try:
+        resolved_path, tasks = list_collaboration_tasks(
+            collab_path=collab_path,
+            system_name=system_name,
+            owner=owner,
+            workflow_status=cast(WorkflowStatus | None, workflow_status),
+            limit=limit,
+        )
+    except Exception as e:
+        console.print(f"[red]Error listing collaboration tasks: {e}[/red]")
+        sys.exit(1)
+
+    payload = {
+        "collaboration_path": str(resolved_path),
+        "count": len(tasks),
+        "tasks": [task.to_dict() for task in tasks],
+    }
+    payload_json = json.dumps(payload, indent=2)
+    if output or output_json:
+        _emit_export_output(payload_json, output)
+        return
+
+    if not tasks:
+        console.print(f"[yellow]No collaboration tasks found at {resolved_path}[/yellow]")
+        return
+
+    table = Table(title=f"Collaboration Tasks ({resolved_path})")
+    table.add_column("Task ID")
+    table.add_column("System")
+    table.add_column("Requirement")
+    table.add_column("Workflow")
+    table.add_column("Finding")
+    table.add_column("Owner")
+    table.add_column("Updated At")
+    for task in tasks:
+        table.add_row(
+            task.task_id,
+            task.system_name,
+            task.requirement_id,
+            task.workflow_status,
+            task.finding_status,
+            task.owner or "-",
+            task.updated_at,
+        )
+    console.print(table)
+
+
+@collaboration.command("update")
+@click.argument("task_id")
+@click.option(
+    "--status",
+    "workflow_status",
+    type=click.Choice(["open", "in_review", "blocked", "done"]),
+    help="Set workflow status",
+)
+@click.option("--owner", help="Set owner")
+@click.option("--note", help="Append note message")
+@click.option("--note-author", help="Author for appended note (default: unknown)")
+@click.option("--collab-path", type=click.Path(), help="Override collaboration ledger JSONL path")
+@click.option("--output", "-o", type=click.Path(), help="Write JSON payload to a file")
+@click.option("--json", "output_json", is_flag=True, help="Output as JSON")
+def collaboration_update(
+    task_id: str,
+    workflow_status: str | None,
+    owner: str | None,
+    note: str | None,
+    note_author: str | None,
+    collab_path: str | None,
+    output: str | None,
+    output_json: bool,
+) -> None:
+    """Update workflow status/owner/notes for one collaboration task."""
+    if workflow_status is None and owner is None and note is None:
+        console.print("[red]Error: provide at least one of --status, --owner, or --note[/red]")
+        sys.exit(1)
+
+    try:
+        resolved_path, task, changed = update_collaboration_task(
+            task_id=task_id,
+            workflow_status=cast(WorkflowStatus | None, workflow_status),
+            owner=owner,
+            note_message=note,
+            note_author=note_author,
+            collab_path=collab_path,
+        )
+    except Exception as e:
+        console.print(f"[red]Error updating collaboration task: {e}[/red]")
+        sys.exit(1)
+
+    payload = {
+        "collaboration_path": str(resolved_path),
+        "changed": changed,
+        "updated_task": task.to_dict(),
+    }
+    payload_json = json.dumps(payload, indent=2)
+    if output or output_json:
+        _emit_export_output(payload_json, output)
+        return
+
+    console.print(
+        Panel(
+            (
+                f"[bold]Task:[/bold] {task.task_id}\n"
+                f"[bold]System:[/bold] {task.system_name}\n"
+                f"[bold]Workflow:[/bold] {task.workflow_status}\n"
+                f"[bold]Owner:[/bold] {task.owner or '-'}\n"
+                f"[bold]Changed:[/bold] {'yes' if changed else 'no'}"
+            ),
+            title="Collaboration Task Updated",
+            border_style="green",
+        )
+    )
+
+
+@collaboration.command("summary")
+@click.option("--system", "system_name", help="Filter by exact system name")
+@click.option("--owner", help="Filter by exact owner")
+@click.option("--collab-path", type=click.Path(), help="Override collaboration ledger JSONL path")
+@click.option("--output", "-o", type=click.Path(), help="Write JSON payload to a file")
+@click.option("--json", "output_json", is_flag=True, help="Output as JSON")
+def collaboration_summary(
+    system_name: str | None,
+    owner: str | None,
+    collab_path: str | None,
+    output: str | None,
+    output_json: bool,
+) -> None:
+    """Summarize collaboration workflow status counts."""
+    try:
+        payload = summarize_collaboration_tasks(
+            collab_path=collab_path,
+            system_name=system_name,
+            owner=owner,
+        )
+    except Exception as e:
+        console.print(f"[red]Error summarizing collaboration tasks: {e}[/red]")
+        sys.exit(1)
+
+    payload_json = json.dumps(payload, indent=2)
+    if output or output_json:
+        _emit_export_output(payload_json, output)
+        return
+
+    console.print(
+        Panel(
+            (
+                f"[bold]Ledger:[/bold] {payload['collaboration_path']}\n"
+                f"[bold]Task Count:[/bold] {payload['count']}\n"
+                f"[bold]Open:[/bold] {payload['open_count']}\n"
+                f"[bold]In Review:[/bold] {payload['in_review_count']}\n"
+                f"[bold]Blocked:[/bold] {payload['blocked_count']}\n"
+                f"[bold]Done:[/bold] {payload['done_count']}"
+            ),
+            title="Collaboration Summary",
+            border_style="blue",
+        )
+    )
+
+
+@collaboration.command("gate")
+@click.option(
+    "--mode",
+    type=click.Choice(["observe", "enforce"]),
+    help="Gate mode. observe never blocks; enforce fails on threshold violations.",
+)
+@click.option(
+    "--policy",
+    "policy_path",
+    type=click.Path(exists=True, dir_okay=False),
+    help="Optional YAML policy file.",
+)
+@click.option("--system", "system_name", help="Filter metrics to an exact system name")
+@click.option("--blocked-max", type=int, help="Maximum allowed blocked tasks")
+@click.option(
+    "--unassigned-actionable-max",
+    type=int,
+    help="Maximum allowed unassigned actionable tasks",
+)
+@click.option("--limit", type=int, help="Maximum number of recent tasks considered")
+@click.option("--collab-path", type=click.Path(), help="Override collaboration ledger JSONL path")
+@click.option("--output", "-o", type=click.Path(), help="Write JSON payload to a file")
+@click.option("--json", "output_json", is_flag=True, help="Output JSON payload (default behavior)")
+def collaboration_gate(
+    mode: str | None,
+    policy_path: str | None,
+    system_name: str | None,
+    blocked_max: int | None,
+    unassigned_actionable_max: int | None,
+    limit: int | None,
+    collab_path: str | None,
+    output: str | None,
+    output_json: bool,
+) -> None:
+    """Evaluate collaboration workflow metrics against governance policy."""
+    _ = output_json
+
+    if limit is not None and limit < 1:
+        console.print("[red]Error: --limit must be >= 1[/red]")
+        sys.exit(1)
+    if blocked_max is not None and blocked_max < 0:
+        console.print("[red]Error: --blocked-max must be >= 0[/red]")
+        sys.exit(1)
+    if unassigned_actionable_max is not None and unassigned_actionable_max < 0:
+        console.print("[red]Error: --unassigned-actionable-max must be >= 0[/red]")
+        sys.exit(1)
+
+    try:
+        policy_payload = _load_collaboration_gate_policy_file(policy_path)
+        resolved_policy = resolve_collaboration_gate_policy(
+            policy_payload=policy_payload,
+            mode=mode,
+            system_name=system_name,
+            limit=limit,
+            blocked_max=blocked_max,
+            unassigned_actionable_max=unassigned_actionable_max,
+        )
+        metrics = summarize_collaboration_gate_metrics(
+            collab_path=collab_path,
+            system_name=resolved_policy.system_name,
+            limit=resolved_policy.limit,
+        )
+        gate_result = CollaborationGateEvaluator().evaluate(
+            policy=resolved_policy,
+            metrics=metrics,
+        )
+    except Exception as e:
+        console.print(f"[red]Error running collaboration gate: {e}[/red]")
+        sys.exit(1)
+
+    payload = {
+        "generated_at": datetime.now(UTC).isoformat(),
+        "mode": gate_result.mode,
+        "failed": gate_result.failed,
+        "reason_codes": gate_result.reason_codes,
+        "effective_policy": resolved_policy.to_dict(),
+        "metrics": metrics,
+        "decision_details": gate_result.decision_details,
+        "collaboration_path": metrics.get("collaboration_path"),
+    }
+    payload_json = json.dumps(payload, indent=2)
+    _emit_export_output(payload_json, output)
+
+    if resolved_policy.mode == "enforce" and gate_result.failed:
         sys.exit(1)
 
 
@@ -2187,6 +2534,20 @@ def _emit_export_output(payload_json: str, output: str | None) -> None:
 
 
 def _load_export_gate_policy_file(policy_path: str | None) -> dict[str, object]:
+    if policy_path is None:
+        return {}
+    try:
+        parsed = yaml.safe_load(Path(policy_path).read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise ValueError(f"Unable to read policy file: {exc}") from exc
+    if parsed is None:
+        return {}
+    if not isinstance(parsed, dict):
+        raise ValueError("Policy file must contain a YAML object at top level.")
+    return {str(key): value for key, value in parsed.items()}
+
+
+def _load_collaboration_gate_policy_file(policy_path: str | None) -> dict[str, object]:
     if policy_path is None:
         return {}
     try:
