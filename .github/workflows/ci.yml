@@ -212,7 +212,7 @@ jobs:
           {"reconcile_id":"r1","generated_at":"2026-03-23T12:00:00+00:00","target":"jira","system_name":"Smoke System","requirement_id":"Art. 10","status":"exists","drift_status":"in_sync","http_status":200,"failure_reason":null,"repair_enabled":false,"apply":false}
           {"reconcile_id":"r2","generated_at":"2026-03-23T12:01:00+00:00","target":"jira","system_name":"Smoke System","requirement_id":"Art. 11","status":"exists","drift_status":"in_sync","http_status":200,"failure_reason":null,"repair_enabled":false,"apply":false}
           JSONL
-          ai-act export gate --target jira --mode "$GATE_MODE" --policy config/export_ops_gate_policy.yaml --ops-path /tmp/export-gate-smoke/.eu_ai_act/export_ops_log.jsonl --reconcile-log-path /tmp/export-gate-smoke/.eu_ai_act/export_reconcile_log.jsonl --json > /tmp/export-gate-smoke/gate.json
+          ai-act export gate --target jira --mode "$GATE_MODE" --policy config/export_ops_gate_policy.yaml --since-hours 9999 --ops-path /tmp/export-gate-smoke/.eu_ai_act/export_ops_log.jsonl --reconcile-log-path /tmp/export-gate-smoke/.eu_ai_act/export_reconcile_log.jsonl --json > /tmp/export-gate-smoke/gate.json
           python - <<'PY'
           import json
           from pathlib import Path
