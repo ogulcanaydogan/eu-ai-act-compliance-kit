@@ -38,7 +38,7 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
 - Phase 32 completed (GA completion pack with one-command `handoff` orchestration and deterministic artifact manifest)
 - Phase 33 completed (collaboration governance V3 with in-review staleness policy signals)
 - Phase 34 completed (governance handoff V1 with enforce-capable combined gate artifact)
-- Phase 35 in progress (governance handoff V2 with policy-driven action/CI rollout)
+- Phase 35 completed (governance handoff V2 with policy-driven action/CI rollout)
 
 ## Phase 1: Risk Classification Engine (Weeks 1-2) ✅ Completed
 
@@ -668,7 +668,7 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
   - Added CI required smoke gate:
     - `handoff-governance-smoke`
 
-## Phase 35: Governance Handoff V2 🚧 In Progress
+## Phase 35: Governance Handoff V2 ✅ Completed
 
 - Scope:
   - Standardize governance handoff policy source and rollout in action/CI.

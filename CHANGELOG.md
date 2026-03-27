@@ -8,7 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Started Phase 35 Governance Handoff V2 (in progress):
+- _None._
+
+### Changed
+- _None._
+
+### Fixed
+- _None._
+
+## [0.1.26] - 2026-03-27
+
+### Added
+- Completed Phase 35 Governance Handoff V2 with policy-driven rollout:
   - canonical governance handoff policy file (`config/governance_handoff_policy.yaml`)
   - additive handoff CLI policy flag: `--governance-policy`
   - additive action inputs/outputs for governance handoff rollout
@@ -16,9 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - `handoff --governance` now supports policy-driven gate toggles and gate-level override payloads.
-
-### Fixed
-- _None._
+- Status surfaces synchronized to mark Phase 35 as completed (`README`, `docs/index`, `ROADMAP`).
 
 ## [0.1.25] - 2026-03-27
 
