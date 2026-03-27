@@ -405,9 +405,10 @@ class TestCLI:
             assert payload["status"] == "success"
             assert payload["governance_failed"] is True
             assert payload["governance_reason_codes"]
-            assert "security:security_balanced_threshold_breached" in payload[
-                "governance_reason_codes"
-            ]
+            assert (
+                "security:security_balanced_threshold_breached"
+                in payload["governance_reason_codes"]
+            )
             assert (output_dir / "governance_gate.json").exists()
 
     def test_handoff_rejects_export_target_without_governance(self):

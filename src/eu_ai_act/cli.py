@@ -1064,7 +1064,9 @@ def handoff(
             }
             governance_path = output_root / "governance_gate.json"
             governance_path.write_text(json.dumps(governance_payload, indent=2), encoding="utf-8")
-            cast(dict[str, str], manifest["artifacts"])["governance_gate.json"] = str(governance_path)
+            cast(dict[str, str], manifest["artifacts"])["governance_gate.json"] = str(
+                governance_path
+            )
             manifest["governance_summary"] = {
                 "mode": governance_payload["mode"],
                 "failed": governance_payload["failed"],
