@@ -39,7 +39,6 @@ from eu_ai_act.export_ops_gate import (
     ExportOpsGateEvaluator,
     resolve_export_ops_gate_policy,
 )
-from eu_ai_act.governance_handoff import build_governance_decision
 from eu_ai_act.exporter import (
     ExportGenerator,
     ExportPusher,
@@ -56,6 +55,7 @@ from eu_ai_act.exporter import (
     summarize_export_push_ledger,
     summarize_export_reconcile_log,
 )
+from eu_ai_act.governance_handoff import build_governance_decision
 from eu_ai_act.gpai import (
     GPAIAssessment,
     GPAIAssessor,
