@@ -1,6 +1,11 @@
 """Unit tests for governance handoff aggregation runtime."""
 
-from eu_ai_act.governance_handoff import build_governance_decision
+import pytest
+
+from eu_ai_act.governance_handoff import (
+    build_governance_decision,
+    resolve_governance_handoff_policy,
+)
 
 
 def test_build_governance_decision_aggregates_failed_gates_and_reasons():
@@ -44,3 +49,48 @@ def test_build_governance_decision_skips_optional_export_gate_when_not_provided(
     assert decision.failed_gates == []
     assert decision.reason_codes == []
     assert decision.export_ops_gate is None
+
+
+def test_resolve_governance_handoff_policy_defaults():
+    policy = resolve_governance_handoff_policy()
+
+    assert policy.mode == "observe"
+    assert policy.security_enabled is True
+    assert policy.collaboration_enabled is True
+    assert policy.export_ops_enabled is False
+    assert policy.security_profile == "balanced"
+    assert policy.export_target is None
+
+
+def test_resolve_governance_handoff_policy_cli_overrides_file_values():
+    policy = resolve_governance_handoff_policy(
+        policy_payload={
+            "mode": "enforce",
+            "gates": {
+                "security": False,
+                "collaboration": False,
+                "export_ops": False,
+            },
+            "security": {"profile": "strict"},
+            "export_ops": {"target": "servicenow"},
+        },
+        mode="observe",
+        security_enabled=True,
+        collaboration_enabled=True,
+        export_target="jira",
+        security_profile="balanced",
+    )
+
+    assert policy.mode == "observe"
+    assert policy.security_enabled is True
+    assert policy.collaboration_enabled is True
+    assert policy.export_ops_enabled is True
+    assert policy.export_target == "jira"
+    assert policy.security_profile == "balanced"
+
+
+def test_resolve_governance_handoff_policy_enforce_missing_export_target_fails():
+    with pytest.raises(ValueError, match="export target is missing"):
+        resolve_governance_handoff_policy(
+            policy_payload={"gates": {"export_ops": True}},
+        )
