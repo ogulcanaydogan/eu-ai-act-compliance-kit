@@ -362,7 +362,7 @@ jobs:
           if [[ "${{ github.event_name }}" != "pull_request" && "$IS_MAIN_OR_TAG" == "true" ]]; then
             GATE_MODE="enforce"
           fi
-          ai-act collaboration gate --mode "$GATE_MODE" --policy config/collaboration_gate_policy.yaml --stale-actionable-max 9999 --blocked-stale-max 9999 --stale-after-hours 1 --blocked-stale-after-hours 1 --collab-path /tmp/collaboration-gate-smoke/.eu_ai_act/collaboration_tasks.jsonl --json > /tmp/collaboration-gate-smoke/gate.json
+          ai-act collaboration gate --mode "$GATE_MODE" --policy config/collaboration_gate_policy.yaml --stale-actionable-max 9999 --blocked-stale-max 9999 --review-stale-max 9999 --stale-after-hours 1 --blocked-stale-after-hours 1 --review-stale-after-hours 1 --collab-path /tmp/collaboration-gate-smoke/.eu_ai_act/collaboration_tasks.jsonl --json > /tmp/collaboration-gate-smoke/gate.json
           python - <<'PY'
           import json
           from pathlib import Path
@@ -378,10 +378,13 @@ jobs:
           assert payload["metrics"]["unassigned_actionable_count"] == 0
           assert "stale_actionable_count" in payload["metrics"]
           assert "blocked_stale_count" in payload["metrics"]
+          assert "review_stale_count" in payload["metrics"]
           assert "stale_actionable" in payload["decision_details"]
           assert "blocked_stale" in payload["decision_details"]
+          assert "review_stale" in payload["decision_details"]
           assert payload["effective_policy"]["sla"]["stale_after_hours"] == 1.0
           assert payload["effective_policy"]["sla"]["blocked_stale_after_hours"] == 1.0
+          assert payload["effective_policy"]["sla"]["review_stale_after_hours"] == 1.0
           PY
 
   build:
@@ -511,6 +514,7 @@ jobs:
           [[ "${{ steps.minimal.outputs.collaboration_unassigned_actionable_count }}" =~ ^[0-9]+$ ]]
           [[ "${{ steps.minimal.outputs.collaboration_stale_actionable_count }}" =~ ^[0-9]+$ ]]
           [[ "${{ steps.minimal.outputs.collaboration_blocked_stale_count }}" =~ ^[0-9]+$ ]]
+          [[ "${{ steps.minimal.outputs.collaboration_review_stale_count }}" =~ ^[0-9]+$ ]]
           [[ "${{ steps.minimal.outputs.collaboration_gate_failed }}" =~ ^(true|false)$ ]]
           test -f minimal_report.json
 

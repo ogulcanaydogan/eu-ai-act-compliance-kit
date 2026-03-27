@@ -8,7 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- No changes yet.
+- Started Phase 33 Collaboration Governance V3 (in progress) with additive in-review staleness policy support:
+  - collaboration gate policy fields: `thresholds.review_stale_max`, `sla.review_stale_after_hours`
+  - collaboration gate metrics: `review_stale_count`
+  - collaboration gate reason code: `review_stale_threshold_exceeded`
+  - CLI flags: `--review-stale-max`, `--review-stale-after-hours`
+  - additive action output: `collaboration_review_stale_count`
+
+### Changed
+- CI `collaboration-gate-smoke` now validates review-stale policy flags and payload fields.
+- Status surfaces synchronized to mark Phase 33 as in progress (`README`, `docs/index`, `ROADMAP`).
 
 ## [0.1.23] - 2026-03-27
 

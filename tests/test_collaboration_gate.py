@@ -17,8 +17,10 @@ def test_resolve_collaboration_gate_policy_defaults():
     assert policy.unassigned_actionable_max == 0
     assert policy.stale_actionable_max is None
     assert policy.blocked_stale_max is None
+    assert policy.review_stale_max is None
     assert policy.stale_after_hours == 72.0
     assert policy.blocked_stale_after_hours == 72.0
+    assert policy.review_stale_after_hours == 48.0
 
 
 def test_resolve_collaboration_gate_policy_cli_overrides_policy_file():
@@ -33,8 +35,13 @@ def test_resolve_collaboration_gate_policy_cli_overrides_policy_file():
                 "unassigned_actionable_max": 3,
                 "stale_actionable_max": 4,
                 "blocked_stale_max": 5,
+                "review_stale_max": 6,
             },
-            "sla": {"stale_after_hours": 24, "blocked_stale_after_hours": 12},
+            "sla": {
+                "stale_after_hours": 24,
+                "blocked_stale_after_hours": 12,
+                "review_stale_after_hours": 8,
+            },
         },
         mode="observe",
         blocked_max=0,
@@ -48,8 +55,10 @@ def test_resolve_collaboration_gate_policy_cli_overrides_policy_file():
     assert policy.unassigned_actionable_max == 3
     assert policy.stale_actionable_max == 4
     assert policy.blocked_stale_max == 5
+    assert policy.review_stale_max == 6
     assert policy.stale_after_hours == 36
     assert policy.blocked_stale_after_hours == 12
+    assert policy.review_stale_after_hours == 8
 
 
 def test_collaboration_gate_observe_reports_violations_without_enforcement():
@@ -60,6 +69,7 @@ def test_collaboration_gate_observe_reports_violations_without_enforcement():
         unassigned_actionable_max=0,
         stale_actionable_max=0,
         blocked_stale_max=0,
+        review_stale_max=0,
     )
     result = CollaborationGateEvaluator().evaluate(
         policy=policy,
@@ -69,6 +79,7 @@ def test_collaboration_gate_observe_reports_violations_without_enforcement():
             "unassigned_actionable_count": 2,
             "stale_actionable_count": 1,
             "blocked_stale_count": 1,
+            "review_stale_count": 1,
         },
     )
 
@@ -78,6 +89,7 @@ def test_collaboration_gate_observe_reports_violations_without_enforcement():
     assert "unassigned_actionable_threshold_exceeded" in result.reason_codes
     assert "stale_actionable_threshold_exceeded" in result.reason_codes
     assert "blocked_stale_threshold_exceeded" in result.reason_codes
+    assert "review_stale_threshold_exceeded" in result.reason_codes
 
 
 def test_collaboration_gate_enforce_fails_when_collaboration_data_missing():
@@ -95,6 +107,7 @@ def test_collaboration_gate_enforce_fails_when_collaboration_data_missing():
             "unassigned_actionable_count": 0,
             "stale_actionable_count": 0,
             "blocked_stale_count": 0,
+            "review_stale_count": 0,
         },
     )
 
@@ -118,6 +131,7 @@ def test_collaboration_gate_stale_thresholds_disabled_when_not_configured():
             "unassigned_actionable_count": 0,
             "stale_actionable_count": 50,
             "blocked_stale_count": 25,
+            "review_stale_count": 25,
         },
     )
 

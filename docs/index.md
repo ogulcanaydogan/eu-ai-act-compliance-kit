@@ -52,6 +52,7 @@ checks transparency and GPAI obligations, and renders audit-oriented reports.
 - Phase 30: Collaboration governance completed (`collaboration gate`, policy file precedence, PR-observe/main-tag enforce rollout in action/CI)
 - Phase 31: Collaboration governance V2 completed (SLA/staleness-aware thresholds, additive gate metrics, PR-observe/main-tag enforce retained)
 - Phase 32: GA completion pack completed (one-command `handoff` orchestration + handoff-smoke CI contract)
+- Phase 33: Collaboration governance V3 in progress (in-review staleness policy signals + additive gate contract expansion)
 
 ## End-to-End Flow
 

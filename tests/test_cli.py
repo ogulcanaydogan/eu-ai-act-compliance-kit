@@ -650,10 +650,13 @@ class TestCLI:
         assert payload["metrics"]["has_collaboration_data"] is True
         assert "stale_actionable_count" in payload["metrics"]
         assert "blocked_stale_count" in payload["metrics"]
+        assert "review_stale_count" in payload["metrics"]
         assert payload["effective_policy"]["thresholds"]["stale_actionable_max"] is None
         assert payload["effective_policy"]["thresholds"]["blocked_stale_max"] is None
+        assert payload["effective_policy"]["thresholds"]["review_stale_max"] is None
         assert payload["effective_policy"]["sla"]["stale_after_hours"] == 72.0
         assert payload["effective_policy"]["sla"]["blocked_stale_after_hours"] == 72.0
+        assert payload["effective_policy"]["sla"]["review_stale_after_hours"] == 48.0
         assert payload["collaboration_path"] == str(collab_path)
 
     def test_collaboration_gate_enforce_missing_data_nonzero(self, tmp_path):
@@ -695,9 +698,11 @@ class TestCLI:
                 "  unassigned_actionable_max: 1\n"
                 "  stale_actionable_max: 2\n"
                 "  blocked_stale_max: 3\n"
+                "  review_stale_max: 4\n"
                 "sla:\n"
                 "  stale_after_hours: 48\n"
                 "  blocked_stale_after_hours: 24\n"
+                "  review_stale_after_hours: 12\n"
             ),
             encoding="utf-8",
         )
@@ -731,8 +736,10 @@ class TestCLI:
         assert payload["effective_policy"]["thresholds"]["unassigned_actionable_max"] == 1
         assert payload["effective_policy"]["thresholds"]["stale_actionable_max"] == 2
         assert payload["effective_policy"]["thresholds"]["blocked_stale_max"] == 3
+        assert payload["effective_policy"]["thresholds"]["review_stale_max"] == 4
         assert payload["effective_policy"]["sla"]["stale_after_hours"] == 12.0
         assert payload["effective_policy"]["sla"]["blocked_stale_after_hours"] == 24.0
+        assert payload["effective_policy"]["sla"]["review_stale_after_hours"] == 12.0
 
     def test_collaboration_gate_enforce_stale_threshold_nonzero(self, tmp_path):
         """Enforce mode should fail when stale actionable threshold is exceeded."""
@@ -781,8 +788,10 @@ class TestCLI:
             (["--unassigned-actionable-max", "-1"], "--unassigned-actionable-max must be >= 0"),
             (["--stale-actionable-max", "-1"], "--stale-actionable-max must be >= 0"),
             (["--blocked-stale-max", "-1"], "--blocked-stale-max must be >= 0"),
+            (["--review-stale-max", "-1"], "--review-stale-max must be >= 0"),
             (["--stale-after-hours", "0"], "--stale-after-hours must be > 0"),
             (["--blocked-stale-after-hours", "0"], "--blocked-stale-after-hours must be > 0"),
+            (["--review-stale-after-hours", "0"], "--review-stale-after-hours must be > 0"),
         ]
         for flags, expected_error in invalid_cases:
             result = runner.invoke(main, ["collaboration", "gate", *flags, "--json"])

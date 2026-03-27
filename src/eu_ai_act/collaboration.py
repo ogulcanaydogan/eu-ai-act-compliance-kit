@@ -474,6 +474,7 @@ def summarize_collaboration_gate_metrics(
     limit: int | None = None,
     stale_after_hours: float | None = None,
     blocked_stale_after_hours: float | None = None,
+    review_stale_after_hours: float | None = None,
     reference_time: datetime | None = None,
 ) -> dict[str, Any]:
     """Summarize collaboration metrics required by governance gate evaluation."""
@@ -495,6 +496,9 @@ def summarize_collaboration_gate_metrics(
     resolved_stale_after_hours = float(stale_after_hours) if stale_after_hours is not None else 72.0
     resolved_blocked_stale_after_hours = (
         float(blocked_stale_after_hours) if blocked_stale_after_hours is not None else 72.0
+    )
+    resolved_review_stale_after_hours = (
+        float(review_stale_after_hours) if review_stale_after_hours is not None else 48.0
     )
     now_utc = datetime.now(UTC)
     if reference_time is not None:
@@ -528,6 +532,19 @@ def summarize_collaboration_gate_metrics(
             )
         )
     )
+    review_stale_count = sum(
+        1
+        for task in tasks
+        if (
+            task.finding_status in _ACTIONABLE_FINDING_STATUSES
+            and task.workflow_status == "in_review"
+            and _is_task_stale(
+                task,
+                now_utc=now_utc,
+                threshold_hours=resolved_review_stale_after_hours,
+            )
+        )
+    )
     return {
         "generated_at": _utc_now_iso(),
         "collaboration_path": str(collaboration_path),
@@ -536,8 +553,10 @@ def summarize_collaboration_gate_metrics(
         "unassigned_actionable_count": unassigned_actionable_count,
         "stale_actionable_count": stale_actionable_count,
         "blocked_stale_count": blocked_stale_count,
+        "review_stale_count": review_stale_count,
         "stale_after_hours": resolved_stale_after_hours,
         "blocked_stale_after_hours": resolved_blocked_stale_after_hours,
+        "review_stale_after_hours": resolved_review_stale_after_hours,
         "has_collaboration_data": len(tasks) > 0,
         **status_summary,
     }

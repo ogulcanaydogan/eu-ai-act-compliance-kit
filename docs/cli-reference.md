@@ -269,8 +269,10 @@ Subcommands:
     - `--unassigned-actionable-max N` (must be `>= 0`)
     - `--stale-actionable-max N` (must be `>= 0`, threshold disabled when omitted)
     - `--blocked-stale-max N` (must be `>= 0`, threshold disabled when omitted)
+    - `--review-stale-max N` (must be `>= 0`, threshold disabled when omitted)
     - `--stale-after-hours F` (must be `> 0`)
     - `--blocked-stale-after-hours F` (must be `> 0`)
+    - `--review-stale-after-hours F` (must be `> 0`)
     - `--limit N` (must be `>= 1`)
     - `--collab-path PATH`
     - `-o, --output PATH`
@@ -282,11 +284,14 @@ Subcommands:
   - additive reason codes:
     - `stale_actionable_threshold_exceeded`
     - `blocked_stale_threshold_exceeded`
+    - `review_stale_threshold_exceeded`
   - policy schema additions:
     - `thresholds.stale_actionable_max`
     - `thresholds.blocked_stale_max`
+    - `thresholds.review_stale_max`
     - `sla.stale_after_hours`
     - `sla.blocked_stale_after_hours`
+    - `sla.review_stale_after_hours`
 
 Workflow semantics:
 

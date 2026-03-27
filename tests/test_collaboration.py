@@ -302,6 +302,7 @@ class TestCollaboration:
             system_name="System A",
             stale_after_hours=2,
             blocked_stale_after_hours=1,
+            review_stale_after_hours=1,
             reference_time=datetime(2026, 3, 24, 12, 0, tzinfo=UTC),
         )
 
@@ -310,5 +311,7 @@ class TestCollaboration:
         assert metrics["unassigned_actionable_count"] == 2
         assert metrics["stale_actionable_count"] == 2
         assert metrics["blocked_stale_count"] == 1
+        assert metrics["review_stale_count"] == 1
         assert metrics["stale_after_hours"] == 2.0
         assert metrics["blocked_stale_after_hours"] == 1.0
+        assert metrics["review_stale_after_hours"] == 1.0

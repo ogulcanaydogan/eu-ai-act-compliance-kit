@@ -176,8 +176,10 @@ def test_ci_contains_collaboration_gate_smoke_job():
     assert "--policy config/collaboration_gate_policy.yaml" in joined_run
     assert "--stale-actionable-max 9999" in joined_run
     assert "--blocked-stale-max 9999" in joined_run
+    assert "--review-stale-max 9999" in joined_run
     assert "--stale-after-hours 1" in joined_run
     assert "--blocked-stale-after-hours 1" in joined_run
+    assert "--review-stale-after-hours 1" in joined_run
     assert (
         'if [[ "${{ github.event_name }}" != "pull_request" && "$IS_MAIN_OR_TAG" == "true" ]]; then'
         in joined_run
@@ -281,6 +283,7 @@ def test_action_exposes_security_gate_input_and_outputs():
     assert "collaboration_unassigned_actionable_count" in outputs
     assert "collaboration_stale_actionable_count" in outputs
     assert "collaboration_blocked_stale_count" in outputs
+    assert "collaboration_review_stale_count" in outputs
     assert "collaboration_gate_failed" in outputs
     assert "collaboration_gate_reason_codes" in outputs
 
@@ -303,6 +306,7 @@ def test_ci_action_smoke_exercises_security_gate_enforcement():
     assert "security_gate_profile" in uses_payload
     assert "export_ops_gate_mode" in uses_payload
     assert "collaboration_open_count" in step_text
+    assert "collaboration_review_stale_count" in step_text
     assert "steps.collaborationgate.outcome" in step_text
     assert "collaboration_gate_mode" in uses_payload
     assert "collaboration_gate_policy_path" in uses_payload
