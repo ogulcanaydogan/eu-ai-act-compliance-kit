@@ -423,6 +423,12 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Reset Docker Hub auth for anonymous base-image pulls
+        run: |
+          docker logout docker.io || true
+          docker logout || true
+          rm -f ~/.docker/config.json
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
         with:
