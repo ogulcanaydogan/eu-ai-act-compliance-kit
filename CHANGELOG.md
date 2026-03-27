@@ -8,16 +8,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Phase 36 GA stabilization hardening is now in progress:
+- _None._
+
+### Changed
+- _None._
+
+### Fixed
+- _None._
+
+## [0.1.27] - 2026-03-27
+
+### Added
+- Completed Phase 36 GA stabilization hardening:
   - new required CI compatibility smoke gate over Python `3.11`, `3.12`, and `3.13`
   - handoff/governance smoke contract verification in the compatibility lane
 
 ### Changed
 - `handoff` failure handling is now deterministic for governance policy load failures (`failed_step=governance_policy`) with manifest-first diagnostics.
 - Handoff manifest write failures now emit standardized stderr warnings (`Warning: failed to write handoff manifest: ...`) without masking the primary command outcome.
-
-### Fixed
-- _None._
+- Status surfaces synchronized to mark Phase 36 as completed (`README`, `docs/index`, `ROADMAP`).
 
 ## [0.1.26] - 2026-03-27
 
