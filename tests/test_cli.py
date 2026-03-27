@@ -448,6 +448,36 @@ class TestCLI:
         assert result.exit_code != 0
         assert "--governance-policy requires --governance" in result.output
 
+    def test_handoff_invalid_governance_policy_writes_failed_manifest(self):
+        """Invalid governance policy should fail with deterministic manifest payload."""
+        runner = CliRunner()
+        system_yaml = EXAMPLES_DIR / "medical_diagnosis.yaml"
+
+        with runner.isolated_filesystem():
+            output_dir = Path("handoff_out")
+            policy_path = Path("governance_policy.yaml")
+            policy_path.write_text("- invalid\n- policy\n", encoding="utf-8")
+            result = runner.invoke(
+                main,
+                [
+                    "handoff",
+                    str(system_yaml),
+                    "--output-dir",
+                    str(output_dir),
+                    "--governance",
+                    "--governance-policy",
+                    str(policy_path),
+                    "--json",
+                ],
+            )
+
+            assert result.exit_code != 0
+            payload = json.loads(result.output[result.output.find("{") :])
+            assert payload["status"] == "failed"
+            assert payload["failed_step"] == "governance_policy"
+            assert "Governance policy file must contain a YAML object" in payload["error"]
+            assert (output_dir / "handoff_manifest.json").exists()
+
     def test_handoff_governance_policy_file_controls_mode_when_flag_not_passed(self):
         """Policy file mode should apply when --governance-mode is not passed explicitly."""
         runner = CliRunner()

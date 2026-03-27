@@ -112,6 +112,27 @@ def test_ci_test_job_enforces_coverage_floor():
     assert "--cov-fail-under=80" in joined_run
 
 
+def test_ci_contains_compat_smoke_job_with_python_matrix():
+    """CI must include compat-smoke job for Python 3.11/3.12/3.13 handoff/governance smoke."""
+    jobs = _load_ci_jobs()
+    assert "compat-smoke" in jobs
+
+    compat_job = jobs["compat-smoke"]
+    assert compat_job.get("name") == "Compat Smoke (Python ${{ matrix.python-version }})"
+    matrix = compat_job.get("strategy", {}).get("matrix", {})
+    assert matrix.get("python-version") == ["3.11", "3.12", "3.13"]
+
+    steps = compat_job.get("steps", [])
+    run_blocks = [step.get("run", "") for step in steps if isinstance(step, dict)]
+    joined_run = "\n".join(run_blocks)
+    assert "ai-act --help" in joined_run
+    assert "ai-act --version" in joined_run
+    assert "ai-act handoff" in joined_run
+    assert "--governance" in joined_run
+    assert "--governance-mode observe" in joined_run
+    assert "governance_gate.json" in joined_run
+
+
 def test_all_checks_treats_examples_smoke_as_required():
     """All-checks gate must evaluate examples-smoke result as required."""
     jobs = _load_ci_jobs()
@@ -126,6 +147,22 @@ def test_all_checks_treats_examples_smoke_as_required():
     )
     run_script = check_status_step.get("run", "")
     assert "needs.examples-smoke.result" in run_script
+
+
+def test_all_checks_treats_compat_smoke_as_required():
+    """All-checks gate must evaluate compat-smoke result as required."""
+    jobs = _load_ci_jobs()
+    assert "all-checks" in jobs
+
+    all_checks_job = jobs["all-checks"]
+    needs = all_checks_job.get("needs", [])
+    assert "compat-smoke" in needs
+
+    check_status_step = next(
+        step for step in all_checks_job.get("steps", []) if step.get("name") == "Check status"
+    )
+    run_script = check_status_step.get("run", "")
+    assert "needs.compat-smoke.result" in run_script
 
 
 def test_all_checks_treats_handoff_smoke_as_required():

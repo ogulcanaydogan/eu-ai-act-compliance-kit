@@ -50,6 +50,14 @@ Failure contract:
 - If any step fails, command exits non-zero.
 - `handoff_manifest.json` is still written with `status=failed`, `failed_step`, and `error`.
 - If `--governance-mode enforce` is used and governance fails, command exits non-zero while keeping `status=success` plus governance fields for diagnosis.
+- Governance policy load/shape failures are reported as `failed_step=governance_policy` with deterministic `error` content.
+
+GA stabilization notes:
+
+- CI enforces compatibility smoke on Python `3.11`, `3.12`, and `3.13`.
+- Minimal compatibility contract includes `ai-act --help`, `ai-act --version`, and `handoff --governance` observe path artifact checks.
+- If manifest write itself fails (for example, filesystem permission issues), CLI emits a standardized warning:
+  - `Warning: failed to write handoff manifest: <reason>`
 
 Governance options:
 

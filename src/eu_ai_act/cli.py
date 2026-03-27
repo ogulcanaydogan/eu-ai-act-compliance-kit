@@ -842,12 +842,6 @@ def handoff(
     }
     governance_enforced_failure = False
     governance_policy_payload: dict[str, object] = {}
-    if governance and governance_policy is not None:
-        try:
-            governance_policy_payload = _load_governance_handoff_policy_file(governance_policy)
-        except ValueError as exc:
-            console.print(f"[red]Error: {exc}[/red]")
-            sys.exit(1)
 
     classifier = RiskClassifier()
     checker = ComplianceChecker()
@@ -858,8 +852,13 @@ def handoff(
     security_mapper = SecurityMapper()
     security_gate_evaluator = SecurityGateEvaluator()
 
-    current_step = "validate"
+    current_step = "setup"
     try:
+        if governance:
+            current_step = "governance_policy"
+            governance_policy_payload = _load_governance_handoff_policy_file(governance_policy)
+
+        current_step = "validate"
         descriptor = load_system_descriptor_from_file(system_yaml)
         manifest["system_name"] = descriptor.name
         validate_payload = {
@@ -1135,7 +1134,10 @@ def handoff(
 
     manifest_path = output_root / "handoff_manifest.json"
     cast(dict[str, str], manifest["artifacts"])["handoff_manifest.json"] = str(manifest_path)
-    manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    try:
+        manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    except Exception as exc:
+        click.echo(f"Warning: failed to write handoff manifest: {exc}", err=True)
 
     if output_json:
         click.echo(json.dumps(manifest, indent=2))
