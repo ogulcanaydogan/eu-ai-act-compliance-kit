@@ -131,6 +131,12 @@ outputs:
   collaboration_unassigned_actionable_count:
     description: "Unassigned actionable collaboration task count from collaboration gate metrics"
     value: ${{ steps.analyze.outputs.collaboration_unassigned_actionable_count }}
+  collaboration_stale_actionable_count:
+    description: "Stale actionable collaboration task count from collaboration gate metrics"
+    value: ${{ steps.analyze.outputs.collaboration_stale_actionable_count }}
+  collaboration_blocked_stale_count:
+    description: "Blocked stale collaboration task count from collaboration gate metrics"
+    value: ${{ steps.analyze.outputs.collaboration_blocked_stale_count }}
   collaboration_gate_failed:
     description: "Collaboration gate failure flag (true/false)"
     value: ${{ steps.analyze.outputs.collaboration_gate_failed }}
@@ -283,6 +289,12 @@ runs:
         collaboration_unassigned_actionable_count = int(
             collaboration_gate_metrics.get("unassigned_actionable_count", 0) or 0
         )
+        collaboration_stale_actionable_count = int(
+            collaboration_gate_metrics.get("stale_actionable_count", 0) or 0
+        )
+        collaboration_blocked_stale_count = int(
+            collaboration_gate_metrics.get("blocked_stale_count", 0) or 0
+        )
         collaboration_blocked_count = int(
             collaboration_gate_metrics.get("blocked_count", collaboration_blocked_count) or 0
         )
@@ -328,6 +340,8 @@ runs:
         print(f"collaboration_blocked_count={collaboration_blocked_count}")
         print(f"collaboration_done_count={collaboration_done_count}")
         print(f"collaboration_unassigned_actionable_count={collaboration_unassigned_actionable_count}")
+        print(f"collaboration_stale_actionable_count={collaboration_stale_actionable_count}")
+        print(f"collaboration_blocked_stale_count={collaboration_blocked_stale_count}")
         PY
 
     - name: "Generate report"
@@ -409,6 +423,8 @@ runs:
         COLLABORATION_GATE_EXIT_CODE="${{ steps.analyze.outputs.collaboration_gate_exit_code }}"
         COLLABORATION_BLOCKED_COUNT="${{ steps.analyze.outputs.collaboration_blocked_count }}"
         COLLABORATION_UNASSIGNED_ACTIONABLE_COUNT="${{ steps.analyze.outputs.collaboration_unassigned_actionable_count }}"
+        COLLABORATION_STALE_ACTIONABLE_COUNT="${{ steps.analyze.outputs.collaboration_stale_actionable_count }}"
+        COLLABORATION_BLOCKED_STALE_COUNT="${{ steps.analyze.outputs.collaboration_blocked_stale_count }}"
 
         if [[ "$RISK_TIER" == "unacceptable" ]]; then
           echo "❌ Workflow failed: System classified as UNACCEPTABLE"
@@ -441,7 +457,7 @@ runs:
         if [[ "$COLLABORATION_GATE_MODE" == "enforce" && ( "$COLLABORATION_GATE_FAILED" == "true" || "$COLLABORATION_GATE_EXIT_CODE" != "0" ) ]]; then
           echo "❌ Workflow failed: Collaboration gate policy blocked this run"
           echo "   mode=$COLLABORATION_GATE_MODE exit_code=$COLLABORATION_GATE_EXIT_CODE reason_codes=$COLLABORATION_GATE_REASON_CODES"
-          echo "   blocked=$COLLABORATION_BLOCKED_COUNT unassigned_actionable=$COLLABORATION_UNASSIGNED_ACTIONABLE_COUNT"
+          echo "   blocked=$COLLABORATION_BLOCKED_COUNT unassigned_actionable=$COLLABORATION_UNASSIGNED_ACTIONABLE_COUNT stale_actionable=$COLLABORATION_STALE_ACTIONABLE_COUNT blocked_stale=$COLLABORATION_BLOCKED_STALE_COUNT"
           echo "   Address collaboration governance findings before merging."
           exit 1
         fi

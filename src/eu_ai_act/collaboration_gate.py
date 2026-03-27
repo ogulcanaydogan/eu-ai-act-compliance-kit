@@ -17,6 +17,10 @@ class CollaborationGatePolicy:
     limit: int
     blocked_max: int
     unassigned_actionable_max: int
+    stale_actionable_max: int | None
+    blocked_stale_max: int | None
+    stale_after_hours: float
+    blocked_stale_after_hours: float
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -30,6 +34,12 @@ class CollaborationGatePolicy:
             "thresholds": {
                 "blocked_max": self.blocked_max,
                 "unassigned_actionable_max": self.unassigned_actionable_max,
+                "stale_actionable_max": self.stale_actionable_max,
+                "blocked_stale_max": self.blocked_stale_max,
+            },
+            "sla": {
+                "stale_after_hours": self.stale_after_hours,
+                "blocked_stale_after_hours": self.blocked_stale_after_hours,
             },
         }
 
@@ -63,12 +73,21 @@ class CollaborationGateEvaluator:
     ) -> CollaborationGateResult:
         blocked_count = int(metrics.get("blocked_count", 0) or 0)
         unassigned_actionable_count = int(metrics.get("unassigned_actionable_count", 0) or 0)
+        stale_actionable_count = int(metrics.get("stale_actionable_count", 0) or 0)
+        blocked_stale_count = int(metrics.get("blocked_stale_count", 0) or 0)
         has_collaboration_data = bool(metrics.get("has_collaboration_data", False))
 
         missing_data_violation = policy.mode == "enforce" and not has_collaboration_data
         blocked_violation = blocked_count > policy.blocked_max
         unassigned_actionable_violation = (
             unassigned_actionable_count > policy.unassigned_actionable_max
+        )
+        stale_actionable_violation = (
+            policy.stale_actionable_max is not None
+            and stale_actionable_count > policy.stale_actionable_max
+        )
+        blocked_stale_violation = (
+            policy.blocked_stale_max is not None and blocked_stale_count > policy.blocked_stale_max
         )
 
         reason_codes: list[str] = []
@@ -78,6 +97,10 @@ class CollaborationGateEvaluator:
             reason_codes.append("blocked_threshold_exceeded")
         if unassigned_actionable_violation:
             reason_codes.append("unassigned_actionable_threshold_exceeded")
+        if stale_actionable_violation:
+            reason_codes.append("stale_actionable_threshold_exceeded")
+        if blocked_stale_violation:
+            reason_codes.append("blocked_stale_threshold_exceeded")
 
         failed = bool(reason_codes)
         decision_details = {
@@ -90,6 +113,20 @@ class CollaborationGateEvaluator:
                 "actual": unassigned_actionable_count,
                 "threshold_max": policy.unassigned_actionable_max,
                 "violated": unassigned_actionable_violation,
+            },
+            "stale_actionable": {
+                "actual": stale_actionable_count,
+                "threshold_max": policy.stale_actionable_max,
+                "violated": stale_actionable_violation,
+                "enabled": policy.stale_actionable_max is not None,
+                "sla_hours": policy.stale_after_hours,
+            },
+            "blocked_stale": {
+                "actual": blocked_stale_count,
+                "threshold_max": policy.blocked_stale_max,
+                "violated": blocked_stale_violation,
+                "enabled": policy.blocked_stale_max is not None,
+                "sla_hours": policy.blocked_stale_after_hours,
             },
             "data_presence": {
                 "has_collaboration_data": has_collaboration_data,
@@ -112,6 +149,10 @@ def resolve_collaboration_gate_policy(
     limit: int | None = None,
     blocked_max: int | None = None,
     unassigned_actionable_max: int | None = None,
+    stale_actionable_max: int | None = None,
+    blocked_stale_max: int | None = None,
+    stale_after_hours: float | None = None,
+    blocked_stale_after_hours: float | None = None,
 ) -> CollaborationGatePolicy:
     """Resolve policy with precedence: CLI flags > policy file > defaults."""
     values: dict[str, Any] = {
@@ -120,6 +161,10 @@ def resolve_collaboration_gate_policy(
         "limit": 200,
         "blocked_max": 0,
         "unassigned_actionable_max": 0,
+        "stale_actionable_max": None,
+        "blocked_stale_max": None,
+        "stale_after_hours": 72.0,
+        "blocked_stale_after_hours": 72.0,
     }
 
     if policy_payload is not None:
@@ -152,6 +197,19 @@ def resolve_collaboration_gate_policy(
                 values["blocked_max"] = thresholds.get("blocked_max")
             if "unassigned_actionable_max" in thresholds:
                 values["unassigned_actionable_max"] = thresholds.get("unassigned_actionable_max")
+            if "stale_actionable_max" in thresholds:
+                values["stale_actionable_max"] = thresholds.get("stale_actionable_max")
+            if "blocked_stale_max" in thresholds:
+                values["blocked_stale_max"] = thresholds.get("blocked_stale_max")
+
+        sla = policy_payload.get("sla")
+        if sla is not None:
+            if not isinstance(sla, dict):
+                raise ValueError("Policy field 'sla' must be an object.")
+            if "stale_after_hours" in sla:
+                values["stale_after_hours"] = sla.get("stale_after_hours")
+            if "blocked_stale_after_hours" in sla:
+                values["blocked_stale_after_hours"] = sla.get("blocked_stale_after_hours")
 
     if mode is not None:
         values["mode"] = mode
@@ -163,6 +221,14 @@ def resolve_collaboration_gate_policy(
         values["blocked_max"] = blocked_max
     if unassigned_actionable_max is not None:
         values["unassigned_actionable_max"] = unassigned_actionable_max
+    if stale_actionable_max is not None:
+        values["stale_actionable_max"] = stale_actionable_max
+    if blocked_stale_max is not None:
+        values["blocked_stale_max"] = blocked_stale_max
+    if stale_after_hours is not None:
+        values["stale_after_hours"] = stale_after_hours
+    if blocked_stale_after_hours is not None:
+        values["blocked_stale_after_hours"] = blocked_stale_after_hours
 
     resolved_mode = str(values["mode"]).strip().lower()
     if resolved_mode not in {"observe", "enforce"}:
@@ -189,10 +255,40 @@ def resolve_collaboration_gate_policy(
     if resolved_unassigned_actionable_max < 0:
         raise ValueError("Policy thresholds.unassigned_actionable_max must be >= 0.")
 
+    stale_actionable_value = values["stale_actionable_max"]
+    resolved_stale_actionable_max: int | None
+    if stale_actionable_value is None:
+        resolved_stale_actionable_max = None
+    else:
+        resolved_stale_actionable_max = int(stale_actionable_value)
+        if resolved_stale_actionable_max < 0:
+            raise ValueError("Policy thresholds.stale_actionable_max must be >= 0.")
+
+    blocked_stale_value = values["blocked_stale_max"]
+    resolved_blocked_stale_max: int | None
+    if blocked_stale_value is None:
+        resolved_blocked_stale_max = None
+    else:
+        resolved_blocked_stale_max = int(blocked_stale_value)
+        if resolved_blocked_stale_max < 0:
+            raise ValueError("Policy thresholds.blocked_stale_max must be >= 0.")
+
+    resolved_stale_after_hours = float(values["stale_after_hours"])
+    if resolved_stale_after_hours <= 0:
+        raise ValueError("Policy sla.stale_after_hours must be > 0.")
+
+    resolved_blocked_stale_after_hours = float(values["blocked_stale_after_hours"])
+    if resolved_blocked_stale_after_hours <= 0:
+        raise ValueError("Policy sla.blocked_stale_after_hours must be > 0.")
+
     return CollaborationGatePolicy(
         mode=cast(CollaborationGateMode, resolved_mode),
         system_name=resolved_system,
         limit=resolved_limit,
         blocked_max=resolved_blocked_max,
         unassigned_actionable_max=resolved_unassigned_actionable_max,
+        stale_actionable_max=resolved_stale_actionable_max,
+        blocked_stale_max=resolved_blocked_stale_max,
+        stale_after_hours=resolved_stale_after_hours,
+        blocked_stale_after_hours=resolved_blocked_stale_after_hours,
     )

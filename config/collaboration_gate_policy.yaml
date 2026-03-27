@@ -4,3 +4,8 @@ window:
 thresholds:
   blocked_max: 0
   unassigned_actionable_max: 0
+  stale_actionable_max: null
+  blocked_stale_max: null
+sla:
+  stale_after_hours: 72
+  blocked_stale_after_hours: 72

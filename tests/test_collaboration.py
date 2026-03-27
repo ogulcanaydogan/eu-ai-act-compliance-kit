@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import json
+from datetime import UTC, datetime
+
 import pytest
 
 from eu_ai_act.checker import (
@@ -12,6 +15,7 @@ from eu_ai_act.checker import (
 )
 from eu_ai_act.collaboration import (
     list_collaboration_tasks,
+    summarize_collaboration_gate_metrics,
     summarize_collaboration_tasks,
     sync_collaboration_tasks,
     update_collaboration_task,
@@ -238,3 +242,73 @@ class TestCollaboration:
 
         with pytest.raises(ValueError):
             list_collaboration_tasks(collab_path=collab_path, limit=0)
+
+    def test_gate_metrics_include_staleness_counts(self, tmp_path):
+        collab_path = tmp_path / "collaboration_tasks.jsonl"
+        entries = [
+            {
+                "task_id": "System A::Art. 10",
+                "system_name": "System A",
+                "descriptor_path": "/tmp/system.yaml",
+                "requirement_id": "Art. 10",
+                "article": "Art. 10",
+                "title": "Data governance",
+                "finding_status": "non_compliant",
+                "severity": "HIGH",
+                "workflow_status": "open",
+                "owner": None,
+                "notes": [],
+                "created_at": "2026-03-24T08:00:00+00:00",
+                "updated_at": "2026-03-24T08:00:00+00:00",
+            },
+            {
+                "task_id": "System A::Art. 11",
+                "system_name": "System A",
+                "descriptor_path": "/tmp/system.yaml",
+                "requirement_id": "Art. 11",
+                "article": "Art. 11",
+                "title": "Documentation",
+                "finding_status": "partial",
+                "severity": "MEDIUM",
+                "workflow_status": "in_review",
+                "owner": "alice",
+                "notes": [],
+                "created_at": "2026-03-24T11:00:00+00:00",
+                "updated_at": "2026-03-24T11:00:00+00:00",
+            },
+            {
+                "task_id": "System A::Art. 13",
+                "system_name": "System A",
+                "descriptor_path": "/tmp/system.yaml",
+                "requirement_id": "Art. 13",
+                "article": "Art. 13",
+                "title": "Transparency",
+                "finding_status": "not_assessed",
+                "severity": "LOW",
+                "workflow_status": "blocked",
+                "owner": None,
+                "notes": [],
+                "created_at": "2026-03-24T09:30:00+00:00",
+                "updated_at": "2026-03-24T09:30:00+00:00",
+            },
+        ]
+        collab_path.write_text(
+            "\n".join(json.dumps(entry, ensure_ascii=True) for entry in entries) + "\n",
+            encoding="utf-8",
+        )
+
+        metrics = summarize_collaboration_gate_metrics(
+            collab_path=collab_path,
+            system_name="System A",
+            stale_after_hours=2,
+            blocked_stale_after_hours=1,
+            reference_time=datetime(2026, 3, 24, 12, 0, tzinfo=UTC),
+        )
+
+        assert metrics["total_tasks"] == 3
+        assert metrics["actionable_count"] == 3
+        assert metrics["unassigned_actionable_count"] == 2
+        assert metrics["stale_actionable_count"] == 2
+        assert metrics["blocked_stale_count"] == 1
+        assert metrics["stale_after_hours"] == 2.0
+        assert metrics["blocked_stale_after_hours"] == 1.0
