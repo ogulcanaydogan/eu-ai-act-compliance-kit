@@ -56,6 +56,7 @@ checks transparency and GPAI obligations, and renders audit-oriented reports.
 - Phase 33: Collaboration governance V3 completed (in-review staleness policy signals + additive gate contract expansion)
 - Phase 34: Governance handoff V1 completed (single-command governance aggregation artifact + enforce-capable handoff mode)
 - Phase 35: Governance handoff V2 completed (policy-driven action/CI rollout with PR observe and main/tag enforce)
+- Phase 36: GA stabilization hardening in progress (deterministic handoff failure diagnostics + required Python 3.11/3.12/3.13 compatibility smoke gate)
 
 ## End-to-End Flow
 

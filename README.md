@@ -280,6 +280,7 @@ pre-commit run --hook-stage pre-push --all-files
 - Phase 33: collaboration governance v3 completed (in-review staleness policy signals + additive action/CI contract expansion)
 - Phase 34: governance handoff v1 completed (single-command governance aggregation artifact + enforce-capable handoff mode)
 - Phase 35: governance handoff v2 completed (policy-driven action/CI rollout with PR observe and main/tag enforce)
+- Phase 36: GA stabilization hardening in progress (deterministic handoff failure diagnostics + required Python 3.11/3.12/3.13 compatibility smoke gate)
 
 ## Disclaimer
 
