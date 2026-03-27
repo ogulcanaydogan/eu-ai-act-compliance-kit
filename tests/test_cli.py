@@ -547,6 +547,12 @@ class TestCLI:
         assert "effective_policy" in payload
         assert "metrics" in payload
         assert payload["metrics"]["has_collaboration_data"] is True
+        assert "stale_actionable_count" in payload["metrics"]
+        assert "blocked_stale_count" in payload["metrics"]
+        assert payload["effective_policy"]["thresholds"]["stale_actionable_max"] is None
+        assert payload["effective_policy"]["thresholds"]["blocked_stale_max"] is None
+        assert payload["effective_policy"]["sla"]["stale_after_hours"] == 72.0
+        assert payload["effective_policy"]["sla"]["blocked_stale_after_hours"] == 72.0
         assert payload["collaboration_path"] == str(collab_path)
 
     def test_collaboration_gate_enforce_missing_data_nonzero(self, tmp_path):
@@ -586,6 +592,11 @@ class TestCLI:
                 "thresholds:\n"
                 "  blocked_max: 1\n"
                 "  unassigned_actionable_max: 1\n"
+                "  stale_actionable_max: 2\n"
+                "  blocked_stale_max: 3\n"
+                "sla:\n"
+                "  stale_after_hours: 48\n"
+                "  blocked_stale_after_hours: 24\n"
             ),
             encoding="utf-8",
         )
@@ -602,6 +613,8 @@ class TestCLI:
                 "observe",
                 "--blocked-max",
                 "0",
+                "--stale-after-hours",
+                "12",
                 "--collab-path",
                 str(collab_path),
                 "--json",
@@ -615,6 +628,47 @@ class TestCLI:
         assert payload["effective_policy"]["scope"]["system"] == "Medical Imaging Diagnosis AI"
         assert payload["effective_policy"]["thresholds"]["blocked_max"] == 0
         assert payload["effective_policy"]["thresholds"]["unassigned_actionable_max"] == 1
+        assert payload["effective_policy"]["thresholds"]["stale_actionable_max"] == 2
+        assert payload["effective_policy"]["thresholds"]["blocked_stale_max"] == 3
+        assert payload["effective_policy"]["sla"]["stale_after_hours"] == 12.0
+        assert payload["effective_policy"]["sla"]["blocked_stale_after_hours"] == 24.0
+
+    def test_collaboration_gate_enforce_stale_threshold_nonzero(self, tmp_path):
+        """Enforce mode should fail when stale actionable threshold is exceeded."""
+        runner = CliRunner()
+        collab_path = tmp_path / ".eu_ai_act" / "collaboration_tasks.jsonl"
+        collab_path.parent.mkdir(parents=True, exist_ok=True)
+        collab_path.write_text(
+            (
+                '{"task_id":"Medical Imaging Diagnosis AI::Art. 10","system_name":"Medical Imaging Diagnosis AI",'
+                '"descriptor_path":"/tmp/system.yaml","requirement_id":"Art. 10","article":"Art. 10",'
+                '"title":"Data governance","finding_status":"non_compliant","severity":"HIGH",'
+                '"workflow_status":"open","owner":"alice","notes":[],"created_at":"2026-03-24T00:00:00+00:00",'
+                '"updated_at":"2026-03-24T00:00:00+00:00"}\n'
+            ),
+            encoding="utf-8",
+        )
+
+        result = runner.invoke(
+            main,
+            [
+                "collaboration",
+                "gate",
+                "--mode",
+                "enforce",
+                "--stale-actionable-max",
+                "0",
+                "--stale-after-hours",
+                "1",
+                "--collab-path",
+                str(collab_path),
+                "--json",
+            ],
+        )
+        assert result.exit_code != 0
+        payload = json.loads(result.output[result.output.find("{") :])
+        assert "stale_actionable_threshold_exceeded" in payload["reason_codes"]
+        assert payload["decision_details"]["stale_actionable"]["violated"] is True
 
     def test_collaboration_gate_invalid_flags_fail(self):
         """Gate command should validate invalid threshold and limit values."""
@@ -624,6 +678,10 @@ class TestCLI:
             (["--limit", "0"], "--limit must be >= 1"),
             (["--blocked-max", "-1"], "--blocked-max must be >= 0"),
             (["--unassigned-actionable-max", "-1"], "--unassigned-actionable-max must be >= 0"),
+            (["--stale-actionable-max", "-1"], "--stale-actionable-max must be >= 0"),
+            (["--blocked-stale-max", "-1"], "--blocked-stale-max must be >= 0"),
+            (["--stale-after-hours", "0"], "--stale-after-hours must be > 0"),
+            (["--blocked-stale-after-hours", "0"], "--blocked-stale-after-hours must be > 0"),
         ]
         for flags, expected_error in invalid_cases:
             result = runner.invoke(main, ["collaboration", "gate", *flags, "--json"])

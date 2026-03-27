@@ -197,6 +197,21 @@ def _parse_iso_datetime(value: str | None) -> datetime | None:
     return parsed.astimezone(UTC)
 
 
+def _is_task_stale(
+    task: CollaborationTask,
+    *,
+    now_utc: datetime,
+    threshold_hours: float,
+) -> bool:
+    if threshold_hours <= 0:
+        return False
+    updated_at = _parse_iso_datetime(task.updated_at)
+    if updated_at is None:
+        return True
+    age_seconds = max((now_utc - updated_at).total_seconds(), 0.0)
+    return (age_seconds / 3600.0) >= threshold_hours
+
+
 def _read_task_snapshots(collaboration_path: Path) -> list[CollaborationTask]:
     if not collaboration_path.exists():
         return []
@@ -457,6 +472,9 @@ def summarize_collaboration_gate_metrics(
     cwd: str | Path | None = None,
     system_name: str | None = None,
     limit: int | None = None,
+    stale_after_hours: float | None = None,
+    blocked_stale_after_hours: float | None = None,
+    reference_time: datetime | None = None,
 ) -> dict[str, Any]:
     """Summarize collaboration metrics required by governance gate evaluation."""
     collaboration_path, tasks = list_collaboration_tasks(
@@ -474,12 +492,52 @@ def summarize_collaboration_gate_metrics(
         for task in tasks
         if task.finding_status in _ACTIONABLE_FINDING_STATUSES and task.owner is None
     )
+    resolved_stale_after_hours = float(stale_after_hours) if stale_after_hours is not None else 72.0
+    resolved_blocked_stale_after_hours = (
+        float(blocked_stale_after_hours) if blocked_stale_after_hours is not None else 72.0
+    )
+    now_utc = datetime.now(UTC)
+    if reference_time is not None:
+        if reference_time.tzinfo is None:
+            now_utc = reference_time.replace(tzinfo=UTC)
+        else:
+            now_utc = reference_time.astimezone(UTC)
+    stale_actionable_count = sum(
+        1
+        for task in tasks
+        if (
+            task.finding_status in _ACTIONABLE_FINDING_STATUSES
+            and task.workflow_status in _OPEN_WORKFLOW_STATUSES
+            and _is_task_stale(
+                task,
+                now_utc=now_utc,
+                threshold_hours=resolved_stale_after_hours,
+            )
+        )
+    )
+    blocked_stale_count = sum(
+        1
+        for task in tasks
+        if (
+            task.finding_status in _ACTIONABLE_FINDING_STATUSES
+            and task.workflow_status == "blocked"
+            and _is_task_stale(
+                task,
+                now_utc=now_utc,
+                threshold_hours=resolved_blocked_stale_after_hours,
+            )
+        )
+    )
     return {
         "generated_at": _utc_now_iso(),
         "collaboration_path": str(collaboration_path),
         "total_tasks": len(tasks),
         "actionable_count": actionable_count,
         "unassigned_actionable_count": unassigned_actionable_count,
+        "stale_actionable_count": stale_actionable_count,
+        "blocked_stale_count": blocked_stale_count,
+        "stale_after_hours": resolved_stale_after_hours,
+        "blocked_stale_after_hours": resolved_blocked_stale_after_hours,
         "has_collaboration_data": len(tasks) > 0,
         **status_summary,
     }

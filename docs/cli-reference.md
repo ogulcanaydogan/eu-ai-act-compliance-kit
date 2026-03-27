@@ -229,6 +229,10 @@ Subcommands:
     - `--system <name>`
     - `--blocked-max N` (must be `>= 0`)
     - `--unassigned-actionable-max N` (must be `>= 0`)
+    - `--stale-actionable-max N` (must be `>= 0`, threshold disabled when omitted)
+    - `--blocked-stale-max N` (must be `>= 0`, threshold disabled when omitted)
+    - `--stale-after-hours F` (must be `> 0`)
+    - `--blocked-stale-after-hours F` (must be `> 0`)
     - `--limit N` (must be `>= 1`)
     - `--collab-path PATH`
     - `-o, --output PATH`
@@ -237,6 +241,14 @@ Subcommands:
     - observe mode always exits `0` and reports `failed` in payload
     - enforce mode exits non-zero when policy violations are present
     - enforce mode with missing collaboration data fails with `missing_collaboration_data`
+  - additive reason codes:
+    - `stale_actionable_threshold_exceeded`
+    - `blocked_stale_threshold_exceeded`
+  - policy schema additions:
+    - `thresholds.stale_actionable_max`
+    - `thresholds.blocked_stale_max`
+    - `sla.stale_after_hours`
+    - `sla.blocked_stale_after_hours`
 
 Workflow semantics:
 

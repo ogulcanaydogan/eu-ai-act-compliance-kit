@@ -15,6 +15,10 @@ def test_resolve_collaboration_gate_policy_defaults():
     assert policy.limit == 200
     assert policy.blocked_max == 0
     assert policy.unassigned_actionable_max == 0
+    assert policy.stale_actionable_max is None
+    assert policy.blocked_stale_max is None
+    assert policy.stale_after_hours == 72.0
+    assert policy.blocked_stale_after_hours == 72.0
 
 
 def test_resolve_collaboration_gate_policy_cli_overrides_policy_file():
@@ -24,10 +28,17 @@ def test_resolve_collaboration_gate_policy_cli_overrides_policy_file():
             "mode": "enforce",
             "scope": {"system": "Fraud Assistant"},
             "window": {"limit": 50},
-            "thresholds": {"blocked_max": 2, "unassigned_actionable_max": 3},
+            "thresholds": {
+                "blocked_max": 2,
+                "unassigned_actionable_max": 3,
+                "stale_actionable_max": 4,
+                "blocked_stale_max": 5,
+            },
+            "sla": {"stale_after_hours": 24, "blocked_stale_after_hours": 12},
         },
         mode="observe",
         blocked_max=0,
+        stale_after_hours=36,
     )
 
     assert policy.mode == "observe"
@@ -35,6 +46,10 @@ def test_resolve_collaboration_gate_policy_cli_overrides_policy_file():
     assert policy.limit == 50
     assert policy.blocked_max == 0
     assert policy.unassigned_actionable_max == 3
+    assert policy.stale_actionable_max == 4
+    assert policy.blocked_stale_max == 5
+    assert policy.stale_after_hours == 36
+    assert policy.blocked_stale_after_hours == 12
 
 
 def test_collaboration_gate_observe_reports_violations_without_enforcement():
@@ -43,6 +58,8 @@ def test_collaboration_gate_observe_reports_violations_without_enforcement():
         mode="observe",
         blocked_max=0,
         unassigned_actionable_max=0,
+        stale_actionable_max=0,
+        blocked_stale_max=0,
     )
     result = CollaborationGateEvaluator().evaluate(
         policy=policy,
@@ -50,6 +67,8 @@ def test_collaboration_gate_observe_reports_violations_without_enforcement():
             "has_collaboration_data": True,
             "blocked_count": 1,
             "unassigned_actionable_count": 2,
+            "stale_actionable_count": 1,
+            "blocked_stale_count": 1,
         },
     )
 
@@ -57,6 +76,8 @@ def test_collaboration_gate_observe_reports_violations_without_enforcement():
     assert result.failed is True
     assert "blocked_threshold_exceeded" in result.reason_codes
     assert "unassigned_actionable_threshold_exceeded" in result.reason_codes
+    assert "stale_actionable_threshold_exceeded" in result.reason_codes
+    assert "blocked_stale_threshold_exceeded" in result.reason_codes
 
 
 def test_collaboration_gate_enforce_fails_when_collaboration_data_missing():
@@ -72,9 +93,33 @@ def test_collaboration_gate_enforce_fails_when_collaboration_data_missing():
             "has_collaboration_data": False,
             "blocked_count": 0,
             "unassigned_actionable_count": 0,
+            "stale_actionable_count": 0,
+            "blocked_stale_count": 0,
         },
     )
 
     assert result.mode == "enforce"
     assert result.failed is True
     assert result.reason_codes == ["missing_collaboration_data"]
+
+
+def test_collaboration_gate_stale_thresholds_disabled_when_not_configured():
+    """Stale counts should not trigger failures when stale thresholds are unset."""
+    policy = resolve_collaboration_gate_policy(
+        mode="enforce",
+        blocked_max=100,
+        unassigned_actionable_max=100,
+    )
+    result = CollaborationGateEvaluator().evaluate(
+        policy=policy,
+        metrics={
+            "has_collaboration_data": True,
+            "blocked_count": 0,
+            "unassigned_actionable_count": 0,
+            "stale_actionable_count": 50,
+            "blocked_stale_count": 25,
+        },
+    )
+
+    assert result.failed is False
+    assert result.reason_codes == []
