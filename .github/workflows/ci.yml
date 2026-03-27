@@ -229,6 +229,63 @@ jobs:
           assert "artifacts" in manifest
           PY
 
+  handoff-governance-smoke:
+    runs-on: ubuntu-latest
+    name: Handoff Governance Smoke
+    needs: [lint, test]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run governance-enabled handoff and validate contract
+        run: |
+          mkdir -p /tmp/handoff-governance-smoke
+          ai-act handoff examples/medical_diagnosis.yaml --output-dir /tmp/handoff-governance-smoke --governance --governance-mode observe --json > /tmp/handoff-governance-smoke/stdout_manifest.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          output_dir = Path("/tmp/handoff-governance-smoke")
+          expected = [
+              "validate.json",
+              "classify.json",
+              "check.json",
+              "security_map.json",
+              "checklist.json",
+              "checklist.md",
+              "report.html",
+              "collaboration_summary.json",
+              "governance_gate.json",
+              "handoff_manifest.json",
+          ]
+          for name in expected:
+              path = output_dir / name
+              if not path.exists():
+                  raise SystemExit(f"handoff governance artifact missing: {path}")
+
+          manifest = json.loads((output_dir / "handoff_manifest.json").read_text())
+          assert manifest["status"] == "success"
+          assert manifest["governance_summary"]["mode"] == "observe"
+          assert isinstance(manifest["governance_failed"], bool)
+          assert isinstance(manifest["governance_reason_codes"], list)
+
+          gate_payload = json.loads((output_dir / "governance_gate.json").read_text())
+          assert gate_payload["mode"] == "observe"
+          assert isinstance(gate_payload["failed"], bool)
+          assert gate_payload["export_ops_gate"] is None
+          assert gate_payload["evaluated_gates"] == ["security_gate", "collaboration_gate"]
+          PY
+
   export-ops-gate-smoke:
     runs-on: ubuntu-latest
     name: Export Ops Gate Smoke
@@ -626,12 +683,12 @@ jobs:
   all-checks:
     runs-on: ubuntu-latest
     name: All Checks Passed
-    needs: [lint, test, quickstart-smoke, examples-smoke, handoff-smoke, export-ops-gate-smoke, collaboration-smoke, collaboration-gate-smoke, build, docker, docs, security, action-smoke]
+    needs: [lint, test, quickstart-smoke, examples-smoke, handoff-smoke, handoff-governance-smoke, export-ops-gate-smoke, collaboration-smoke, collaboration-gate-smoke, build, docker, docs, security, action-smoke]
     if: always()
     steps:
       - name: Check status
         run: |
-          if [[ "${{ needs.lint.result }}" == "failure" || "${{ needs.test.result }}" == "failure" || "${{ needs.quickstart-smoke.result }}" == "failure" || "${{ needs.examples-smoke.result }}" == "failure" || "${{ needs.handoff-smoke.result }}" == "failure" || "${{ needs.export-ops-gate-smoke.result }}" == "failure" || "${{ needs.collaboration-smoke.result }}" == "failure" || "${{ needs.collaboration-gate-smoke.result }}" == "failure" || "${{ needs.build.result }}" == "failure" || "${{ needs.docker.result }}" == "failure" || "${{ needs.action-smoke.result }}" == "failure" ]]; then
+          if [[ "${{ needs.lint.result }}" == "failure" || "${{ needs.test.result }}" == "failure" || "${{ needs.quickstart-smoke.result }}" == "failure" || "${{ needs.examples-smoke.result }}" == "failure" || "${{ needs.handoff-smoke.result }}" == "failure" || "${{ needs.handoff-governance-smoke.result }}" == "failure" || "${{ needs.export-ops-gate-smoke.result }}" == "failure" || "${{ needs.collaboration-smoke.result }}" == "failure" || "${{ needs.collaboration-gate-smoke.result }}" == "failure" || "${{ needs.build.result }}" == "failure" || "${{ needs.docker.result }}" == "failure" || "${{ needs.action-smoke.result }}" == "failure" ]]; then
             echo "One or more checks failed"
             exit 1
           fi

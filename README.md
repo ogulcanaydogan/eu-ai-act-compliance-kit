@@ -77,6 +77,7 @@ pip install -e ".[reporting]"
 
 ```bash
 ai-act handoff examples/medical_diagnosis.yaml --output-dir handoff_pack --json
+ai-act handoff examples/medical_diagnosis.yaml --output-dir handoff_pack --governance --governance-mode observe --json
 ai-act validate examples/medical_diagnosis.yaml
 ai-act classify examples/medical_diagnosis.yaml --json
 ai-act check examples/medical_diagnosis.yaml --json
@@ -88,7 +89,7 @@ ai-act export check examples/medical_diagnosis.yaml --target generic --json
 
 ## CLI Surface
 
-- `ai-act handoff <system.yaml> [--output-dir PATH] [--json]`
+- `ai-act handoff <system.yaml> [--output-dir PATH] [--json] [--governance] [--governance-mode observe|enforce] [--export-target jira|servicenow]`
 - `ai-act classify <system.yaml> [--json]`
 - `ai-act check <system.yaml> [--json] [--security-gate observe|enforce] [--security-gate-profile strict|balanced|lenient]`
 - `ai-act security-map <system.yaml> [--json] [--output PATH]`
@@ -276,6 +277,7 @@ pre-commit run --hook-stage pre-push --all-files
 - Phase 31: collaboration governance v2 completed (SLA/staleness-aware thresholds with additive policy and contract expansion)
 - Phase 32: GA completion pack completed (one-command `handoff` artifact orchestration + CI handoff smoke gate)
 - Phase 33: collaboration governance v3 completed (in-review staleness policy signals + additive action/CI contract expansion)
+- Phase 34: governance handoff v1 in progress (single-command governance aggregation artifact + enforce-capable handoff mode)
 
 ## Disclaimer
 

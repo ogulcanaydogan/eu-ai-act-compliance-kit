@@ -15,6 +15,8 @@ Runs a deterministic one-command GA handoff flow and writes a fixed artifact pac
 ai-act handoff <system.yaml>
 ai-act handoff <system.yaml> --output-dir handoff_pack
 ai-act handoff <system.yaml> --output-dir handoff_pack --json
+ai-act handoff <system.yaml> --output-dir handoff_pack --governance --governance-mode observe --json
+ai-act handoff <system.yaml> --output-dir handoff_pack --governance --governance-mode enforce --export-target jira --json
 ```
 
 Flow:
@@ -32,18 +34,27 @@ Artifacts written to `<output-dir>` (default: current working directory):
 - `report.html`
 - `collaboration_summary.json`
 - `handoff_manifest.json`
+- `governance_gate.json` (only when `--governance` is enabled)
 
 Manifest includes:
 
 - `generated_at`, `system_name`, `descriptor_path`, `status`
 - `risk_tier`, `articles_applicable`
 - `compliance_summary`, `security_summary`, `collaboration_summary`
+- `governance_summary`, `governance_failed`, `governance_reason_codes`
 - `artifacts`, `failed_step`, `error`
 
 Failure contract:
 
 - If any step fails, command exits non-zero.
 - `handoff_manifest.json` is still written with `status=failed`, `failed_step`, and `error`.
+- If `--governance-mode enforce` is used and governance fails, command exits non-zero while keeping `status=success` plus governance fields for diagnosis.
+
+Governance options:
+
+- `--governance`: enable governance aggregation artifact/manifest fields
+- `--governance-mode [observe|enforce]`: default `observe`
+- `--export-target [jira|servicenow]`: optional; adds export-ops governance block
 
 ## `classify`
 

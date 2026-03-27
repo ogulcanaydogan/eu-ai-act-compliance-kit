@@ -8,10 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- None.
+- Started Phase 34 Governance Handoff V1 (in progress):
+  - additive `handoff` flags: `--governance`, `--governance-mode`, `--export-target`
+  - governance aggregation runtime across `security_gate`, `collaboration_gate`, optional `export_ops_gate`
+  - new governance artifact: `governance_gate.json`
+  - additive handoff manifest fields: `governance_summary`, `governance_failed`, `governance_reason_codes`
+  - new required CI contract job: `handoff-governance-smoke`
 
 ### Changed
-- None.
+- `handoff --governance-mode enforce` now exits non-zero on governance gate failure while preserving diagnostic manifest output.
 
 ## [0.1.24] - 2026-03-27
 
