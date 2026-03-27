@@ -8,7 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Started Phase 34 Governance Handoff V1 (in progress):
+- _None._
+
+### Changed
+- _None._
+
+### Fixed
+- _None._
+
+## [0.1.25] - 2026-03-27
+
+### Added
+- Completed Phase 34 Governance Handoff V1 with additive governance aggregation for one-command delivery:
   - additive `handoff` flags: `--governance`, `--governance-mode`, `--export-target`
   - governance aggregation runtime across `security_gate`, `collaboration_gate`, optional `export_ops_gate`
   - new governance artifact: `governance_gate.json`
@@ -17,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - `handoff --governance-mode enforce` now exits non-zero on governance gate failure while preserving diagnostic manifest output.
+- Status surfaces synchronized to mark Phase 34 as completed (`README`, `docs/index`, `ROADMAP`).
 
 ## [0.1.24] - 2026-03-27
 

@@ -277,7 +277,7 @@ pre-commit run --hook-stage pre-push --all-files
 - Phase 31: collaboration governance v2 completed (SLA/staleness-aware thresholds with additive policy and contract expansion)
 - Phase 32: GA completion pack completed (one-command `handoff` artifact orchestration + CI handoff smoke gate)
 - Phase 33: collaboration governance v3 completed (in-review staleness policy signals + additive action/CI contract expansion)
-- Phase 34: governance handoff v1 in progress (single-command governance aggregation artifact + enforce-capable handoff mode)
+- Phase 34: governance handoff v1 completed (single-command governance aggregation artifact + enforce-capable handoff mode)
 
 ## Disclaimer
 
