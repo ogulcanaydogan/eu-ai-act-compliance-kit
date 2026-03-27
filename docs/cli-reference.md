@@ -16,6 +16,7 @@ ai-act handoff <system.yaml>
 ai-act handoff <system.yaml> --output-dir handoff_pack
 ai-act handoff <system.yaml> --output-dir handoff_pack --json
 ai-act handoff <system.yaml> --output-dir handoff_pack --governance --governance-mode observe --json
+ai-act handoff <system.yaml> --output-dir handoff_pack --governance --governance-policy config/governance_handoff_policy.yaml --json
 ai-act handoff <system.yaml> --output-dir handoff_pack --governance --governance-mode enforce --export-target jira --json
 ```
 
@@ -54,7 +55,13 @@ Governance options:
 
 - `--governance`: enable governance aggregation artifact/manifest fields
 - `--governance-mode [observe|enforce]`: default `observe`
+- `--governance-policy PATH`: optional policy file for gate toggles and gate-specific thresholds/profiles
 - `--export-target [jira|servicenow]`: optional; adds export-ops governance block
+
+Precedence:
+
+- CLI flags override policy file values
+- policy file values override built-in defaults
 
 ## `classify`
 

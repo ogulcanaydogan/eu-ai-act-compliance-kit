@@ -49,6 +49,22 @@ inputs:
     description: "Path to collaboration gate policy file, relative to action root unless absolute"
     required: false
     default: "config/collaboration_gate_policy.yaml"
+  handoff_governance_enabled:
+    description: "Enable governance-aware handoff execution and outputs (true/false)"
+    required: false
+    default: "false"
+  handoff_governance_mode:
+    description: "Governance handoff mode (observe or enforce)"
+    required: false
+    default: "observe"
+  handoff_governance_policy_path:
+    description: "Path to governance handoff policy file, relative to action root unless absolute"
+    required: false
+    default: "config/governance_handoff_policy.yaml"
+  handoff_governance_export_target:
+    description: "Optional export target for governance handoff gate (jira or servicenow)"
+    required: false
+    default: ""
   report_format:
     description: "Report output format (json, md, html)"
     required: false
@@ -146,6 +162,15 @@ outputs:
   collaboration_gate_reason_codes:
     description: "Comma-separated collaboration gate reason codes"
     value: ${{ steps.analyze.outputs.collaboration_gate_reason_codes }}
+  handoff_governance_failed:
+    description: "Handoff governance failure flag (true/false)"
+    value: ${{ steps.analyze.outputs.handoff_governance_failed }}
+  handoff_governance_reason_codes:
+    description: "Comma-separated handoff governance reason codes"
+    value: ${{ steps.analyze.outputs.handoff_governance_reason_codes }}
+  handoff_governance_failed_gates:
+    description: "Comma-separated failed gate names from handoff governance summary"
+    value: ${{ steps.analyze.outputs.handoff_governance_failed_gates }}
 
 runs:
   using: "composite"
@@ -224,7 +249,45 @@ runs:
         set -e
         echo "export_ops_gate_exit_code=$EXPORT_OPS_GATE_EXIT_CODE" >> "$GITHUB_OUTPUT"
 
-        SECURITY_GATE_MODE="${{ inputs.security_gate_mode }}" SECURITY_GATE_PROFILE="${{ inputs.security_gate_profile }}" COLLABORATION_GATE_MODE_INPUT="${{ inputs.collaboration_gate_mode }}" python - <<'PY' >> "$GITHUB_OUTPUT"
+        HANDOFF_GOVERNANCE_ENABLED="${{ inputs.handoff_governance_enabled }}"
+        HANDOFF_GOVERNANCE_EXIT_CODE=0
+        if [[ "$HANDOFF_GOVERNANCE_ENABLED" == "true" ]]; then
+          HANDOFF_GOVERNANCE_POLICY_INPUT="${{ inputs.handoff_governance_policy_path }}"
+          if [[ "$HANDOFF_GOVERNANCE_POLICY_INPUT" = /* ]]; then
+            HANDOFF_GOVERNANCE_POLICY_PATH="$HANDOFF_GOVERNANCE_POLICY_INPUT"
+          else
+            HANDOFF_GOVERNANCE_POLICY_PATH="$GITHUB_ACTION_PATH/$HANDOFF_GOVERNANCE_POLICY_INPUT"
+          fi
+          HANDOFF_GOVERNANCE_POLICY_ARGS=()
+          if [[ -f "$HANDOFF_GOVERNANCE_POLICY_PATH" ]]; then
+            HANDOFF_GOVERNANCE_POLICY_ARGS=(--governance-policy "$HANDOFF_GOVERNANCE_POLICY_PATH")
+          else
+            echo "Warning: Governance handoff policy file not found: $HANDOFF_GOVERNANCE_POLICY_PATH"
+          fi
+
+          HANDOFF_GOVERNANCE_EXPORT_TARGET="${{ inputs.handoff_governance_export_target }}"
+          HANDOFF_GOVERNANCE_EXPORT_ARGS=()
+          if [[ -n "$HANDOFF_GOVERNANCE_EXPORT_TARGET" ]]; then
+            HANDOFF_GOVERNANCE_EXPORT_ARGS=(--export-target "$HANDOFF_GOVERNANCE_EXPORT_TARGET")
+          fi
+
+          mkdir -p /tmp/action_handoff_governance
+          set +e
+          ai-act handoff "${{ inputs.system_yaml }}" \
+            --output-dir /tmp/action_handoff_governance \
+            --governance \
+            --governance-mode "${{ inputs.handoff_governance_mode }}" \
+            "${HANDOFF_GOVERNANCE_POLICY_ARGS[@]}" \
+            "${HANDOFF_GOVERNANCE_EXPORT_ARGS[@]}" \
+            --json > /tmp/handoff_governance_manifest.json
+          HANDOFF_GOVERNANCE_EXIT_CODE=$?
+          set -e
+        else
+          echo '{}' > /tmp/handoff_governance_manifest.json
+        fi
+        echo "handoff_governance_exit_code=$HANDOFF_GOVERNANCE_EXIT_CODE" >> "$GITHUB_OUTPUT"
+
+        SECURITY_GATE_MODE="${{ inputs.security_gate_mode }}" SECURITY_GATE_PROFILE="${{ inputs.security_gate_profile }}" COLLABORATION_GATE_MODE_INPUT="${{ inputs.collaboration_gate_mode }}" HANDOFF_GOVERNANCE_MODE_INPUT="${{ inputs.handoff_governance_mode }}" python - <<'PY' >> "$GITHUB_OUTPUT"
         import json
         import os
         import pathlib
@@ -304,6 +367,37 @@ runs:
         collaboration_blocked_count = int(
             collaboration_gate_metrics.get("blocked_count", collaboration_blocked_count) or 0
         )
+        try:
+            handoff_manifest = json.loads(
+                pathlib.Path("/tmp/handoff_governance_manifest.json").read_text()
+            )
+        except Exception:
+            handoff_manifest = {}
+        if not isinstance(handoff_manifest, dict):
+            handoff_manifest = {}
+        governance_summary = handoff_manifest.get("governance_summary", {}) or {}
+        if not isinstance(governance_summary, dict):
+            governance_summary = {}
+        handoff_governance_mode = str(
+            governance_summary.get(
+                "mode", os.environ.get("HANDOFF_GOVERNANCE_MODE_INPUT", "observe")
+            )
+        ).strip().lower()
+        handoff_governance_failed = bool(handoff_manifest.get("governance_failed", False))
+        handoff_governance_reason_codes_list = handoff_manifest.get(
+            "governance_reason_codes", []
+        )
+        if not isinstance(handoff_governance_reason_codes_list, list):
+            handoff_governance_reason_codes_list = []
+        handoff_governance_failed_gates_list = governance_summary.get("failed_gates", [])
+        if not isinstance(handoff_governance_failed_gates_list, list):
+            handoff_governance_failed_gates_list = []
+        handoff_governance_reason_codes = ",".join(
+            str(code) for code in handoff_governance_reason_codes_list if str(code)
+        )
+        handoff_governance_failed_gates = ",".join(
+            str(name) for name in handoff_governance_failed_gates_list if str(name)
+        )
         rollup_metrics = export_ops_gate.get("rollup_metrics", {}) or {}
         reconcile_metrics = export_ops_gate.get("reconcile_metrics", {}) or {}
         reason_codes = export_ops_gate.get("reason_codes", [])
@@ -349,6 +443,10 @@ runs:
         print(f"collaboration_stale_actionable_count={collaboration_stale_actionable_count}")
         print(f"collaboration_blocked_stale_count={collaboration_blocked_stale_count}")
         print(f"collaboration_review_stale_count={collaboration_review_stale_count}")
+        print(f"handoff_governance_mode={handoff_governance_mode}")
+        print(f"handoff_governance_failed={'true' if handoff_governance_failed else 'false'}")
+        print(f"handoff_governance_reason_codes={handoff_governance_reason_codes}")
+        print(f"handoff_governance_failed_gates={handoff_governance_failed_gates}")
         PY
 
     - name: "Generate report"
@@ -433,6 +531,12 @@ runs:
         COLLABORATION_STALE_ACTIONABLE_COUNT="${{ steps.analyze.outputs.collaboration_stale_actionable_count }}"
         COLLABORATION_BLOCKED_STALE_COUNT="${{ steps.analyze.outputs.collaboration_blocked_stale_count }}"
         COLLABORATION_REVIEW_STALE_COUNT="${{ steps.analyze.outputs.collaboration_review_stale_count }}"
+        HANDOFF_GOVERNANCE_ENABLED="${{ inputs.handoff_governance_enabled }}"
+        HANDOFF_GOVERNANCE_MODE="${{ steps.analyze.outputs.handoff_governance_mode }}"
+        HANDOFF_GOVERNANCE_FAILED="${{ steps.analyze.outputs.handoff_governance_failed }}"
+        HANDOFF_GOVERNANCE_REASON_CODES="${{ steps.analyze.outputs.handoff_governance_reason_codes }}"
+        HANDOFF_GOVERNANCE_FAILED_GATES="${{ steps.analyze.outputs.handoff_governance_failed_gates }}"
+        HANDOFF_GOVERNANCE_EXIT_CODE="${{ steps.analyze.outputs.handoff_governance_exit_code }}"
 
         if [[ "$RISK_TIER" == "unacceptable" ]]; then
           echo "❌ Workflow failed: System classified as UNACCEPTABLE"
@@ -467,6 +571,13 @@ runs:
           echo "   mode=$COLLABORATION_GATE_MODE exit_code=$COLLABORATION_GATE_EXIT_CODE reason_codes=$COLLABORATION_GATE_REASON_CODES"
           echo "   blocked=$COLLABORATION_BLOCKED_COUNT unassigned_actionable=$COLLABORATION_UNASSIGNED_ACTIONABLE_COUNT stale_actionable=$COLLABORATION_STALE_ACTIONABLE_COUNT blocked_stale=$COLLABORATION_BLOCKED_STALE_COUNT review_stale=$COLLABORATION_REVIEW_STALE_COUNT"
           echo "   Address collaboration governance findings before merging."
+          exit 1
+        fi
+
+        if [[ "$HANDOFF_GOVERNANCE_ENABLED" == "true" && "$HANDOFF_GOVERNANCE_MODE" == "enforce" && ( "$HANDOFF_GOVERNANCE_FAILED" == "true" || "$HANDOFF_GOVERNANCE_EXIT_CODE" != "0" ) ]]; then
+          echo "❌ Workflow failed: Governance handoff policy blocked this run"
+          echo "   mode=$HANDOFF_GOVERNANCE_MODE exit_code=$HANDOFF_GOVERNANCE_EXIT_CODE failed_gates=$HANDOFF_GOVERNANCE_FAILED_GATES reason_codes=$HANDOFF_GOVERNANCE_REASON_CODES"
+          echo "   Address governance handoff findings before merging."
           exit 1
         fi
 

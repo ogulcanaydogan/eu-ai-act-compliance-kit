@@ -82,20 +82,23 @@ def test_ci_contains_handoff_smoke_job():
     assert "security_map.json" in joined_run
 
 
-def test_ci_contains_handoff_governance_smoke_job():
-    """CI must include handoff-governance-smoke job validating governance artifact contract."""
+def test_ci_contains_handoff_governance_rollout_smoke_job():
+    """CI must include handoff-governance rollout smoke with PR observe/main-tag enforce."""
     jobs = _load_ci_jobs()
-    assert "handoff-governance-smoke" in jobs
+    assert "handoff-governance-rollout-smoke" in jobs
 
-    handoff_job = jobs["handoff-governance-smoke"]
-    assert handoff_job.get("name") == "Handoff Governance Smoke"
+    handoff_job = jobs["handoff-governance-rollout-smoke"]
+    assert handoff_job.get("name") == "Handoff Governance Rollout Smoke"
 
     steps = handoff_job.get("steps", [])
     run_blocks = [step.get("run", "") for step in steps if isinstance(step, dict)]
     joined_run = "\n".join(run_blocks)
     assert "ai-act handoff" in joined_run
     assert "--governance" in joined_run
+    assert "--governance-policy config/governance_handoff_policy.yaml" in joined_run
     assert "governance_gate.json" in joined_run
+    assert "GATE_MODE" in joined_run
+    assert "github.event_name" in joined_run
 
 
 def test_ci_test_job_enforces_coverage_floor():
@@ -141,20 +144,20 @@ def test_all_checks_treats_handoff_smoke_as_required():
     assert "needs.handoff-smoke.result" in run_script
 
 
-def test_all_checks_treats_handoff_governance_smoke_as_required():
-    """All-checks gate must evaluate handoff-governance-smoke result as required."""
+def test_all_checks_treats_handoff_governance_rollout_smoke_as_required():
+    """All-checks gate must evaluate handoff-governance-rollout-smoke result as required."""
     jobs = _load_ci_jobs()
     assert "all-checks" in jobs
 
     all_checks_job = jobs["all-checks"]
     needs = all_checks_job.get("needs", [])
-    assert "handoff-governance-smoke" in needs
+    assert "handoff-governance-rollout-smoke" in needs
 
     check_status_step = next(
         step for step in all_checks_job.get("steps", []) if step.get("name") == "Check status"
     )
     run_script = check_status_step.get("run", "")
-    assert "needs.handoff-governance-smoke.result" in run_script
+    assert "needs.handoff-governance-rollout-smoke.result" in run_script
 
 
 def test_ci_contains_export_ops_gate_smoke_job():
@@ -308,6 +311,16 @@ def test_action_exposes_security_gate_input_and_outputs():
         inputs["collaboration_gate_policy_path"].get("default")
         == "config/collaboration_gate_policy.yaml"
     )
+    assert "handoff_governance_enabled" in inputs
+    assert inputs["handoff_governance_enabled"].get("default") == "false"
+    assert "handoff_governance_mode" in inputs
+    assert inputs["handoff_governance_mode"].get("default") == "observe"
+    assert "handoff_governance_policy_path" in inputs
+    assert (
+        inputs["handoff_governance_policy_path"].get("default")
+        == "config/governance_handoff_policy.yaml"
+    )
+    assert "handoff_governance_export_target" in inputs
     assert "collaboration_open_count" in outputs
     assert "collaboration_in_review_count" in outputs
     assert "collaboration_blocked_count" in outputs
@@ -318,6 +331,9 @@ def test_action_exposes_security_gate_input_and_outputs():
     assert "collaboration_review_stale_count" in outputs
     assert "collaboration_gate_failed" in outputs
     assert "collaboration_gate_reason_codes" in outputs
+    assert "handoff_governance_failed" in outputs
+    assert "handoff_governance_reason_codes" in outputs
+    assert "handoff_governance_failed_gates" in outputs
 
 
 def test_ci_action_smoke_exercises_security_gate_enforcement():
@@ -339,6 +355,10 @@ def test_ci_action_smoke_exercises_security_gate_enforcement():
     assert "export_ops_gate_mode" in uses_payload
     assert "collaboration_open_count" in step_text
     assert "collaboration_review_stale_count" in step_text
+    assert "handoff_governance_failed" in step_text
     assert "steps.collaborationgate.outcome" in step_text
     assert "collaboration_gate_mode" in uses_payload
     assert "collaboration_gate_policy_path" in uses_payload
+    assert "handoff_governance_enabled" in uses_payload
+    assert "handoff_governance_mode" in uses_payload
+    assert "handoff_governance_policy_path" in uses_payload

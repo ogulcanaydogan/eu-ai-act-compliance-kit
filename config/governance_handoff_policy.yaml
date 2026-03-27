@@ -1,0 +1,22 @@
+mode: observe
+gates:
+  security: true
+  collaboration: true
+  export_ops: false
+security:
+  profile: balanced
+collaboration:
+  window:
+    limit: 200
+  thresholds:
+    blocked_max: 0
+    unassigned_actionable_max: 0
+export_ops:
+  target: jira
+  window:
+    since_hours: 24
+    limit: 200
+  thresholds:
+    open_failures_max: 0
+    drift_max: 0
+    min_success_rate: 95.0

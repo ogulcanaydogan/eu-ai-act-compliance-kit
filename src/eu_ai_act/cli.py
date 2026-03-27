@@ -55,7 +55,10 @@ from eu_ai_act.exporter import (
     summarize_export_push_ledger,
     summarize_export_reconcile_log,
 )
-from eu_ai_act.governance_handoff import build_governance_decision
+from eu_ai_act.governance_handoff import (
+    build_governance_decision,
+    resolve_governance_handoff_policy,
+)
 from eu_ai_act.gpai import (
     GPAIAssessment,
     GPAIAssessor,
@@ -787,6 +790,11 @@ def report(system_yaml: str, format: str, output: str | None) -> None:
     type=click.Choice(["jira", "servicenow"]),
     help="Optional export target to include export-ops governance in handoff output.",
 )
+@click.option(
+    "--governance-policy",
+    type=click.Path(exists=True, dir_okay=False),
+    help="Optional governance policy YAML path (precedence: CLI flags > policy > defaults).",
+)
 @click.option("--json", "output_json", is_flag=True, help="Output handoff manifest as JSON")
 def handoff(
     system_yaml: str,
@@ -794,6 +802,7 @@ def handoff(
     governance: bool,
     governance_mode: str,
     export_target: str | None,
+    governance_policy: str | None,
     output_json: bool,
 ) -> None:
     """
@@ -805,6 +814,9 @@ def handoff(
     """
     if export_target is not None and not governance:
         console.print("[red]Error: --export-target requires --governance[/red]")
+        sys.exit(1)
+    if governance_policy is not None and not governance:
+        console.print("[red]Error: --governance-policy requires --governance[/red]")
         sys.exit(1)
 
     output_root = Path(output_dir).resolve() if output_dir else Path.cwd().resolve()
@@ -829,6 +841,13 @@ def handoff(
         "error": None,
     }
     governance_enforced_failure = False
+    governance_policy_payload: dict[str, object] = {}
+    if governance and governance_policy is not None:
+        try:
+            governance_policy_payload = _load_governance_handoff_policy_file(governance_policy)
+        except ValueError as exc:
+            console.print(f"[red]Error: {exc}[/red]")
+            sys.exit(1)
 
     classifier = RiskClassifier()
     checker = ComplianceChecker()
@@ -975,53 +994,78 @@ def handoff(
 
         if governance:
             current_step = "governance"
-            governance_security_gate_result = security_gate_evaluator.evaluate(
-                security_summary=security_summary_payload,
-                mode=governance_mode,
-                profile="balanced",
-                risk_tier=compliance_report.risk_tier.value,
-            )
-            security_gate_payload = governance_security_gate_result.to_dict()
+            ctx = click.get_current_context()
+            governance_mode_override: str | None = None
+            if ctx.get_parameter_source("governance_mode") == ParameterSource.COMMANDLINE:
+                governance_mode_override = governance_mode
+            export_target_override: str | None = None
+            if export_target is not None and (
+                ctx.get_parameter_source("export_target") == ParameterSource.COMMANDLINE
+            ):
+                export_target_override = export_target
 
-            collaboration_policy = resolve_collaboration_gate_policy(
-                policy_payload={},
-                mode=governance_mode,
-                system_name=descriptor.name,
+            governance_policy_resolved = resolve_governance_handoff_policy(
+                policy_payload=governance_policy_payload,
+                mode=governance_mode_override,
+                export_target=export_target_override,
             )
-            collaboration_metrics = summarize_collaboration_gate_metrics(
-                system_name=descriptor.name,
-                limit=collaboration_policy.limit,
-                stale_after_hours=collaboration_policy.stale_after_hours,
-                blocked_stale_after_hours=collaboration_policy.blocked_stale_after_hours,
-                review_stale_after_hours=collaboration_policy.review_stale_after_hours,
-            )
-            collaboration_gate_result = CollaborationGateEvaluator().evaluate(
-                policy=collaboration_policy,
-                metrics=collaboration_metrics,
-            )
-            collaboration_gate_payload = {
-                "mode": collaboration_gate_result.mode,
-                "failed": collaboration_gate_result.failed,
-                "reason_codes": collaboration_gate_result.reason_codes,
-                "effective_policy": collaboration_policy.to_dict(),
-                "metrics": collaboration_metrics,
-                "decision_details": collaboration_gate_result.decision_details,
-            }
+
+            security_gate_payload: dict[str, object] | None = None
+            if governance_policy_resolved.security_enabled:
+                governance_security_gate_result = security_gate_evaluator.evaluate(
+                    security_summary=security_summary_payload,
+                    mode=governance_policy_resolved.mode,
+                    profile=governance_policy_resolved.security_profile,
+                    risk_tier=compliance_report.risk_tier.value,
+                )
+                security_gate_payload = governance_security_gate_result.to_dict()
+
+            collaboration_gate_payload: dict[str, object] | None = None
+            if governance_policy_resolved.collaboration_enabled:
+                collaboration_policy = resolve_collaboration_gate_policy(
+                    policy_payload=governance_policy_resolved.collaboration_policy,
+                    mode=governance_policy_resolved.mode,
+                    system_name=descriptor.name,
+                )
+                collaboration_metrics = summarize_collaboration_gate_metrics(
+                    system_name=descriptor.name,
+                    limit=collaboration_policy.limit,
+                    stale_after_hours=collaboration_policy.stale_after_hours,
+                    blocked_stale_after_hours=collaboration_policy.blocked_stale_after_hours,
+                    review_stale_after_hours=collaboration_policy.review_stale_after_hours,
+                )
+                collaboration_gate_result = CollaborationGateEvaluator().evaluate(
+                    policy=collaboration_policy,
+                    metrics=collaboration_metrics,
+                )
+                collaboration_gate_payload = {
+                    "mode": collaboration_gate_result.mode,
+                    "failed": collaboration_gate_result.failed,
+                    "reason_codes": collaboration_gate_result.reason_codes,
+                    "effective_policy": collaboration_policy.to_dict(),
+                    "metrics": collaboration_metrics,
+                    "decision_details": collaboration_gate_result.decision_details,
+                }
 
             export_gate_payload: dict[str, object] | None = None
-            if export_target is not None:
+            if governance_policy_resolved.export_ops_enabled:
+                resolved_export_target = governance_policy_resolved.export_target
+                if resolved_export_target is None:
+                    raise ValueError(
+                        "Export ops governance gate is enabled but export target is missing."
+                    )
                 export_policy = resolve_export_ops_gate_policy(
-                    policy_payload={},
-                    mode=governance_mode,
+                    policy_payload=governance_policy_resolved.export_ops_policy,
+                    mode=governance_policy_resolved.mode,
                 )
                 export_rollup_payload = summarize_export_ops_rollup(
-                    target=cast(ExportTarget, export_target),
+                    target=cast(ExportTarget, resolved_export_target),
                     system_name=descriptor.name,
                     since_hours=export_policy.since_hours,
                     limit=export_policy.limit,
                 )
                 export_reconcile_payload = summarize_export_reconcile_log(
-                    target=cast(ExportTarget, export_target),
+                    target=cast(ExportTarget, resolved_export_target),
                     system_name=descriptor.name,
                     since_hours=export_policy.since_hours,
                     limit=export_policy.limit,
@@ -1044,7 +1088,7 @@ def handoff(
                 }
 
             governance_decision = build_governance_decision(
-                mode=governance_mode,
+                mode=governance_policy_resolved.mode,
                 security_gate=security_gate_payload,
                 collaboration_gate=collaboration_gate_payload,
                 export_ops_gate=export_gate_payload,
@@ -1060,7 +1104,8 @@ def handoff(
                 "security_gate": security_gate_payload,
                 "collaboration_gate": collaboration_gate_payload,
                 "export_ops_gate": export_gate_payload,
-                "export_target": export_target,
+                "export_target": governance_policy_resolved.export_target,
+                "effective_policy": governance_policy_resolved.to_dict(),
             }
             governance_path = output_root / "governance_gate.json"
             governance_path.write_text(json.dumps(governance_payload, indent=2), encoding="utf-8")
@@ -1077,7 +1122,7 @@ def handoff(
             manifest["governance_failed"] = governance_payload["failed"]
             manifest["governance_reason_codes"] = governance_payload["reason_codes"]
             governance_enforced_failure = (
-                governance_mode == "enforce" and governance_decision.failed
+                governance_policy_resolved.mode == "enforce" and governance_decision.failed
             )
 
         manifest["status"] = "success"
@@ -3007,6 +3052,20 @@ def _load_collaboration_gate_policy_file(policy_path: str | None) -> dict[str, o
         return {}
     if not isinstance(parsed, dict):
         raise ValueError("Policy file must contain a YAML object at top level.")
+    return {str(key): value for key, value in parsed.items()}
+
+
+def _load_governance_handoff_policy_file(policy_path: str | None) -> dict[str, object]:
+    if policy_path is None:
+        return {}
+    try:
+        parsed = yaml.safe_load(Path(policy_path).read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise ValueError(f"Unable to read governance policy file: {exc}") from exc
+    if parsed is None:
+        return {}
+    if not isinstance(parsed, dict):
+        raise ValueError("Governance policy file must contain a YAML object at top level.")
     return {str(key): value for key, value in parsed.items()}
 
 

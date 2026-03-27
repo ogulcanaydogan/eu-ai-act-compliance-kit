@@ -428,6 +428,115 @@ class TestCLI:
         assert result.exit_code != 0
         assert "--export-target requires --governance" in result.output
 
+    def test_handoff_rejects_governance_policy_without_governance(self):
+        """`handoff --governance-policy` should require governance mode."""
+        runner = CliRunner()
+        system_yaml = EXAMPLES_DIR / "medical_diagnosis.yaml"
+        with runner.isolated_filesystem():
+            policy_path = Path("governance_policy.yaml")
+            policy_path.write_text("mode: enforce\n", encoding="utf-8")
+            result = runner.invoke(
+                main,
+                [
+                    "handoff",
+                    str(system_yaml),
+                    "--governance-policy",
+                    str(policy_path),
+                ],
+            )
+
+        assert result.exit_code != 0
+        assert "--governance-policy requires --governance" in result.output
+
+    def test_handoff_governance_policy_file_controls_mode_when_flag_not_passed(self):
+        """Policy file mode should apply when --governance-mode is not passed explicitly."""
+        runner = CliRunner()
+        system_yaml = EXAMPLES_DIR / "public_benefits_triage.yaml"
+
+        with runner.isolated_filesystem():
+            output_dir = Path("handoff_out")
+            policy_path = Path("governance_policy.yaml")
+            policy_path.write_text(
+                "\n".join(
+                    [
+                        "mode: enforce",
+                        "gates:",
+                        "  security: true",
+                        "  collaboration: false",
+                        "  export_ops: false",
+                        "security:",
+                        "  profile: balanced",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            result = runner.invoke(
+                main,
+                [
+                    "handoff",
+                    str(system_yaml),
+                    "--output-dir",
+                    str(output_dir),
+                    "--governance",
+                    "--governance-policy",
+                    str(policy_path),
+                    "--json",
+                ],
+            )
+
+            assert result.exit_code != 0
+            payload = json.loads(result.output[result.output.find("{") :])
+            assert payload["governance_summary"]["mode"] == "enforce"
+            assert payload["governance_failed"] is True
+            assert (
+                "security:security_balanced_threshold_breached"
+                in payload["governance_reason_codes"]
+            )
+
+    def test_handoff_governance_mode_flag_overrides_policy_mode(self):
+        """CLI governance-mode flag should override mode from governance policy file."""
+        runner = CliRunner()
+        system_yaml = EXAMPLES_DIR / "public_benefits_triage.yaml"
+
+        with runner.isolated_filesystem():
+            output_dir = Path("handoff_out")
+            policy_path = Path("governance_policy.yaml")
+            policy_path.write_text(
+                "\n".join(
+                    [
+                        "mode: enforce",
+                        "gates:",
+                        "  security: true",
+                        "  collaboration: false",
+                        "  export_ops: false",
+                        "security:",
+                        "  profile: balanced",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            result = runner.invoke(
+                main,
+                [
+                    "handoff",
+                    str(system_yaml),
+                    "--output-dir",
+                    str(output_dir),
+                    "--governance",
+                    "--governance-mode",
+                    "observe",
+                    "--governance-policy",
+                    str(policy_path),
+                    "--json",
+                ],
+            )
+
+            assert result.exit_code == 0
+            payload = json.loads(result.output[result.output.find("{") :])
+            assert payload["governance_summary"]["mode"] == "observe"
+
     def test_handoff_writes_failed_manifest_when_mid_step_raises(self, monkeypatch):
         """`handoff` should return non-zero but still write manifest when a middle step fails."""
         runner = CliRunner()

@@ -8,10 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- _None._
+- Started Phase 35 Governance Handoff V2 (in progress):
+  - canonical governance handoff policy file (`config/governance_handoff_policy.yaml`)
+  - additive handoff CLI policy flag: `--governance-policy`
+  - additive action inputs/outputs for governance handoff rollout
+  - CI rollout smoke job: `handoff-governance-rollout-smoke` (PR observe, main/tag enforce)
 
 ### Changed
-- _None._
+- `handoff --governance` now supports policy-driven gate toggles and gate-level override payloads.
 
 ### Fixed
 - _None._
