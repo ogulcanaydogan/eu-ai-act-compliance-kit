@@ -1377,6 +1377,11 @@ def collaboration_summary(
     help="Maximum allowed blocked stale tasks (threshold disabled if omitted)",
 )
 @click.option(
+    "--review-stale-max",
+    type=int,
+    help="Maximum allowed in-review stale tasks (threshold disabled if omitted)",
+)
+@click.option(
     "--stale-after-hours",
     type=float,
     help="Hours after which actionable tasks are considered stale",
@@ -1385,6 +1390,11 @@ def collaboration_summary(
     "--blocked-stale-after-hours",
     type=float,
     help="Hours after which blocked tasks are considered stale",
+)
+@click.option(
+    "--review-stale-after-hours",
+    type=float,
+    help="Hours after which in-review tasks are considered stale",
 )
 @click.option("--limit", type=int, help="Maximum number of recent tasks considered")
 @click.option("--collab-path", type=click.Path(), help="Override collaboration ledger JSONL path")
@@ -1398,8 +1408,10 @@ def collaboration_gate(
     unassigned_actionable_max: int | None,
     stale_actionable_max: int | None,
     blocked_stale_max: int | None,
+    review_stale_max: int | None,
     stale_after_hours: float | None,
     blocked_stale_after_hours: float | None,
+    review_stale_after_hours: float | None,
     limit: int | None,
     collab_path: str | None,
     output: str | None,
@@ -1423,11 +1435,17 @@ def collaboration_gate(
     if blocked_stale_max is not None and blocked_stale_max < 0:
         console.print("[red]Error: --blocked-stale-max must be >= 0[/red]")
         sys.exit(1)
+    if review_stale_max is not None and review_stale_max < 0:
+        console.print("[red]Error: --review-stale-max must be >= 0[/red]")
+        sys.exit(1)
     if stale_after_hours is not None and stale_after_hours <= 0:
         console.print("[red]Error: --stale-after-hours must be > 0[/red]")
         sys.exit(1)
     if blocked_stale_after_hours is not None and blocked_stale_after_hours <= 0:
         console.print("[red]Error: --blocked-stale-after-hours must be > 0[/red]")
+        sys.exit(1)
+    if review_stale_after_hours is not None and review_stale_after_hours <= 0:
+        console.print("[red]Error: --review-stale-after-hours must be > 0[/red]")
         sys.exit(1)
 
     try:
@@ -1441,8 +1459,10 @@ def collaboration_gate(
             unassigned_actionable_max=unassigned_actionable_max,
             stale_actionable_max=stale_actionable_max,
             blocked_stale_max=blocked_stale_max,
+            review_stale_max=review_stale_max,
             stale_after_hours=stale_after_hours,
             blocked_stale_after_hours=blocked_stale_after_hours,
+            review_stale_after_hours=review_stale_after_hours,
         )
         metrics = summarize_collaboration_gate_metrics(
             collab_path=collab_path,
@@ -1450,6 +1470,7 @@ def collaboration_gate(
             limit=resolved_policy.limit,
             stale_after_hours=resolved_policy.stale_after_hours,
             blocked_stale_after_hours=resolved_policy.blocked_stale_after_hours,
+            review_stale_after_hours=resolved_policy.review_stale_after_hours,
         )
         gate_result = CollaborationGateEvaluator().evaluate(
             policy=resolved_policy,

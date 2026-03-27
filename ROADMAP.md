@@ -36,6 +36,7 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
 - Phase 30 completed (collaboration governance with `collaboration gate` policy evaluator and PR-observe/main-tag enforce rollout)
 - Phase 31 completed (collaboration governance V2 with SLA/staleness-aware metrics and additive gate policy expansion)
 - Phase 32 completed (GA completion pack with one-command `handoff` orchestration and deterministic artifact manifest)
+- Phase 33 in progress (collaboration governance V3 with in-review staleness policy signals)
 
 ## Phase 1: Risk Classification Engine (Weeks 1-2) ✅ Completed
 
@@ -620,6 +621,24 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
 - Delivered failure contract:
   - command exits non-zero on first failed step
   - manifest still written with `status=failed`, `failed_step`, and `error`
+
+## Phase 33: Collaboration Governance V3 🚧 In Progress
+
+- Scope:
+  - Extend collaboration governance with in-review staleness signal and thresholds.
+  - Keep behavior non-breaking and additive across CLI, action, and CI contracts.
+- Delivered in this kickoff:
+  - Added `review_stale_count` to collaboration gate metrics summary.
+  - Added policy fields:
+    - `thresholds.review_stale_max`
+    - `sla.review_stale_after_hours`
+  - Added evaluator reason code:
+    - `review_stale_threshold_exceeded`
+  - Added `collaboration gate` CLI flags:
+    - `--review-stale-max`
+    - `--review-stale-after-hours`
+  - Added composite action output:
+    - `collaboration_review_stale_count`
 
 ## Timeline Summary (Historical Plan)
 - **Week 1-2**: Risk Classification Engine (Phases 1.1-1.5)

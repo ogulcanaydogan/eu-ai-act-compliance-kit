@@ -169,6 +169,7 @@ Outputs:
 - `collaboration_unassigned_actionable_count`
 - `collaboration_stale_actionable_count`
 - `collaboration_blocked_stale_count`
+- `collaboration_review_stale_count`
 - `collaboration_gate_failed`
 - `collaboration_gate_reason_codes`
 
@@ -274,6 +275,7 @@ pre-commit run --hook-stage pre-push --all-files
 - Phase 30: collaboration governance completed (`collaboration gate` policy evaluator + PR-observe/main-tag enforce rollout in action/CI)
 - Phase 31: collaboration governance v2 completed (SLA/staleness-aware thresholds with additive policy and contract expansion)
 - Phase 32: GA completion pack completed (one-command `handoff` artifact orchestration + CI handoff smoke gate)
+- Phase 33: collaboration governance v3 in progress (in-review staleness policy signals + additive action/CI contract expansion)
 
 ## Disclaimer
 
