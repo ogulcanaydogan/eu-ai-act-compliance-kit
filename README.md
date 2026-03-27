@@ -279,7 +279,7 @@ pre-commit run --hook-stage pre-push --all-files
 - Phase 32: GA completion pack completed (one-command `handoff` artifact orchestration + CI handoff smoke gate)
 - Phase 33: collaboration governance v3 completed (in-review staleness policy signals + additive action/CI contract expansion)
 - Phase 34: governance handoff v1 completed (single-command governance aggregation artifact + enforce-capable handoff mode)
-- Phase 35: governance handoff v2 in progress (policy-driven action/CI rollout with PR observe and main/tag enforce)
+- Phase 35: governance handoff v2 completed (policy-driven action/CI rollout with PR observe and main/tag enforce)
 
 ## Disclaimer
 
