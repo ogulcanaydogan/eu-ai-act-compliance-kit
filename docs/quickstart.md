@@ -23,6 +23,25 @@ Custom inputs are also supported:
 ./scripts/quickstart_smoke.sh examples/medical_diagnosis.yaml /tmp/quickstart-smoke
 ```
 
+## 0.1 One-Command GA Handoff Pack
+
+Use the built-in orchestrator to produce stakeholder-ready artifacts in one run:
+
+```bash
+ai-act handoff examples/medical_diagnosis.yaml --output-dir /tmp/handoff-pack --json
+```
+
+This generates a deterministic artifact set:
+- `validate.json`
+- `classify.json`
+- `check.json`
+- `security_map.json`
+- `checklist.json`
+- `checklist.md`
+- `report.html`
+- `collaboration_summary.json`
+- `handoff_manifest.json`
+
 ## 1. Validate Descriptor
 
 ```bash

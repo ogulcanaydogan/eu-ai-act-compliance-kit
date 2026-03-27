@@ -7,6 +7,44 @@ ai-act --help
 ai-act --version
 ```
 
+## `handoff`
+
+Runs a deterministic one-command GA handoff flow and writes a fixed artifact pack.
+
+```bash
+ai-act handoff <system.yaml>
+ai-act handoff <system.yaml> --output-dir handoff_pack
+ai-act handoff <system.yaml> --output-dir handoff_pack --json
+```
+
+Flow:
+
+`validate -> classify --json -> check --json -> security-map --json -> checklist (json+md) -> report --format html -> collaboration sync+summary`
+
+Artifacts written to `<output-dir>` (default: current working directory):
+
+- `validate.json`
+- `classify.json`
+- `check.json`
+- `security_map.json`
+- `checklist.json`
+- `checklist.md`
+- `report.html`
+- `collaboration_summary.json`
+- `handoff_manifest.json`
+
+Manifest includes:
+
+- `generated_at`, `system_name`, `descriptor_path`, `status`
+- `risk_tier`, `articles_applicable`
+- `compliance_summary`, `security_summary`, `collaboration_summary`
+- `artifacts`, `failed_step`, `error`
+
+Failure contract:
+
+- If any step fails, command exits non-zero.
+- `handoff_manifest.json` is still written with `status=failed`, `failed_step`, and `error`.
+
 ## `classify`
 
 Classifies a system descriptor into a risk tier.

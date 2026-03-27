@@ -10,6 +10,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - No changes yet.
 
+## [0.1.23] - 2026-03-27
+
+### Added
+- Completed Phase 32 GA Completion Pack with one-command orchestration:
+  - new `ai-act handoff <system.yaml> [--output-dir PATH] [--json]` command
+  - deterministic artifact set:
+    - `validate.json`, `classify.json`, `check.json`, `security_map.json`
+    - `checklist.json`, `checklist.md`, `report.html`, `collaboration_summary.json`
+    - `handoff_manifest.json`
+  - canonical manifest fields:
+    - `generated_at`, `system_name`, `descriptor_path`, `status`
+    - `risk_tier`, `articles_applicable`
+    - `compliance_summary`, `security_summary`, `collaboration_summary`
+    - `artifacts`, `failed_step`, `error`
+- New required CI smoke job: `handoff-smoke` (artifact presence + manifest contract checks).
+
+### Changed
+- `check --json` payload construction now uses a shared internal helper to keep handoff/check output contract aligned.
+- Status surfaces synchronized to mark Phase 32 as completed (`README`, `docs/index`, `ROADMAP`).
+
 ## [0.1.22] - 2026-03-24
 
 ### Added

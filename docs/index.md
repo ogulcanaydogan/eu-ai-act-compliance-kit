@@ -16,8 +16,9 @@ checks transparency and GPAI obligations, and renders audit-oriented reports.
 - Map compliance findings to OWASP LLM Top 10 controls (`security-map`)
 - Assess transparency obligations and GPAI signals (`Art. 50`, `Art. 51-55`)
 - Integrate checks into CI/CD using the repository's composite GitHub Action
+- Produce a one-command handoff artifact pack for non-technical stakeholders (`ai-act handoff`)
 
-## Current Delivery Status (March 24, 2026)
+## Current Delivery Status (March 27, 2026)
 
 - Phase 1: Risk classification complete
 - Phase 2: Compliance checker, checklist, transparency, GPAI complete
@@ -50,6 +51,7 @@ checks transparency and GPAI obligations, and renders audit-oriented reports.
 - Phase 29: Team collaboration core completed (local-first ledger + collaboration CLI + observe-only action/CI signals)
 - Phase 30: Collaboration governance completed (`collaboration gate`, policy file precedence, PR-observe/main-tag enforce rollout in action/CI)
 - Phase 31: Collaboration governance V2 completed (SLA/staleness-aware thresholds, additive gate metrics, PR-observe/main-tag enforce retained)
+- Phase 32: GA completion pack completed (one-command `handoff` orchestration + handoff-smoke CI contract)
 
 ## End-to-End Flow
 
