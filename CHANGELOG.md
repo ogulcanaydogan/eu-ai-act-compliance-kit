@@ -8,12 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Collaboration Governance V2 (Phase 31) kickoff with additive SLA/staleness-aware policy support:
+- No changes yet.
+
+## [0.1.22] - 2026-03-24
+
+### Added
+- Completed Collaboration Governance V2 (Phase 31) with additive SLA/staleness-aware policy support:
   - collaboration gate policy fields: `thresholds.stale_actionable_max`, `thresholds.blocked_stale_max`, `sla.stale_after_hours`, `sla.blocked_stale_after_hours`
   - collaboration gate metrics: `stale_actionable_count`, `blocked_stale_count`
   - collaboration gate reason codes: `stale_actionable_threshold_exceeded`, `blocked_stale_threshold_exceeded`
   - CLI flags: `--stale-actionable-max`, `--blocked-stale-max`, `--stale-after-hours`, `--blocked-stale-after-hours`
   - additive action outputs: `collaboration_stale_actionable_count`, `collaboration_blocked_stale_count`
+
+### Changed
+- Status surfaces synchronized to mark Phase 31 as completed (`README`, `docs/index`, `ROADMAP`).
 
 ## [0.1.21] - 2026-03-24
 

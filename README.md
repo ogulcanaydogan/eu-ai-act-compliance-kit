@@ -270,7 +270,7 @@ pre-commit run --hook-stage pre-push --all-files
 - Phase 28: export ops governance enforce rollout completed (shared policy file + PR observe/main-tag enforce across action and CI)
 - Phase 29: team collaboration core completed (local-first ledger + `collaboration` CLI + observe-only action/CI signals)
 - Phase 30: collaboration governance completed (`collaboration gate` policy evaluator + PR-observe/main-tag enforce rollout in action/CI)
-- Phase 31: collaboration governance v2 in progress (SLA/staleness-aware thresholds with additive policy and contract expansion)
+- Phase 31: collaboration governance v2 completed (SLA/staleness-aware thresholds with additive policy and contract expansion)
 
 ## Disclaimer
 
