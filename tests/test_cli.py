@@ -344,6 +344,90 @@ class TestCLI:
             assert manifest_payload["status"] == "success"
             assert "artifacts" in manifest_payload
 
+    def test_handoff_governance_generates_artifact_and_manifest_fields(self):
+        """`handoff --governance` should emit governance artifact and additive manifest fields."""
+        runner = CliRunner()
+        system_yaml = EXAMPLES_DIR / "medical_diagnosis.yaml"
+
+        with runner.isolated_filesystem():
+            output_dir = Path("handoff_out")
+            result = runner.invoke(
+                main,
+                [
+                    "handoff",
+                    str(system_yaml),
+                    "--output-dir",
+                    str(output_dir),
+                    "--governance",
+                    "--governance-mode",
+                    "observe",
+                    "--json",
+                ],
+            )
+
+            assert result.exit_code == 0
+            payload = json.loads(result.output[result.output.find("{") :])
+            assert payload["status"] == "success"
+            assert payload["governance_summary"]["mode"] == "observe"
+            assert isinstance(payload["governance_failed"], bool)
+            assert isinstance(payload["governance_reason_codes"], list)
+            assert (output_dir / "governance_gate.json").exists()
+
+            governance_payload = json.loads((output_dir / "governance_gate.json").read_text())
+            assert governance_payload["mode"] == "observe"
+            assert isinstance(governance_payload["failed"], bool)
+            assert governance_payload["export_ops_gate"] is None
+            assert governance_payload["evaluated_gates"] == ["security_gate", "collaboration_gate"]
+
+    def test_handoff_governance_enforce_returns_nonzero_on_gate_failure(self):
+        """`handoff --governance-mode enforce` should fail when governance decision fails."""
+        runner = CliRunner()
+        system_yaml = EXAMPLES_DIR / "public_benefits_triage.yaml"
+
+        with runner.isolated_filesystem():
+            output_dir = Path("handoff_out")
+            result = runner.invoke(
+                main,
+                [
+                    "handoff",
+                    str(system_yaml),
+                    "--output-dir",
+                    str(output_dir),
+                    "--governance",
+                    "--governance-mode",
+                    "enforce",
+                    "--json",
+                ],
+            )
+
+            assert result.exit_code != 0
+            payload = json.loads(result.output[result.output.find("{") :])
+            assert payload["status"] == "success"
+            assert payload["governance_failed"] is True
+            assert payload["governance_reason_codes"]
+            assert (
+                "security:security_balanced_threshold_breached"
+                in payload["governance_reason_codes"]
+            )
+            assert (output_dir / "governance_gate.json").exists()
+
+    def test_handoff_rejects_export_target_without_governance(self):
+        """`handoff --export-target` should require governance mode."""
+        runner = CliRunner()
+        system_yaml = EXAMPLES_DIR / "medical_diagnosis.yaml"
+        result = runner.invoke(
+            main,
+            [
+                "handoff",
+                str(system_yaml),
+                "--export-target",
+                "jira",
+            ],
+        )
+
+        assert result.exit_code != 0
+        assert "--export-target requires --governance" in result.output
+
     def test_handoff_writes_failed_manifest_when_mid_step_raises(self, monkeypatch):
         """`handoff` should return non-zero but still write manifest when a middle step fails."""
         runner = CliRunner()

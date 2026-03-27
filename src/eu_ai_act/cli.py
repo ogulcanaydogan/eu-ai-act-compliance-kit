@@ -55,6 +55,7 @@ from eu_ai_act.exporter import (
     summarize_export_push_ledger,
     summarize_export_reconcile_log,
 )
+from eu_ai_act.governance_handoff import build_governance_decision
 from eu_ai_act.gpai import (
     GPAIAssessment,
     GPAIAssessor,
@@ -769,8 +770,32 @@ def report(system_yaml: str, format: str, output: str | None) -> None:
     type=click.Path(file_okay=False),
     help="Output directory for handoff artifacts (default: current working directory)",
 )
+@click.option(
+    "--governance",
+    is_flag=True,
+    help="Evaluate governance gates and emit governance_gate.json artifact.",
+)
+@click.option(
+    "--governance-mode",
+    type=click.Choice(["observe", "enforce"]),
+    default="observe",
+    show_default=True,
+    help="Governance mode. enforce returns non-zero when governance gate fails.",
+)
+@click.option(
+    "--export-target",
+    type=click.Choice(["jira", "servicenow"]),
+    help="Optional export target to include export-ops governance in handoff output.",
+)
 @click.option("--json", "output_json", is_flag=True, help="Output handoff manifest as JSON")
-def handoff(system_yaml: str, output_dir: str | None, output_json: bool) -> None:
+def handoff(
+    system_yaml: str,
+    output_dir: str | None,
+    governance: bool,
+    governance_mode: str,
+    export_target: str | None,
+    output_json: bool,
+) -> None:
     """
     Run one-command GA handoff flow and write deterministic artifacts.
 
@@ -778,6 +803,10 @@ def handoff(system_yaml: str, output_dir: str | None, output_json: bool) -> None
       validate -> classify --json -> check --json -> security-map --json
       -> checklist (json+md) -> report --format html -> collaboration sync+summary
     """
+    if export_target is not None and not governance:
+        console.print("[red]Error: --export-target requires --governance[/red]")
+        sys.exit(1)
+
     output_root = Path(output_dir).resolve() if output_dir else Path.cwd().resolve()
     output_root.mkdir(parents=True, exist_ok=True)
 
@@ -792,10 +821,14 @@ def handoff(system_yaml: str, output_dir: str | None, output_json: bool) -> None
         "compliance_summary": None,
         "security_summary": None,
         "collaboration_summary": None,
+        "governance_summary": None,
+        "governance_failed": False,
+        "governance_reason_codes": [],
         "artifacts": {},
         "failed_step": None,
         "error": None,
     }
+    governance_enforced_failure = False
 
     classifier = RiskClassifier()
     checker = ComplianceChecker()
@@ -939,6 +972,114 @@ def handoff(system_yaml: str, output_dir: str | None, output_json: bool) -> None
             "done_count": summary_payload["done_count"],
             "system_task_count": sync_payload["system_task_count"],
         }
+
+        if governance:
+            current_step = "governance"
+            governance_security_gate_result = security_gate_evaluator.evaluate(
+                security_summary=security_summary_payload,
+                mode=governance_mode,
+                profile="balanced",
+                risk_tier=compliance_report.risk_tier.value,
+            )
+            security_gate_payload = governance_security_gate_result.to_dict()
+
+            collaboration_policy = resolve_collaboration_gate_policy(
+                policy_payload={},
+                mode=governance_mode,
+                system_name=descriptor.name,
+            )
+            collaboration_metrics = summarize_collaboration_gate_metrics(
+                system_name=descriptor.name,
+                limit=collaboration_policy.limit,
+                stale_after_hours=collaboration_policy.stale_after_hours,
+                blocked_stale_after_hours=collaboration_policy.blocked_stale_after_hours,
+                review_stale_after_hours=collaboration_policy.review_stale_after_hours,
+            )
+            collaboration_gate_result = CollaborationGateEvaluator().evaluate(
+                policy=collaboration_policy,
+                metrics=collaboration_metrics,
+            )
+            collaboration_gate_payload = {
+                "mode": collaboration_gate_result.mode,
+                "failed": collaboration_gate_result.failed,
+                "reason_codes": collaboration_gate_result.reason_codes,
+                "effective_policy": collaboration_policy.to_dict(),
+                "metrics": collaboration_metrics,
+                "decision_details": collaboration_gate_result.decision_details,
+            }
+
+            export_gate_payload: dict[str, object] | None = None
+            if export_target is not None:
+                export_policy = resolve_export_ops_gate_policy(
+                    policy_payload={},
+                    mode=governance_mode,
+                )
+                export_rollup_payload = summarize_export_ops_rollup(
+                    target=cast(ExportTarget, export_target),
+                    system_name=descriptor.name,
+                    since_hours=export_policy.since_hours,
+                    limit=export_policy.limit,
+                )
+                export_reconcile_payload = summarize_export_reconcile_log(
+                    target=cast(ExportTarget, export_target),
+                    system_name=descriptor.name,
+                    since_hours=export_policy.since_hours,
+                    limit=export_policy.limit,
+                )
+                export_gate_result = ExportOpsGateEvaluator().evaluate(
+                    policy=export_policy,
+                    rollup_metrics=cast(dict, export_rollup_payload.get("metrics", {})),
+                    reconcile_metrics=cast(dict, export_reconcile_payload.get("metrics", {})),
+                )
+                export_gate_payload = {
+                    "mode": export_gate_result.mode,
+                    "failed": export_gate_result.failed,
+                    "reason_codes": export_gate_result.reason_codes,
+                    "effective_policy": export_policy.to_dict(),
+                    "rollup_metrics": export_rollup_payload.get("metrics", {}),
+                    "reconcile_metrics": export_reconcile_payload.get("metrics", {}),
+                    "decision_details": export_gate_result.decision_details,
+                    "ops_path": export_rollup_payload.get("ops_path"),
+                    "reconcile_log_path": export_reconcile_payload.get("path"),
+                }
+
+            governance_decision = build_governance_decision(
+                mode=governance_mode,
+                security_gate=security_gate_payload,
+                collaboration_gate=collaboration_gate_payload,
+                export_ops_gate=export_gate_payload,
+            )
+            governance_payload = {
+                "generated_at": datetime.now(UTC).isoformat(),
+                "system_name": descriptor.name,
+                "mode": governance_decision.mode,
+                "failed": governance_decision.failed,
+                "reason_codes": governance_decision.reason_codes,
+                "evaluated_gates": governance_decision.evaluated_gates,
+                "failed_gates": governance_decision.failed_gates,
+                "security_gate": security_gate_payload,
+                "collaboration_gate": collaboration_gate_payload,
+                "export_ops_gate": export_gate_payload,
+                "export_target": export_target,
+            }
+            governance_path = output_root / "governance_gate.json"
+            governance_path.write_text(json.dumps(governance_payload, indent=2), encoding="utf-8")
+            cast(dict[str, str], manifest["artifacts"])["governance_gate.json"] = str(
+                governance_path
+            )
+            manifest["governance_summary"] = {
+                "mode": governance_payload["mode"],
+                "failed": governance_payload["failed"],
+                "reason_codes": governance_payload["reason_codes"],
+                "evaluated_gates": governance_payload["evaluated_gates"],
+                "failed_gates": governance_payload["failed_gates"],
+            }
+            manifest["governance_failed"] = governance_payload["failed"]
+            manifest["governance_reason_codes"] = governance_payload["reason_codes"]
+            governance_enforced_failure = (
+                governance_mode == "enforce" and governance_decision.failed
+            )
+
         manifest["status"] = "success"
     except Exception as e:
         if manifest.get("system_name") is None:
@@ -961,7 +1102,8 @@ def handoff(system_yaml: str, output_dir: str | None, output_json: bool) -> None
                         f"[bold]System:[/bold] {manifest['system_name']}\n"
                         f"[bold]Risk Tier:[/bold] {manifest['risk_tier']}\n"
                         f"[bold]Output Dir:[/bold] {output_root}\n"
-                        f"[bold]Artifacts:[/bold] {len(cast(dict[str, str], manifest['artifacts']))}"
+                        f"[bold]Artifacts:[/bold] {len(cast(dict[str, str], manifest['artifacts']))}\n"
+                        f"[bold]Governance Enabled:[/bold] {'yes' if governance else 'no'}"
                     ),
                     title="GA Handoff Completed",
                     border_style="green",
@@ -974,6 +1116,13 @@ def handoff(system_yaml: str, output_dir: str | None, output_json: bool) -> None
             console.print(f"[yellow]Manifest saved to: {manifest_path}[/yellow]")
 
     if manifest["status"] != "success":
+        sys.exit(1)
+    if governance_enforced_failure:
+        if not output_json:
+            console.print(
+                "[red]Handoff governance enforce mode failed. "
+                "See governance_reason_codes in handoff_manifest.json.[/red]"
+            )
         sys.exit(1)
 
 

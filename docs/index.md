@@ -17,6 +17,7 @@ checks transparency and GPAI obligations, and renders audit-oriented reports.
 - Assess transparency obligations and GPAI signals (`Art. 50`, `Art. 51-55`)
 - Integrate checks into CI/CD using the repository's composite GitHub Action
 - Produce a one-command handoff artifact pack for non-technical stakeholders (`ai-act handoff`)
+- Add governance-aware handoff outputs for decision-ready operations (`--governance`)
 
 ## Current Delivery Status (March 27, 2026)
 
@@ -53,6 +54,7 @@ checks transparency and GPAI obligations, and renders audit-oriented reports.
 - Phase 31: Collaboration governance V2 completed (SLA/staleness-aware thresholds, additive gate metrics, PR-observe/main-tag enforce retained)
 - Phase 32: GA completion pack completed (one-command `handoff` orchestration + handoff-smoke CI contract)
 - Phase 33: Collaboration governance V3 completed (in-review staleness policy signals + additive gate contract expansion)
+- Phase 34: Governance handoff V1 in progress (single-command governance aggregation artifact + enforce-capable handoff mode)
 
 ## End-to-End Flow
 
