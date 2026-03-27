@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "eu-ai-act-compliance-kit"
-version = "0.1.23"
+version = "0.1.24"
 description = "Automated EU AI Act (2024/1689) compliance checker. Classifies AI systems by risk tier, generates checklists, and produces audit-ready reports."
 readme = "README.md"
 requires-python = ">=3.11"
