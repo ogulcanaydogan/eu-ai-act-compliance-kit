@@ -30,7 +30,7 @@ class TestCLI:
 
         assert result.exit_code == 0
         assert "version" in result.output.lower()
-        assert "0.1.22" in result.output
+        assert "0.1.23" in result.output
         assert "runtimeerror" not in result.output.lower()
 
     def test_articles_uses_normalized_mapping(self):
@@ -298,6 +298,107 @@ class TestCLI:
         assert "Security Mapping (OWASP LLM Top 10)" in html_result.output
         assert "Recommended Actions" in html_result.output
         assert "Audit Trail" in html_result.output
+
+    def test_handoff_generates_expected_artifact_pack(self):
+        """`handoff` should generate deterministic GA artifact set and success manifest."""
+        runner = CliRunner()
+        system_yaml = EXAMPLES_DIR / "medical_diagnosis.yaml"
+
+        with runner.isolated_filesystem():
+            output_dir = Path("handoff_out")
+            result = runner.invoke(
+                main,
+                [
+                    "handoff",
+                    str(system_yaml),
+                    "--output-dir",
+                    str(output_dir),
+                    "--json",
+                ],
+            )
+
+            assert result.exit_code == 0
+            payload = json.loads(result.output[result.output.find("{") :])
+            assert payload["status"] == "success"
+            assert payload["system_name"] == "Medical Imaging Diagnosis AI"
+            assert payload["risk_tier"] == "high_risk"
+            assert "compliance_summary" in payload
+            assert "security_summary" in payload
+            assert "collaboration_summary" in payload
+
+            expected_files = [
+                "validate.json",
+                "classify.json",
+                "check.json",
+                "security_map.json",
+                "checklist.json",
+                "checklist.md",
+                "report.html",
+                "collaboration_summary.json",
+                "handoff_manifest.json",
+            ]
+            for name in expected_files:
+                assert (output_dir / name).exists()
+
+            manifest_payload = json.loads((output_dir / "handoff_manifest.json").read_text())
+            assert manifest_payload["status"] == "success"
+            assert "artifacts" in manifest_payload
+
+    def test_handoff_writes_failed_manifest_when_mid_step_raises(self, monkeypatch):
+        """`handoff` should return non-zero but still write manifest when a middle step fails."""
+        runner = CliRunner()
+        system_yaml = EXAMPLES_DIR / "medical_diagnosis.yaml"
+
+        def _raise_report_error(*args, **kwargs):
+            raise RuntimeError("html rendering failed")
+
+        monkeypatch.setattr(ReportGenerator, "generate_report", _raise_report_error)
+
+        with runner.isolated_filesystem():
+            output_dir = Path("handoff_out")
+            result = runner.invoke(
+                main,
+                [
+                    "handoff",
+                    str(system_yaml),
+                    "--output-dir",
+                    str(output_dir),
+                    "--json",
+                ],
+            )
+
+            assert result.exit_code != 0
+            payload = json.loads(result.output[result.output.find("{") :])
+            assert payload["status"] == "failed"
+            assert payload["failed_step"] == "report_html"
+            assert "html rendering failed" in payload["error"]
+            assert (output_dir / "handoff_manifest.json").exists()
+            # earlier steps should still be present
+            assert (output_dir / "check.json").exists()
+            assert not (output_dir / "report.html").exists()
+
+    def test_handoff_invalid_descriptor_path_fails_with_manifest(self):
+        """`handoff` should fail deterministically for missing descriptor and still emit manifest."""
+        runner = CliRunner()
+
+        with runner.isolated_filesystem():
+            output_dir = Path("handoff_out")
+            result = runner.invoke(
+                main,
+                [
+                    "handoff",
+                    "missing.yaml",
+                    "--output-dir",
+                    str(output_dir),
+                    "--json",
+                ],
+            )
+
+            assert result.exit_code != 0
+            payload = json.loads(result.output[result.output.find("{") :])
+            assert payload["status"] == "failed"
+            assert payload["failed_step"] == "validate"
+            assert (output_dir / "handoff_manifest.json").exists()
 
     def test_history_commands_list_show_diff_json(self):
         """`history` commands should return structured list/show/diff payloads."""

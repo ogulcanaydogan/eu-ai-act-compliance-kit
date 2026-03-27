@@ -66,6 +66,22 @@ def test_ci_contains_examples_smoke_job():
     assert '"ai-act", "check"' in joined_run
 
 
+def test_ci_contains_handoff_smoke_job():
+    """CI must include handoff-smoke job validating GA handoff artifact contract."""
+    jobs = _load_ci_jobs()
+    assert "handoff-smoke" in jobs
+
+    handoff_job = jobs["handoff-smoke"]
+    assert handoff_job.get("name") == "Handoff Smoke"
+
+    steps = handoff_job.get("steps", [])
+    run_blocks = [step.get("run", "") for step in steps if isinstance(step, dict)]
+    joined_run = "\n".join(run_blocks)
+    assert "ai-act handoff" in joined_run
+    assert "handoff_manifest.json" in joined_run
+    assert "security_map.json" in joined_run
+
+
 def test_ci_test_job_enforces_coverage_floor():
     """CI test job should enforce minimum coverage threshold."""
     jobs = _load_ci_jobs()
@@ -91,6 +107,22 @@ def test_all_checks_treats_examples_smoke_as_required():
     )
     run_script = check_status_step.get("run", "")
     assert "needs.examples-smoke.result" in run_script
+
+
+def test_all_checks_treats_handoff_smoke_as_required():
+    """All-checks gate must evaluate handoff-smoke result as required."""
+    jobs = _load_ci_jobs()
+    assert "all-checks" in jobs
+
+    all_checks_job = jobs["all-checks"]
+    needs = all_checks_job.get("needs", [])
+    assert "handoff-smoke" in needs
+
+    check_status_step = next(
+        step for step in all_checks_job.get("steps", []) if step.get("name") == "Check status"
+    )
+    run_script = check_status_step.get("run", "")
+    assert "needs.handoff-smoke.result" in run_script
 
 
 def test_ci_contains_export_ops_gate_smoke_job():

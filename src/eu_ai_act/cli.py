@@ -265,42 +265,15 @@ def check(
         history_warning = str(e)
 
     if output_json:
-        findings_payload = {
-            finding_id: {
-                "title": finding.requirement_title,
-                "status": finding.status.value,
-                "description": finding.description,
-                "gap_analysis": finding.gap_analysis,
-                "remediation_steps": finding.remediation_steps,
-                "severity": finding.severity,
-            }
-            for finding_id, finding in report_result.findings.items()
-        }
-
-        output = {
-            "system_name": descriptor.name,
-            "risk_tier": report_result.risk_tier.value,
-            "articles_applicable": articles_applicable,
-            "status": "compliance_check_completed",
-            "message": "Compliance assessment completed.",
-            "summary": {
-                "total_requirements": report_result.summary.total_requirements,
-                "compliant_count": report_result.summary.compliant_count,
-                "non_compliant_count": report_result.summary.non_compliant_count,
-                "partial_count": report_result.summary.partial_count,
-                "not_assessed_count": report_result.summary.not_assessed_count,
-                "compliance_percentage": round(report_result.summary.compliance_percentage, 2),
-            },
-            "findings": findings_payload,
-            "transparency": [
-                _serialize_transparency_finding(finding) for finding in transparency_findings
-            ],
-            "gpai_summary": gpai_summary,
-            "security_summary": {**security_summary_payload},
-            "security_gate": security_gate_result.to_dict(),
-            "audit_trail": report_result.audit_trail,
-            "generated_at": report_result.generated_at,
-        }
+        output = _build_check_output_payload(
+            descriptor=descriptor,
+            report_result=report_result,
+            articles_applicable=articles_applicable,
+            transparency_findings=transparency_findings,
+            gpai_summary=gpai_summary,
+            security_summary_payload=security_summary_payload,
+            security_gate_result=security_gate_result,
+        )
         click.echo(json.dumps(output, indent=2))
     else:
         console.print(
@@ -787,6 +760,221 @@ def report(system_yaml: str, format: str, output: str | None) -> None:
 
     if history_warning:
         click.echo(f"Warning: failed to write history event: {history_warning}", err=True)
+
+
+@main.command()
+@click.argument("system_yaml", type=click.Path())
+@click.option(
+    "--output-dir",
+    type=click.Path(file_okay=False),
+    help="Output directory for handoff artifacts (default: current working directory)",
+)
+@click.option("--json", "output_json", is_flag=True, help="Output handoff manifest as JSON")
+def handoff(system_yaml: str, output_dir: str | None, output_json: bool) -> None:
+    """
+    Run one-command GA handoff flow and write deterministic artifacts.
+
+    Flow:
+      validate -> classify --json -> check --json -> security-map --json
+      -> checklist (json+md) -> report --format html -> collaboration sync+summary
+    """
+    output_root = Path(output_dir).resolve() if output_dir else Path.cwd().resolve()
+    output_root.mkdir(parents=True, exist_ok=True)
+
+    descriptor_abs_path = str(Path(system_yaml).resolve())
+    manifest: dict[str, object] = {
+        "generated_at": datetime.now(UTC).isoformat(),
+        "system_name": None,
+        "descriptor_path": descriptor_abs_path,
+        "status": "failed",
+        "risk_tier": None,
+        "articles_applicable": [],
+        "compliance_summary": None,
+        "security_summary": None,
+        "collaboration_summary": None,
+        "artifacts": {},
+        "failed_step": None,
+        "error": None,
+    }
+
+    classifier = RiskClassifier()
+    checker = ComplianceChecker()
+    checklist_generator = ChecklistGenerator()
+    report_generator = ReportGenerator()
+    transparency_checker = TransparencyChecker()
+    gpai_assessor = GPAIAssessor()
+    security_mapper = SecurityMapper()
+    security_gate_evaluator = SecurityGateEvaluator()
+
+    current_step = "validate"
+    try:
+        descriptor = load_system_descriptor_from_file(system_yaml)
+        manifest["system_name"] = descriptor.name
+        validate_payload = {
+            "system_name": descriptor.name,
+            "version": descriptor.version,
+            "valid": True,
+            "use_case_count": len(descriptor.use_cases),
+            "data_practice_count": len(descriptor.data_practices),
+            "generated_at": datetime.now(UTC).isoformat(),
+        }
+        validate_path = output_root / "validate.json"
+        validate_path.write_text(json.dumps(validate_payload, indent=2), encoding="utf-8")
+        cast(dict[str, str], manifest["artifacts"])["validate.json"] = str(validate_path)
+
+        current_step = "classify"
+        classification = classifier.classify(descriptor)
+        classify_payload = {
+            "system_name": descriptor.name,
+            "risk_tier": classification.tier.value,
+            "confidence": classification.confidence,
+            "reasoning": classification.reasoning,
+            "contributing_factors": classification.contributing_factors,
+            "articles_applicable": classification.articles_applicable,
+        }
+        classify_path = output_root / "classify.json"
+        classify_path.write_text(json.dumps(classify_payload, indent=2), encoding="utf-8")
+        cast(dict[str, str], manifest["artifacts"])["classify.json"] = str(classify_path)
+
+        current_step = "check"
+        compliance_report = checker.check(descriptor)
+        articles_applicable = classifier.get_applicable_articles(compliance_report.risk_tier)
+        transparency_findings = _collect_transparency_findings(transparency_checker, descriptor)
+        gpai_assessment = gpai_assessor.assess(_build_gpai_model_info_from_descriptor(descriptor))
+        gpai_summary = _build_gpai_summary(gpai_assessment, descriptor)
+        security_mapping = security_mapper.map_from_compliance(compliance_report)
+        security_summary_payload = {
+            "framework": security_mapping.framework,
+            **security_mapping.summary.to_dict(),
+        }
+        security_gate_result = security_gate_evaluator.evaluate(
+            security_summary=security_summary_payload,
+            mode="observe",
+            profile="balanced",
+            risk_tier=compliance_report.risk_tier.value,
+        )
+
+        check_payload = _build_check_output_payload(
+            descriptor=descriptor,
+            report_result=compliance_report,
+            articles_applicable=articles_applicable,
+            transparency_findings=transparency_findings,
+            gpai_summary=gpai_summary,
+            security_summary_payload=security_summary_payload,
+            security_gate_result=security_gate_result,
+        )
+        check_path = output_root / "check.json"
+        check_path.write_text(json.dumps(check_payload, indent=2), encoding="utf-8")
+        cast(dict[str, str], manifest["artifacts"])["check.json"] = str(check_path)
+        manifest["risk_tier"] = compliance_report.risk_tier.value
+        manifest["articles_applicable"] = articles_applicable
+        manifest["compliance_summary"] = check_payload["summary"]
+        manifest["security_summary"] = security_summary_payload
+
+        current_step = "security_map"
+        security_map_payload = {
+            "system_name": descriptor.name,
+            "risk_tier": compliance_report.risk_tier.value,
+            "generated_at": security_mapping.generated_at,
+            "framework": security_mapping.framework,
+            "summary": security_mapping.summary.to_dict(),
+            "controls": [control.to_dict() for control in security_mapping.controls],
+        }
+        security_map_path = output_root / "security_map.json"
+        security_map_path.write_text(json.dumps(security_map_payload, indent=2), encoding="utf-8")
+        cast(dict[str, str], manifest["artifacts"])["security_map.json"] = str(security_map_path)
+
+        current_step = "checklist"
+        checklist_result = checklist_generator.generate(
+            descriptor=descriptor,
+            tier=compliance_report.risk_tier,
+            findings=compliance_report.findings,
+            generated_at=compliance_report.generated_at,
+        )
+        checklist_json_path = output_root / "checklist.json"
+        checklist_md_path = output_root / "checklist.md"
+        checklist_json_path.write_text(checklist_result.to_json(), encoding="utf-8")
+        checklist_md_path.write_text(checklist_result.to_markdown(), encoding="utf-8")
+        cast(dict[str, str], manifest["artifacts"])["checklist.json"] = str(checklist_json_path)
+        cast(dict[str, str], manifest["artifacts"])["checklist.md"] = str(checklist_md_path)
+
+        current_step = "report_html"
+        report_html = report_generator.generate_report(
+            descriptor=descriptor,
+            classification=classification,
+            compliance_report=compliance_report,
+            transparency_findings=transparency_findings,
+            gpai_assessment=gpai_assessment,
+            checklist=checklist_result,
+            format="html",
+        )
+        report_html_path = output_root / "report.html"
+        report_html_path.write_text(report_html, encoding="utf-8")
+        cast(dict[str, str], manifest["artifacts"])["report.html"] = str(report_html_path)
+
+        current_step = "collaboration"
+        sync_payload = sync_collaboration_tasks(
+            report=compliance_report,
+            descriptor_path=system_yaml,
+        )
+        summary_payload = summarize_collaboration_tasks(system_name=descriptor.name)
+        collaboration_summary_payload = {
+            **summary_payload,
+            "sync_changes": sync_payload["changes"],
+            "system_task_count": sync_payload["system_task_count"],
+        }
+        collaboration_summary_path = output_root / "collaboration_summary.json"
+        collaboration_summary_path.write_text(
+            json.dumps(collaboration_summary_payload, indent=2),
+            encoding="utf-8",
+        )
+        cast(dict[str, str], manifest["artifacts"])["collaboration_summary.json"] = str(
+            collaboration_summary_path
+        )
+        manifest["collaboration_summary"] = {
+            "count": summary_payload["count"],
+            "open_count": summary_payload["open_count"],
+            "in_review_count": summary_payload["in_review_count"],
+            "blocked_count": summary_payload["blocked_count"],
+            "done_count": summary_payload["done_count"],
+            "system_task_count": sync_payload["system_task_count"],
+        }
+        manifest["status"] = "success"
+    except Exception as e:
+        if manifest.get("system_name") is None:
+            manifest["system_name"] = Path(system_yaml).stem
+        manifest["status"] = "failed"
+        manifest["failed_step"] = current_step
+        manifest["error"] = str(e)
+
+    manifest_path = output_root / "handoff_manifest.json"
+    cast(dict[str, str], manifest["artifacts"])["handoff_manifest.json"] = str(manifest_path)
+    manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+
+    if output_json:
+        click.echo(json.dumps(manifest, indent=2))
+    else:
+        if manifest["status"] == "success":
+            console.print(
+                Panel(
+                    (
+                        f"[bold]System:[/bold] {manifest['system_name']}\n"
+                        f"[bold]Risk Tier:[/bold] {manifest['risk_tier']}\n"
+                        f"[bold]Output Dir:[/bold] {output_root}\n"
+                        f"[bold]Artifacts:[/bold] {len(cast(dict[str, str], manifest['artifacts']))}"
+                    ),
+                    title="GA Handoff Completed",
+                    border_style="green",
+                )
+            )
+        else:
+            console.print(
+                f"[red]Handoff failed at step '{manifest['failed_step']}': {manifest['error']}[/red]"
+            )
+            console.print(f"[yellow]Manifest saved to: {manifest_path}[/yellow]")
+
+    if manifest["status"] != "success":
+        sys.exit(1)
 
 
 @main.command()
@@ -2573,6 +2761,55 @@ def _emit_export_output(payload_json: str, output: str | None) -> None:
         console.print(f"[green]Export payload saved to: {output_path}[/green]")
         return
     click.echo(payload_json)
+
+
+def _build_check_output_payload(
+    *,
+    descriptor: AISystemDescriptor,
+    report_result,
+    articles_applicable: list[str],
+    transparency_findings: list[TransparencyFinding],
+    gpai_summary: dict[str, object],
+    security_summary_payload: dict[str, object],
+    security_gate_result,
+) -> dict[str, object]:
+    """Build canonical `check --json` payload."""
+    findings_payload = {
+        finding_id: {
+            "title": finding.requirement_title,
+            "status": finding.status.value,
+            "description": finding.description,
+            "gap_analysis": finding.gap_analysis,
+            "remediation_steps": finding.remediation_steps,
+            "severity": finding.severity,
+        }
+        for finding_id, finding in report_result.findings.items()
+    }
+
+    return {
+        "system_name": descriptor.name,
+        "risk_tier": report_result.risk_tier.value,
+        "articles_applicable": articles_applicable,
+        "status": "compliance_check_completed",
+        "message": "Compliance assessment completed.",
+        "summary": {
+            "total_requirements": report_result.summary.total_requirements,
+            "compliant_count": report_result.summary.compliant_count,
+            "non_compliant_count": report_result.summary.non_compliant_count,
+            "partial_count": report_result.summary.partial_count,
+            "not_assessed_count": report_result.summary.not_assessed_count,
+            "compliance_percentage": round(report_result.summary.compliance_percentage, 2),
+        },
+        "findings": findings_payload,
+        "transparency": [
+            _serialize_transparency_finding(finding) for finding in transparency_findings
+        ],
+        "gpai_summary": gpai_summary,
+        "security_summary": {**security_summary_payload},
+        "security_gate": security_gate_result.to_dict(),
+        "audit_trail": report_result.audit_trail,
+        "generated_at": report_result.generated_at,
+    }
 
 
 def _load_export_gate_policy_file(policy_path: str | None) -> dict[str, object]:
