@@ -34,7 +34,7 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
 - Phase 28 completed (export ops governance enforce rollout with shared policy file and PR-observe/main-enforce CI-action integration)
 - Phase 29 completed (team collaboration core with local-first ledger and observe-only action/CI visibility)
 - Phase 30 completed (collaboration governance with `collaboration gate` policy evaluator and PR-observe/main-tag enforce rollout)
-- Phase 31 in progress (collaboration governance V2 with SLA/staleness-aware metrics and additive gate policy expansion)
+- Phase 31 completed (collaboration governance V2 with SLA/staleness-aware metrics and additive gate policy expansion)
 
 ## Phase 1: Risk Classification Engine (Weeks 1-2) ✅ Completed
 
@@ -577,31 +577,31 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
   - main/tag flows run in `enforce`
   - required by `all-checks`
 
-## Phase 31: Collaboration Governance V2 🚧 In Progress
+## Phase 31: Collaboration Governance V2 ✅ Completed
 
-- Scope focus:
-  - extend collaboration governance with SLA/staleness-aware policy while preserving V1 threshold behavior
-  - keep rollout model unchanged: pull requests `observe`, main/tag flows `enforce`
-- Planned additive metrics:
+- Delivered scope:
+  - extended collaboration governance with SLA/staleness-aware policy while preserving V1 threshold behavior
+  - rollout model kept unchanged: pull requests `observe`, main/tag flows `enforce`
+- Delivered additive metrics:
   - `stale_actionable_count`
   - `blocked_stale_count`
   - existing counters retained (`blocked_count`, `unassigned_actionable_count`, etc.)
-- Planned additive reason codes:
+- Delivered additive reason codes:
   - `stale_actionable_threshold_exceeded`
   - `blocked_stale_threshold_exceeded`
   - existing reason codes retained, including `missing_collaboration_data`
-- Planned additive policy schema (`config/collaboration_gate_policy.yaml`):
+- Delivered additive policy schema (`config/collaboration_gate_policy.yaml`):
   - `thresholds.stale_actionable_max`
   - `thresholds.blocked_stale_max`
   - `sla.stale_after_hours`
   - `sla.blocked_stale_after_hours`
   - precedence unchanged: `CLI flags > policy file > defaults`
-- Planned additive CLI surface (`ai-act collaboration gate`):
+- Delivered additive CLI surface (`ai-act collaboration gate`):
   - `--stale-actionable-max`
   - `--blocked-stale-max`
   - `--stale-after-hours`
   - `--blocked-stale-after-hours`
-- Planned additive action/CI outputs:
+- Delivered additive action/CI outputs:
   - `collaboration_stale_actionable_count`
   - `collaboration_blocked_stale_count`
 

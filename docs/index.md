@@ -49,7 +49,7 @@ checks transparency and GPAI obligations, and renders audit-oriented reports.
 - Phase 28: Export ops governance enforce rollout completed (shared policy file + PR observe/main-tag enforce across action and CI)
 - Phase 29: Team collaboration core completed (local-first ledger + collaboration CLI + observe-only action/CI signals)
 - Phase 30: Collaboration governance completed (`collaboration gate`, policy file precedence, PR-observe/main-tag enforce rollout in action/CI)
-- Phase 31: Collaboration governance V2 in progress (SLA/staleness-aware thresholds, additive gate metrics, PR-observe/main-tag enforce retained)
+- Phase 31: Collaboration governance V2 completed (SLA/staleness-aware thresholds, additive gate metrics, PR-observe/main-tag enforce retained)
 
 ## End-to-End Flow
 
