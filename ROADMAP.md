@@ -39,7 +39,7 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
 - Phase 33 completed (collaboration governance V3 with in-review staleness policy signals)
 - Phase 34 completed (governance handoff V1 with enforce-capable combined gate artifact)
 - Phase 35 completed (governance handoff V2 with policy-driven action/CI rollout)
-- Phase 36 in progress (GA stabilization hardening with deterministic handoff diagnostics + Python 3.11/3.12/3.13 compatibility smoke)
+- Phase 36 completed (GA stabilization hardening with deterministic handoff diagnostics + Python 3.11/3.12/3.13 compatibility smoke)
 
 ## Phase 1: Risk Classification Engine (Weeks 1-2) ✅ Completed
 
