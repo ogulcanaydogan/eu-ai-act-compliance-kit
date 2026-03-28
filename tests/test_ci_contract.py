@@ -101,6 +101,24 @@ def test_ci_contains_handoff_governance_rollout_smoke_job():
     assert "github.event_name" in joined_run
 
 
+def test_ci_contains_ops_closeout_smoke_job():
+    """CI must include ops-closeout-smoke job with PR observe / main-tag enforce rollout."""
+    jobs = _load_ci_jobs()
+    assert "ops-closeout-smoke" in jobs
+
+    closeout_job = jobs["ops-closeout-smoke"]
+    assert closeout_job.get("name") == "Ops Closeout Smoke"
+
+    steps = closeout_job.get("steps", [])
+    run_blocks = [step.get("run", "") for step in steps if isinstance(step, dict)]
+    joined_run = "\n".join(run_blocks)
+    assert "ai-act ops closeout" in joined_run
+    assert '--mode "$GATE_MODE"' in joined_run
+    assert "ops_closeout_manifest.json" in joined_run
+    assert "ops_closeout_checks.json" in joined_run
+    assert "ops_closeout_evidence.md" in joined_run
+
+
 def test_ci_test_job_enforces_coverage_floor():
     """CI test job should enforce minimum coverage threshold."""
     jobs = _load_ci_jobs()
@@ -195,6 +213,22 @@ def test_all_checks_treats_handoff_governance_rollout_smoke_as_required():
     )
     run_script = check_status_step.get("run", "")
     assert "needs.handoff-governance-rollout-smoke.result" in run_script
+
+
+def test_all_checks_treats_ops_closeout_smoke_as_required():
+    """All-checks gate must evaluate ops-closeout-smoke result as required."""
+    jobs = _load_ci_jobs()
+    assert "all-checks" in jobs
+
+    all_checks_job = jobs["all-checks"]
+    needs = all_checks_job.get("needs", [])
+    assert "ops-closeout-smoke" in needs
+
+    check_status_step = next(
+        step for step in all_checks_job.get("steps", []) if step.get("name") == "Check status"
+    )
+    run_script = check_status_step.get("run", "")
+    assert "needs.ops-closeout-smoke.result" in run_script
 
 
 def test_ci_contains_export_ops_gate_smoke_job():

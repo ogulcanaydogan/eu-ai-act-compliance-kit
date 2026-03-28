@@ -71,6 +71,42 @@ Precedence:
 - CLI flags override policy file values
 - policy file values override built-in defaults
 
+## `ops closeout`
+
+Runs deterministic release closeout checks and writes an evidence pack.
+
+```bash
+ai-act ops closeout --version 0.1.28 --release-run-id 23489289129 --json
+ai-act ops closeout --version 0.1.28 --release-run-id 23489289129 --mode enforce --output-dir ops_closeout --json
+ai-act ops closeout --version 0.1.28 --release-run-id 23489289129 --repo ogulcanaydogan/eu-ai-act-compliance-kit --pypi-project eu-ai-act-compliance-kit --rtd-url https://eu-ai-act-compliance-kit.readthedocs.io/en/latest/ --json
+```
+
+Checks:
+
+- GitHub Actions run status (`completed + success`)
+- GitHub release/tag presence + wheel/sdist artifact visibility
+- PyPI JSON version parity (`info.version == --version`)
+- RTD URL HTTP `200`
+
+Artifacts written to `<output-dir>` (default: current working directory):
+
+- `ops_closeout_checks.json`
+- `ops_closeout_manifest.json`
+- `ops_closeout_evidence.md`
+
+Exit contract:
+
+- `--mode observe`: always exit `0`, but `failed` can be `true` in payload.
+- `--mode enforce`: exits non-zero when any check fails.
+- Artifact write failure always exits non-zero with deterministic stderr error.
+
+JSON manifest includes:
+
+- `generated_at`, `mode`, `status`, `failed`
+- `version`, `release_run_id`, `repo`, `pypi_project`, `rtd_url`
+- `reason_codes`, `failed_checks`, `passed_checks`
+- `artifacts`
+
 ## `classify`
 
 Classifies a system descriptor into a risk tier.

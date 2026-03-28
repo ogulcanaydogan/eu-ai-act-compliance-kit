@@ -74,6 +74,7 @@ from eu_ai_act.history import (
     list_events,
     resolve_history_path,
 )
+from eu_ai_act.ops_closeout import OpsCloseoutCheck, OpsCloseoutEvaluator, OpsCloseoutMode
 from eu_ai_act.reporter import ReportGenerator
 from eu_ai_act.schema import (
     AISystemDescriptor,
@@ -1170,6 +1171,201 @@ def handoff(
                 "[red]Handoff governance enforce mode failed. "
                 "See governance_reason_codes in handoff_manifest.json.[/red]"
             )
+        sys.exit(1)
+
+
+@main.group()
+def ops() -> None:
+    """Run operational closeout and evidence automation commands."""
+    pass
+
+
+@ops.command("closeout")
+@click.option(
+    "--version",
+    "release_version",
+    required=True,
+    help="Target release version (for example: 0.1.28).",
+)
+@click.option(
+    "--release-run-id",
+    type=int,
+    required=True,
+    help="GitHub Actions run id expected to be successful.",
+)
+@click.option(
+    "--mode",
+    type=click.Choice(["observe", "enforce"]),
+    default="observe",
+    show_default=True,
+    help="observe reports findings without failing; enforce exits non-zero on failure.",
+)
+@click.option(
+    "--repo",
+    default="ogulcanaydogan/eu-ai-act-compliance-kit",
+    show_default=True,
+    help="GitHub repository owner/name used for run and release checks.",
+)
+@click.option(
+    "--pypi-project",
+    default="eu-ai-act-compliance-kit",
+    show_default=True,
+    help="PyPI project name for version validation.",
+)
+@click.option(
+    "--rtd-url",
+    default="https://eu-ai-act-compliance-kit.readthedocs.io/en/latest/",
+    show_default=True,
+    help="Read the Docs URL expected to return HTTP 200.",
+)
+@click.option(
+    "--output-dir",
+    type=click.Path(file_okay=False),
+    help="Directory where closeout artifacts will be written (default: current working directory).",
+)
+@click.option(
+    "--github-api-base-url",
+    default="https://api.github.com",
+    show_default=True,
+    help="GitHub API base URL (advanced override, useful for smoke fixtures).",
+)
+@click.option(
+    "--pypi-base-url",
+    default="https://pypi.org",
+    show_default=True,
+    help="PyPI base URL (advanced override, useful for smoke fixtures).",
+)
+@click.option(
+    "--timeout-seconds",
+    type=float,
+    default=20.0,
+    show_default=True,
+    help="HTTP timeout in seconds for each closeout check.",
+)
+@click.option("--json", "output_json", is_flag=True, help="Output manifest as JSON")
+def ops_closeout(
+    release_version: str,
+    release_run_id: int,
+    mode: str,
+    repo: str,
+    pypi_project: str,
+    rtd_url: str,
+    output_dir: str | None,
+    github_api_base_url: str,
+    pypi_base_url: str,
+    timeout_seconds: float,
+    output_json: bool,
+) -> None:
+    """Generate deterministic ops closeout evidence for run/release/PyPI/RTD."""
+    if release_run_id < 1:
+        console.print("[red]Error: --release-run-id must be >= 1[/red]")
+        sys.exit(1)
+    if timeout_seconds <= 0:
+        console.print("[red]Error: --timeout-seconds must be > 0[/red]")
+        sys.exit(1)
+    if "/" not in repo or repo.strip().count("/") != 1:
+        console.print("[red]Error: --repo must be in '<owner>/<name>' format[/red]")
+        sys.exit(1)
+    if not release_version.strip():
+        console.print("[red]Error: --version must be a non-empty value[/red]")
+        sys.exit(1)
+
+    output_root = Path(output_dir).resolve() if output_dir else Path.cwd().resolve()
+    output_root.mkdir(parents=True, exist_ok=True)
+
+    generated_at = datetime.now(UTC).isoformat()
+    try:
+        closeout_result = OpsCloseoutEvaluator().evaluate(
+            mode=cast(OpsCloseoutMode, mode),
+            version=release_version.strip(),
+            release_run_id=release_run_id,
+            repo=repo.strip(),
+            pypi_project=pypi_project.strip(),
+            rtd_url=rtd_url.strip(),
+            github_api_base_url=github_api_base_url.strip(),
+            pypi_base_url=pypi_base_url.strip(),
+            timeout_seconds=timeout_seconds,
+        )
+    except Exception as e:
+        console.print(f"[red]Error running ops closeout checks: {e}[/red]")
+        sys.exit(1)
+
+    checks_payload = {
+        "generated_at": generated_at,
+        "version": release_version.strip(),
+        "release_run_id": release_run_id,
+        "repo": repo.strip(),
+        "pypi_project": pypi_project.strip(),
+        "rtd_url": rtd_url.strip(),
+        "checks": [check.to_dict() for check in closeout_result.checks],
+    }
+
+    checks_path = output_root / "ops_closeout_checks.json"
+    evidence_path = output_root / "ops_closeout_evidence.md"
+    manifest_path = output_root / "ops_closeout_manifest.json"
+
+    manifest_payload = {
+        "generated_at": generated_at,
+        "mode": closeout_result.mode,
+        "status": "failed" if closeout_result.failed else "success",
+        "failed": closeout_result.failed,
+        "version": release_version.strip(),
+        "release_run_id": release_run_id,
+        "repo": repo.strip(),
+        "pypi_project": pypi_project.strip(),
+        "rtd_url": rtd_url.strip(),
+        "reason_codes": closeout_result.reason_codes,
+        "failed_checks": closeout_result.failed_checks,
+        "passed_checks": closeout_result.passed_checks,
+        "artifacts": {
+            "ops_closeout_checks.json": str(checks_path),
+            "ops_closeout_manifest.json": str(manifest_path),
+            "ops_closeout_evidence.md": str(evidence_path),
+        },
+    }
+
+    try:
+        checks_path.write_text(json.dumps(checks_payload, indent=2), encoding="utf-8")
+        evidence_path.write_text(
+            _render_ops_closeout_evidence_markdown(
+                generated_at=generated_at,
+                version=release_version.strip(),
+                repo=repo.strip(),
+                mode=closeout_result.mode,
+                checks=closeout_result.checks,
+                failed=closeout_result.failed,
+                reason_codes=closeout_result.reason_codes,
+            ),
+            encoding="utf-8",
+        )
+        manifest_path.write_text(json.dumps(manifest_payload, indent=2), encoding="utf-8")
+    except Exception as e:
+        click.echo(f"Error: failed to write ops closeout artifacts: {e}", err=True)
+        sys.exit(1)
+
+    if output_json:
+        click.echo(json.dumps(manifest_payload, indent=2))
+    else:
+        console.print(
+            Panel(
+                (
+                    f"[bold]Mode:[/bold] {closeout_result.mode}\n"
+                    f"[bold]Status:[/bold] {'FAILED' if closeout_result.failed else 'SUCCESS'}\n"
+                    f"[bold]Version:[/bold] {release_version.strip()}\n"
+                    f"[bold]Release Run ID:[/bold] {release_run_id}\n"
+                    f"[bold]Output Dir:[/bold] {output_root}\n"
+                    f"[bold]Failed Checks:[/bold] {len(closeout_result.failed_checks)}"
+                ),
+                title="Ops Closeout",
+                border_style="blue",
+            )
+        )
+        if closeout_result.failed:
+            console.print(
+                f"[yellow]Reason Codes:[/yellow] {', '.join(closeout_result.reason_codes)}"
+            )
+
+    if closeout_result.mode == "enforce" and closeout_result.failed:
         sys.exit(1)
 
 
@@ -2968,6 +3164,42 @@ def export_ledger_stats(idempotency_path: str | None, output_json: bool) -> None
     for key, value in summary["status_distribution"].items():
         status_table.add_row(key, str(value))
     console.print(status_table)
+
+
+def _render_ops_closeout_evidence_markdown(
+    *,
+    generated_at: str,
+    version: str,
+    repo: str,
+    mode: str,
+    checks: list[OpsCloseoutCheck],
+    failed: bool,
+    reason_codes: list[str],
+) -> str:
+    """Render closeout evidence markdown from deterministic check payload."""
+    lines = [
+        "# Ops Closeout Evidence",
+        "",
+        f"- Generated at: {generated_at}",
+        f"- Repository: {repo}",
+        f"- Version: {version}",
+        f"- Mode: {mode}",
+        f"- Status: {'failed' if failed else 'success'}",
+        f"- Reason codes: {', '.join(reason_codes) if reason_codes else 'none'}",
+        "",
+        "## Checks",
+    ]
+    for check in checks:
+        lines.extend(
+            [
+                f"- `{check.name}`: {'PASS' if check.ok else 'FAIL'}",
+                f"  - url: {check.url}",
+                f"  - http_status: {check.http_status}",
+                f"  - details: {check.details}",
+            ]
+        )
+    lines.append("")
+    return "\n".join(lines)
 
 
 def _emit_export_output(payload_json: str, output: str | None) -> None:

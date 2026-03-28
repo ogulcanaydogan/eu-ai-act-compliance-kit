@@ -18,8 +18,9 @@ checks transparency and GPAI obligations, and renders audit-oriented reports.
 - Integrate checks into CI/CD using the repository's composite GitHub Action
 - Produce a one-command handoff artifact pack for non-technical stakeholders (`ai-act handoff`)
 - Add governance-aware handoff outputs for decision-ready operations (`--governance`)
+- Generate one-command ops closeout evidence for release channels (`ai-act ops closeout`)
 
-## Current Delivery Status (March 27, 2026)
+## Current Delivery Status (March 28, 2026)
 
 - Phase 1: Risk classification complete
 - Phase 2: Compliance checker, checklist, transparency, GPAI complete
@@ -57,6 +58,7 @@ checks transparency and GPAI obligations, and renders audit-oriented reports.
 - Phase 34: Governance handoff V1 completed (single-command governance aggregation artifact + enforce-capable handoff mode)
 - Phase 35: Governance handoff V2 completed (policy-driven action/CI rollout with PR observe and main/tag enforce)
 - Phase 36: GA stabilization hardening completed (deterministic handoff diagnostics + required Python 3.11/3.12/3.13 compatibility smoke gate)
+- Phase 37: Ops automation closeout pack completed (`ops closeout` command + run/release/PyPI/RTD evidence artifacts + CI rollout smoke)
 
 ## End-to-End Flow
 

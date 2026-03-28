@@ -30,7 +30,7 @@ class TestCLI:
 
         assert result.exit_code == 0
         assert "version" in result.output.lower()
-        assert "0.1.27" in result.output
+        assert "0.1.28" in result.output
         assert "runtimeerror" not in result.output.lower()
 
     def test_articles_uses_normalized_mapping(self):
@@ -622,6 +622,159 @@ class TestCLI:
             assert payload["status"] == "failed"
             assert payload["failed_step"] == "validate"
             assert (output_dir / "handoff_manifest.json").exists()
+
+    def test_ops_closeout_generates_artifacts_and_json_payload(self, monkeypatch):
+        """`ops closeout --json` should write deterministic artifact set and manifest payload."""
+        runner = CliRunner()
+
+        def handler(request):
+            if str(request.url).endswith("/actions/runs/234"):
+                return httpx.Response(
+                    status_code=200,
+                    json={
+                        "status": "completed",
+                        "conclusion": "success",
+                        "html_url": "https://github.com/acme/repo/actions/runs/234",
+                    },
+                )
+            if str(request.url).endswith("/releases/tags/v0.1.28"):
+                return httpx.Response(
+                    status_code=200,
+                    json={
+                        "html_url": "https://github.com/acme/repo/releases/tag/v0.1.28",
+                        "assets": [
+                            {"name": "pkg-0.1.28-py3-none-any.whl"},
+                            {"name": "pkg-0.1.28.tar.gz"},
+                        ],
+                    },
+                )
+            if str(request.url).endswith("/pypi/eu-ai-act-compliance-kit/json"):
+                return httpx.Response(status_code=200, json={"info": {"version": "0.1.28"}})
+            if str(request.url).endswith("/rtd"):
+                return httpx.Response(status_code=200, text="ok")
+            return httpx.Response(status_code=404)
+
+        transport = httpx.MockTransport(handler)
+        original_client = httpx.Client
+
+        def _fake_client(*args, **kwargs):
+            return original_client(transport=transport)
+
+        monkeypatch.setattr("eu_ai_act.ops_closeout.httpx.Client", _fake_client)
+
+        with runner.isolated_filesystem():
+            output_dir = Path("ops_closeout")
+            result = runner.invoke(
+                main,
+                [
+                    "ops",
+                    "closeout",
+                    "--version",
+                    "0.1.28",
+                    "--release-run-id",
+                    "234",
+                    "--repo",
+                    "acme/repo",
+                    "--github-api-base-url",
+                    "https://example.test/api",
+                    "--pypi-base-url",
+                    "https://example.test",
+                    "--rtd-url",
+                    "https://example.test/rtd",
+                    "--output-dir",
+                    str(output_dir),
+                    "--json",
+                ],
+            )
+
+            assert result.exit_code == 0
+            payload = json.loads(result.output[result.output.find("{") :])
+            assert payload["status"] == "success"
+            assert payload["failed"] is False
+            assert payload["reason_codes"] == []
+            assert (output_dir / "ops_closeout_checks.json").exists()
+            assert (output_dir / "ops_closeout_manifest.json").exists()
+            assert (output_dir / "ops_closeout_evidence.md").exists()
+
+    def test_ops_closeout_enforce_fails_on_failed_checks(self, monkeypatch):
+        """`ops closeout --mode enforce` should return non-zero when any check fails."""
+        runner = CliRunner()
+
+        def handler(request):
+            if str(request.url).endswith("/actions/runs/11"):
+                return httpx.Response(
+                    status_code=200, json={"status": "completed", "conclusion": "failure"}
+                )
+            if str(request.url).endswith("/releases/tags/v0.1.28"):
+                return httpx.Response(status_code=404, text="missing")
+            if str(request.url).endswith("/pypi/eu-ai-act-compliance-kit/json"):
+                return httpx.Response(status_code=404, text="missing")
+            if str(request.url).endswith("/rtd"):
+                return httpx.Response(status_code=503, text="down")
+            return httpx.Response(status_code=404)
+
+        transport = httpx.MockTransport(handler)
+        original_client = httpx.Client
+
+        def _fake_client(*args, **kwargs):
+            return original_client(transport=transport)
+
+        monkeypatch.setattr("eu_ai_act.ops_closeout.httpx.Client", _fake_client)
+
+        with runner.isolated_filesystem():
+            output_dir = Path("ops_closeout")
+            result = runner.invoke(
+                main,
+                [
+                    "ops",
+                    "closeout",
+                    "--version",
+                    "0.1.28",
+                    "--release-run-id",
+                    "11",
+                    "--mode",
+                    "enforce",
+                    "--repo",
+                    "acme/repo",
+                    "--github-api-base-url",
+                    "https://example.test/api",
+                    "--pypi-base-url",
+                    "https://example.test",
+                    "--rtd-url",
+                    "https://example.test/rtd",
+                    "--output-dir",
+                    str(output_dir),
+                    "--json",
+                ],
+            )
+
+        assert result.exit_code != 0
+        payload = json.loads(result.output[result.output.find("{") :])
+        assert payload["failed"] is True
+        assert "github_run_failed" in payload["reason_codes"]
+        assert "github_release_failed" in payload["reason_codes"]
+        assert "pypi_version_failed" in payload["reason_codes"]
+        assert "rtd_failed" in payload["reason_codes"]
+
+    def test_ops_closeout_invalid_repo_format_fails(self):
+        """`ops closeout` should fail fast for invalid repo value."""
+        runner = CliRunner()
+        result = runner.invoke(
+            main,
+            [
+                "ops",
+                "closeout",
+                "--version",
+                "0.1.28",
+                "--release-run-id",
+                "10",
+                "--repo",
+                "invalid_repo",
+            ],
+        )
+
+        assert result.exit_code != 0
+        assert "--repo must be in '<owner>/<name>' format" in result.output
 
     def test_history_commands_list_show_diff_json(self):
         """`history` commands should return structured list/show/diff payloads."""
