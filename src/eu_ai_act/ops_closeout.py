@@ -304,7 +304,7 @@ class OpsCloseoutEvaluator:
         return raw
 
     @staticmethod
-    def _safe_get(*, client: httpx.Client, url: str) -> "_SafeHttpResponse":
+    def _safe_get(*, client: httpx.Client, url: str) -> _SafeHttpResponse:
         try:
             response = client.get(url)
             return _SafeHttpResponse(
