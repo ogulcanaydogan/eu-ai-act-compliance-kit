@@ -79,6 +79,7 @@ pip install -e ".[reporting]"
 ai-act handoff examples/medical_diagnosis.yaml --output-dir handoff_pack --json
 ai-act handoff examples/medical_diagnosis.yaml --output-dir handoff_pack --governance --governance-mode observe --json
 ai-act handoff examples/medical_diagnosis.yaml --output-dir handoff_pack --governance --governance-policy config/governance_handoff_policy.yaml --json
+ai-act ops closeout --version 0.1.28 --release-run-id 23489289129 --json
 ai-act validate examples/medical_diagnosis.yaml
 ai-act classify examples/medical_diagnosis.yaml --json
 ai-act check examples/medical_diagnosis.yaml --json
@@ -91,6 +92,7 @@ ai-act export check examples/medical_diagnosis.yaml --target generic --json
 ## CLI Surface
 
 - `ai-act handoff <system.yaml> [--output-dir PATH] [--json] [--governance] [--governance-mode observe|enforce] [--governance-policy PATH] [--export-target jira|servicenow]`
+- `ai-act ops closeout --version <semver> --release-run-id <id> [--mode observe|enforce] [--repo owner/name] [--pypi-project NAME] [--rtd-url URL] [--output-dir PATH] [--json]`
 - `ai-act classify <system.yaml> [--json]`
 - `ai-act check <system.yaml> [--json] [--security-gate observe|enforce] [--security-gate-profile strict|balanced|lenient]`
 - `ai-act security-map <system.yaml> [--json] [--output PATH]`
@@ -281,6 +283,7 @@ pre-commit run --hook-stage pre-push --all-files
 - Phase 34: governance handoff v1 completed (single-command governance aggregation artifact + enforce-capable handoff mode)
 - Phase 35: governance handoff v2 completed (policy-driven action/CI rollout with PR observe and main/tag enforce)
 - Phase 36: GA stabilization hardening completed (deterministic handoff diagnostics + required Python 3.11/3.12/3.13 compatibility smoke gate)
+- Phase 37: ops automation closeout pack completed (`ops closeout` command + run/release/PyPI/RTD evidence artifacts + CI rollout smoke)
 
 ## Disclaimer
 

@@ -16,6 +16,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - _None._
 
+## [0.1.28] - 2026-03-28
+
+### Added
+- Completed Phase 37 ops automation closeout pack:
+  - new `ai-act ops closeout` command for deterministic release closeout checks
+  - checks include GitHub run status, GitHub release artifacts (wheel/sdist), PyPI version parity, and RTD HTTP availability
+  - new evidence artifacts: `ops_closeout_checks.json`, `ops_closeout_manifest.json`, `ops_closeout_evidence.md`
+  - new required CI rollout smoke gate: `ops-closeout-smoke` (PR observe, main/tag enforce)
+- Added ops closeout evaluator runtime module with deterministic check payload shape and reason-code contract.
+
+### Changed
+- Status surfaces synchronized to mark Phase 37 as completed (`README`, `docs/index`, `ROADMAP`).
+- CLI reference expanded with `ops closeout` contract, artifacts, and observe/enforce exit behavior.
+
 ## [0.1.27] - 2026-03-27
 
 ### Added

@@ -54,6 +54,9 @@ __all__ = [
     "CollaborationGatePolicy",
     "CollaborationGateResult",
     "CollaborationGateEvaluator",
+    "OpsCloseoutCheck",
+    "OpsCloseoutResult",
+    "OpsCloseoutEvaluator",
     "append_event",
     "list_events",
     "get_event",
@@ -97,6 +100,7 @@ from eu_ai_act.exporter import (
 )
 from eu_ai_act.gpai import GPAIAssessment, GPAIAssessor, GPAIModelInfo
 from eu_ai_act.history import HistoryEvent, append_event, diff_events, get_event, list_events
+from eu_ai_act.ops_closeout import OpsCloseoutCheck, OpsCloseoutEvaluator, OpsCloseoutResult
 from eu_ai_act.reporter import ReportGenerator
 from eu_ai_act.schema import AISystemDescriptor, RiskTier, UseCaseDomain
 from eu_ai_act.security_gate import (

@@ -3,7 +3,7 @@
 ## Vision
 Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifies AI systems by risk tier, generates compliance checklists, and produces audit-ready reports. The first open-source tool that makes EU AI Act compliance accessible to every AI team.
 
-## Status Snapshot (March 27, 2026)
+## Status Snapshot (March 28, 2026)
 - Phase 1 completed
 - Phase 2 completed
 - Phase 3 JSON/Markdown/HTML/PDF completed
@@ -40,6 +40,7 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
 - Phase 34 completed (governance handoff V1 with enforce-capable combined gate artifact)
 - Phase 35 completed (governance handoff V2 with policy-driven action/CI rollout)
 - Phase 36 completed (GA stabilization hardening with deterministic handoff diagnostics + Python 3.11/3.12/3.13 compatibility smoke)
+- Phase 37 completed (ops automation closeout pack with deterministic run/release/PyPI/RTD evidence artifacts)
 
 ## Phase 1: Risk Classification Engine (Weeks 1-2) ✅ Completed
 
@@ -684,6 +685,29 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
     - outputs: `handoff_governance_failed`, `handoff_governance_reason_codes`, `handoff_governance_failed_gates`
   - Added CI rollout smoke gate:
     - `handoff-governance-rollout-smoke`
+  - Rollout model:
+    - PR observe
+    - main/tag enforce
+
+## Phase 37: Ops Automation Closeout Pack ✅ Completed
+
+- Scope:
+  - Add one-command ops closeout evidence generation for release channels.
+  - Keep existing command contracts backward-compatible.
+- Delivered in this phase:
+  - Added new CLI command:
+    - `ai-act ops closeout --version <semver> --release-run-id <id> [--mode observe|enforce] [--repo owner/name] [--pypi-project NAME] [--rtd-url URL] [--output-dir PATH] [--json]`
+  - Added deterministic closeout checks:
+    - GitHub Actions run success
+    - GitHub release/tag + wheel/sdist asset visibility
+    - PyPI version parity
+    - RTD endpoint availability
+  - Added evidence artifact set:
+    - `ops_closeout_checks.json`
+    - `ops_closeout_manifest.json`
+    - `ops_closeout_evidence.md`
+  - Added required CI rollout smoke gate:
+    - `ops-closeout-smoke`
   - Rollout model:
     - PR observe
     - main/tag enforce
