@@ -356,7 +356,7 @@ jobs:
           IS_MAIN_OR_TAG: ${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') }}
         run: |
           mkdir -p /tmp/ops-closeout-smoke/out
-          python - <<'PY' >/tmp/ops-closeout-smoke/mock_server.py
+          cat <<'PY' >/tmp/ops-closeout-smoke/mock_server.py
           from __future__ import annotations
 
           import json
