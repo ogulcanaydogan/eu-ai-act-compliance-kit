@@ -81,6 +81,7 @@ ai-act ops closeout --policy config/ops_closeout_policy.yaml --json
 ai-act ops closeout --version 0.1.30 --release-run-id 23489289129 --mode enforce --output-dir ops_closeout --json
 ai-act ops closeout --version 0.1.30 --release-run-id 23489289129 --policy config/ops_closeout_policy.yaml --repo ogulcanaydogan/eu-ai-act-compliance-kit --pypi-project eu-ai-act-compliance-kit --rtd-url https://eu-ai-act-compliance-kit.readthedocs.io/en/latest/ --json
 ai-act ops closeout --version 0.1.30 --release-run-id 23489289129 --max-run-age-hours 24 --max-release-age-hours 24 --max-rtd-age-hours 24 --json
+ai-act ops closeout --version 0.1.30 --release-run-id 23489289129 --max-run-age-hours 1 --max-release-age-hours 1 --max-rtd-age-hours 1 --waiver-reason-code github_run_stale --waiver-expires-at 2099-01-01T00:00:00Z --json
 ```
 
 Checks:
@@ -93,6 +94,11 @@ Checks:
   - `max_run_age_hours`
   - `max_release_age_hours`
   - `max_rtd_age_hours` (uses RTD `Last-Modified` metadata when available; otherwise deterministic `rtd_stale_or_unknown`)
+- Optional time-bounded waivers (policy/flags):
+  - policy field `waivers[]` entries: `reason_code`, `expires_at`, optional `note`
+  - CLI overrides: repeat `--waiver-reason-code` and `--waiver-expires-at` in matched pairs
+  - active waivers suppress matching reason codes from effective failure set
+  - expired waivers do not suppress failures and are reported via dedicated payload fields
 
 Artifacts written to `<output-dir>` (default: current working directory):
 
@@ -123,6 +129,7 @@ JSON manifest includes:
 - `version`, `release_run_id`, `repo`, `pypi_project`, `rtd_url`
 - `reason_codes`, `failed_checks`, `passed_checks`
 - `freshness_metrics`, `freshness_thresholds`, `freshness_reason_codes`
+- `waiver_summary`, `waived_reason_codes`, `expired_waiver_reason_codes`, `effective_reason_codes`
 - `artifacts`
 
 ## `classify`

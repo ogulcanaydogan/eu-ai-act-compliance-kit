@@ -71,6 +71,15 @@ def test_ops_closeout_evaluator_success_path(monkeypatch: pytest.MonkeyPatch) ->
     assert result.reason_codes == []
     assert result.failed_checks == []
     assert result.freshness_reason_codes == []
+    assert result.waiver_summary == {
+        "configured_count": 0,
+        "matched_count": 0,
+        "waived_count": 0,
+        "expired_count": 0,
+    }
+    assert result.waived_reason_codes == []
+    assert result.expired_waiver_reason_codes == []
+    assert result.effective_reason_codes == []
     assert result.freshness_metrics == {
         "run_age_hours": None,
         "release_age_hours": None,
@@ -117,7 +126,11 @@ def test_ops_closeout_evaluator_observe_mode_tracks_failures(
     assert result.failed is True
     assert "github_release_failed" in result.reason_codes
     assert "pypi_version_failed" in result.reason_codes
+    assert "github_release_failed" in result.effective_reason_codes
+    assert "pypi_version_failed" in result.effective_reason_codes
     assert result.freshness_reason_codes == []
+    assert result.waived_reason_codes == []
+    assert result.expired_waiver_reason_codes == []
 
 
 def test_ops_closeout_evaluator_enforce_mode_marks_failure(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -155,7 +168,15 @@ def test_ops_closeout_evaluator_enforce_mode_marks_failure(monkeypatch: pytest.M
         "pypi_version_failed",
         "rtd_failed",
     ]
+    assert result.effective_reason_codes == [
+        "github_run_failed",
+        "github_release_failed",
+        "pypi_version_failed",
+        "rtd_failed",
+    ]
     assert result.freshness_reason_codes == []
+    assert result.waived_reason_codes == []
+    assert result.expired_waiver_reason_codes == []
 
 
 def test_ops_closeout_evaluator_freshness_thresholds(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -208,9 +229,163 @@ def test_ops_closeout_evaluator_freshness_thresholds(monkeypatch: pytest.MonkeyP
     assert "github_run_stale" in result.freshness_reason_codes
     assert "github_release_stale" in result.freshness_reason_codes
     assert "rtd_stale_or_unknown" in result.freshness_reason_codes
+    assert "github_run_stale" in result.effective_reason_codes
+    assert "github_release_stale" in result.effective_reason_codes
+    assert "rtd_stale_or_unknown" in result.effective_reason_codes
     assert result.freshness_metrics["run_age_hours"] is not None
     assert result.freshness_metrics["release_age_hours"] is not None
     assert result.freshness_metrics["rtd_age_hours"] is None
+
+
+def test_ops_closeout_evaluator_applies_active_waivers(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Active waivers should suppress matching reason codes from effective decision."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/actions/runs/234"):
+            return httpx.Response(
+                200,
+                json={
+                    "status": "completed",
+                    "conclusion": "success",
+                    "updated_at": "2026-03-20T00:00:00Z",
+                },
+            )
+        if request.url.path.endswith("/releases/tags/v0.1.29"):
+            return httpx.Response(
+                200,
+                json={
+                    "assets": [
+                        {"name": "eu_ai_act_compliance_kit-0.1.29-py3-none-any.whl"},
+                        {"name": "eu_ai_act_compliance_kit-0.1.29.tar.gz"},
+                    ],
+                    "published_at": "2026-03-20T00:00:00Z",
+                },
+            )
+        if request.url.path.endswith("/pypi/eu-ai-act-compliance-kit/json"):
+            return httpx.Response(200, json={"info": {"version": "0.1.29"}})
+        if request.url.path == "/rtd":
+            return httpx.Response(200, text="ok")
+        return httpx.Response(404)
+
+    _patch_http_client(monkeypatch, handler)
+
+    policy = resolve_ops_closeout_policy(
+        waivers=[
+            {
+                "reason_code": "github_run_stale",
+                "expires_at": "2099-01-01T00:00:00Z",
+                "note": "temporary waiver",
+            },
+            {
+                "reason_code": "github_release_stale",
+                "expires_at": "2099-01-01T00:00:00Z",
+            },
+            {
+                "reason_code": "rtd_stale_or_unknown",
+                "expires_at": "2099-01-01T00:00:00Z",
+            },
+        ],
+    )
+
+    result = OpsCloseoutEvaluator().evaluate(
+        mode="enforce",
+        version="0.1.29",
+        release_run_id=234,
+        repo="acme/repo",
+        pypi_project="eu-ai-act-compliance-kit",
+        rtd_url="https://example.test/rtd",
+        github_api_base_url="https://example.test/api",
+        pypi_base_url="https://example.test",
+        max_run_age_hours=1.0,
+        max_release_age_hours=1.0,
+        max_rtd_age_hours=1.0,
+        waivers=policy.waivers,
+    )
+
+    assert result.failed is False
+    assert "github_run_stale" in result.reason_codes
+    assert "github_release_stale" in result.reason_codes
+    assert "rtd_stale_or_unknown" in result.reason_codes
+    assert result.effective_reason_codes == []
+    assert sorted(result.waived_reason_codes) == [
+        "github_release_stale",
+        "github_run_stale",
+        "rtd_stale_or_unknown",
+    ]
+    assert result.expired_waiver_reason_codes == []
+    assert result.waiver_summary == {
+        "configured_count": 3,
+        "matched_count": 3,
+        "waived_count": 3,
+        "expired_count": 0,
+    }
+
+
+def test_ops_closeout_evaluator_reports_expired_waiver(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Expired waivers must not suppress matching reasons in effective decision."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/actions/runs/234"):
+            return httpx.Response(
+                200,
+                json={
+                    "status": "completed",
+                    "conclusion": "success",
+                    "updated_at": "2026-03-20T00:00:00Z",
+                },
+            )
+        if request.url.path.endswith("/releases/tags/v0.1.29"):
+            return httpx.Response(
+                200,
+                json={
+                    "assets": [
+                        {"name": "eu_ai_act_compliance_kit-0.1.29-py3-none-any.whl"},
+                        {"name": "eu_ai_act_compliance_kit-0.1.29.tar.gz"},
+                    ],
+                    "published_at": "2026-03-20T00:00:00Z",
+                },
+            )
+        if request.url.path.endswith("/pypi/eu-ai-act-compliance-kit/json"):
+            return httpx.Response(200, json={"info": {"version": "0.1.29"}})
+        if request.url.path == "/rtd":
+            return httpx.Response(200, text="ok")
+        return httpx.Response(404)
+
+    _patch_http_client(monkeypatch, handler)
+
+    policy = resolve_ops_closeout_policy(
+        waivers=[
+            {
+                "reason_code": "github_run_stale",
+                "expires_at": "2000-01-01T00:00:00Z",
+            }
+        ],
+    )
+    result = OpsCloseoutEvaluator().evaluate(
+        mode="enforce",
+        version="0.1.29",
+        release_run_id=234,
+        repo="acme/repo",
+        pypi_project="eu-ai-act-compliance-kit",
+        rtd_url="https://example.test/rtd",
+        github_api_base_url="https://example.test/api",
+        pypi_base_url="https://example.test",
+        max_run_age_hours=1.0,
+        max_release_age_hours=1.0,
+        max_rtd_age_hours=1.0,
+        waivers=policy.waivers,
+    )
+
+    assert result.failed is True
+    assert "github_run_stale" in result.effective_reason_codes
+    assert result.waived_reason_codes == []
+    assert result.expired_waiver_reason_codes == ["github_run_stale"]
+    assert result.waiver_summary == {
+        "configured_count": 1,
+        "matched_count": 1,
+        "waived_count": 0,
+        "expired_count": 1,
+    }
 
 
 def test_normalize_ops_closeout_mode_rejects_invalid_value() -> None:
@@ -255,6 +430,33 @@ def test_resolve_ops_closeout_policy_precedence_cli_over_file() -> None:
     assert policy.max_run_age_hours == 12
     assert policy.max_release_age_hours == 72
     assert policy.max_rtd_age_hours == 24
+    assert policy.waivers == []
+
+
+def test_resolve_ops_closeout_policy_cli_waivers_override_policy_waivers() -> None:
+    """CLI waiver overrides should replace policy-file waivers deterministically."""
+    policy = resolve_ops_closeout_policy(
+        policy_payload={
+            "waivers": [
+                {
+                    "reason_code": "github_run_stale",
+                    "expires_at": "2099-01-01T00:00:00Z",
+                }
+            ]
+        },
+        waivers=[
+            {
+                "reason_code": "github_release_stale",
+                "expires_at": "2099-01-02T00:00:00Z",
+                "note": "cli override",
+            }
+        ],
+    )
+
+    assert len(policy.waivers) == 1
+    assert policy.waivers[0].reason_code == "github_release_stale"
+    assert policy.waivers[0].expires_at.isoformat().replace("+00:00", "Z") == "2099-01-02T00:00:00Z"
+    assert policy.waivers[0].note == "cli override"
 
 
 def test_resolve_ops_closeout_policy_defaults_allow_missing_release_inputs() -> None:
@@ -263,6 +465,7 @@ def test_resolve_ops_closeout_policy_defaults_allow_missing_release_inputs() -> 
     assert policy.mode == "observe"
     assert policy.release_version is None
     assert policy.release_run_id is None
+    assert policy.waivers == []
 
 
 def test_resolve_ops_closeout_policy_rejects_invalid_release_run_id() -> None:
@@ -275,3 +478,33 @@ def test_resolve_ops_closeout_policy_rejects_invalid_freshness_threshold() -> No
     """Policy parser should reject non-positive freshness threshold values."""
     with pytest.raises(ValueError, match="max_run_age_hours"):
         resolve_ops_closeout_policy(policy_payload={"thresholds": {"max_run_age_hours": 0}})
+
+
+def test_resolve_ops_closeout_policy_rejects_invalid_waiver_expires_at() -> None:
+    """Policy parser should reject waiver entries with invalid expiry datetime."""
+    with pytest.raises(ValueError, match="expires_at"):
+        resolve_ops_closeout_policy(
+            policy_payload={
+                "waivers": [
+                    {
+                        "reason_code": "github_run_stale",
+                        "expires_at": "invalid",
+                    }
+                ]
+            }
+        )
+
+
+def test_resolve_ops_closeout_policy_rejects_missing_waiver_reason_code() -> None:
+    """Policy parser should reject waiver entries without non-empty reason_code."""
+    with pytest.raises(ValueError, match="reason_code"):
+        resolve_ops_closeout_policy(
+            policy_payload={
+                "waivers": [
+                    {
+                        "reason_code": "",
+                        "expires_at": "2099-01-01T00:00:00Z",
+                    }
+                ]
+            }
+        )

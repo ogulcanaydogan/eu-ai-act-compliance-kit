@@ -224,6 +224,12 @@ outputs:
   ops_closeout_rtd_age_hours:
     description: "RTD freshness age in hours from ops closeout payload"
     value: ${{ steps.analyze.outputs.ops_closeout_rtd_age_hours }}
+  ops_closeout_waived_reason_codes:
+    description: "Comma-separated waived ops closeout reason codes"
+    value: ${{ steps.analyze.outputs.ops_closeout_waived_reason_codes }}
+  ops_closeout_expired_waiver_reason_codes:
+    description: "Comma-separated expired ops closeout waiver reason codes"
+    value: ${{ steps.analyze.outputs.ops_closeout_expired_waiver_reason_codes }}
 
 runs:
   using: "composite"
@@ -529,6 +535,14 @@ runs:
         ops_closeout_freshness_reason_codes_list = ops_closeout.get("freshness_reason_codes", [])
         if not isinstance(ops_closeout_freshness_reason_codes_list, list):
             ops_closeout_freshness_reason_codes_list = []
+        ops_closeout_waived_reason_codes_list = ops_closeout.get("waived_reason_codes", [])
+        if not isinstance(ops_closeout_waived_reason_codes_list, list):
+            ops_closeout_waived_reason_codes_list = []
+        ops_closeout_expired_waiver_reason_codes_list = ops_closeout.get(
+            "expired_waiver_reason_codes", []
+        )
+        if not isinstance(ops_closeout_expired_waiver_reason_codes_list, list):
+            ops_closeout_expired_waiver_reason_codes_list = []
         ops_closeout_freshness_metrics = ops_closeout.get("freshness_metrics", {})
         if not isinstance(ops_closeout_freshness_metrics, dict):
             ops_closeout_freshness_metrics = {}
@@ -540,6 +554,12 @@ runs:
         )
         ops_closeout_freshness_reason_codes = ",".join(
             str(code) for code in ops_closeout_freshness_reason_codes_list if str(code)
+        )
+        ops_closeout_waived_reason_codes = ",".join(
+            str(code) for code in ops_closeout_waived_reason_codes_list if str(code)
+        )
+        ops_closeout_expired_waiver_reason_codes = ",".join(
+            str(code) for code in ops_closeout_expired_waiver_reason_codes_list if str(code)
         )
         run_age_raw = ops_closeout_freshness_metrics.get("run_age_hours")
         release_age_raw = ops_closeout_freshness_metrics.get("release_age_hours")
@@ -604,6 +624,11 @@ runs:
         print(f"ops_closeout_run_age_hours={ops_closeout_run_age_hours}")
         print(f"ops_closeout_release_age_hours={ops_closeout_release_age_hours}")
         print(f"ops_closeout_rtd_age_hours={ops_closeout_rtd_age_hours}")
+        print(f"ops_closeout_waived_reason_codes={ops_closeout_waived_reason_codes}")
+        print(
+            "ops_closeout_expired_waiver_reason_codes="
+            f"{ops_closeout_expired_waiver_reason_codes}"
+        )
         PY
 
     - name: "Generate report"
@@ -699,6 +724,8 @@ runs:
         OPS_CLOSEOUT_FAILED="${{ steps.analyze.outputs.ops_closeout_failed }}"
         OPS_CLOSEOUT_REASON_CODES="${{ steps.analyze.outputs.ops_closeout_reason_codes }}"
         OPS_CLOSEOUT_FAILED_CHECKS="${{ steps.analyze.outputs.ops_closeout_failed_checks }}"
+        OPS_CLOSEOUT_WAIVED_REASON_CODES="${{ steps.analyze.outputs.ops_closeout_waived_reason_codes }}"
+        OPS_CLOSEOUT_EXPIRED_WAIVER_REASON_CODES="${{ steps.analyze.outputs.ops_closeout_expired_waiver_reason_codes }}"
         OPS_CLOSEOUT_EXIT_CODE="${{ steps.analyze.outputs.ops_closeout_exit_code }}"
 
         if [[ "$RISK_TIER" == "unacceptable" ]]; then
@@ -747,6 +774,7 @@ runs:
         if [[ "$OPS_CLOSEOUT_ENABLED" == "true" && "$OPS_CLOSEOUT_MODE" == "enforce" && ( "$OPS_CLOSEOUT_FAILED" == "true" || "$OPS_CLOSEOUT_EXIT_CODE" != "0" ) ]]; then
           echo "❌ Workflow failed: Ops closeout policy blocked this run"
           echo "   mode=$OPS_CLOSEOUT_MODE exit_code=$OPS_CLOSEOUT_EXIT_CODE failed_checks=$OPS_CLOSEOUT_FAILED_CHECKS reason_codes=$OPS_CLOSEOUT_REASON_CODES"
+          echo "   waived_reason_codes=$OPS_CLOSEOUT_WAIVED_REASON_CODES expired_waiver_reason_codes=$OPS_CLOSEOUT_EXPIRED_WAIVER_REASON_CODES"
           echo "   Address ops closeout findings before merging."
           exit 1
         fi

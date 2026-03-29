@@ -43,6 +43,7 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
 - Phase 37 completed (ops automation closeout pack with deterministic run/release/PyPI/RTD evidence artifacts)
 - Phase 38 completed (ops closeout governance rollout with policy-driven CLI/action/CI and PR-observe/main-tag enforce)
 - Phase 39 completed (ops closeout V3 freshness/SLA threshold governance)
+- Phase 40 in progress (ops closeout V4 time-bounded waiver governance)
 
 ## Phase 1: Risk Classification Engine (Weeks 1-2) ✅ Completed
 
@@ -751,6 +752,25 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
     - `freshness_thresholds`
     - `freshness_reason_codes`
   - Additive action outputs for freshness summary telemetry.
+
+## Phase 40: Ops Closeout V4 (Time-Bounded Waivers) 🚧 In Progress
+
+- Scope:
+  - Add reason-code level, time-bounded waiver handling to ops closeout governance without breaking existing checks/artifacts.
+  - Preserve rollout model (`PR observe`, `main/tag enforce`) for ops closeout automation.
+- Planned in this phase:
+  - Additive policy waivers:
+    - `waivers[].reason_code`
+    - `waivers[].expires_at`
+    - `waivers[].note` (optional)
+  - Additive payload fields:
+    - `waiver_summary`
+    - `waived_reason_codes`
+    - `expired_waiver_reason_codes`
+    - `effective_reason_codes`
+  - Additive action outputs:
+    - `ops_closeout_waived_reason_codes`
+    - `ops_closeout_expired_waiver_reason_codes`
 
 ## Timeline Summary (Historical Plan)
 - **Week 1-2**: Risk Classification Engine (Phases 1.1-1.5)

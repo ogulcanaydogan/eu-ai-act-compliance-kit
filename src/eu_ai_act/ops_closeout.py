@@ -13,6 +13,22 @@ OpsCloseoutMode = Literal["observe", "enforce"]
 
 
 @dataclass(frozen=True)
+class OpsCloseoutWaiver:
+    """Time-bounded waiver definition for reason-code level suppression."""
+
+    reason_code: str
+    expires_at: datetime
+    note: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "reason_code": self.reason_code,
+            "expires_at": self.expires_at.isoformat().replace("+00:00", "Z"),
+            "note": self.note,
+        }
+
+
+@dataclass(frozen=True)
 class OpsCloseoutPolicy:
     """Resolved ops closeout policy with deterministic precedence."""
 
@@ -25,6 +41,7 @@ class OpsCloseoutPolicy:
     max_run_age_hours: float | None
     max_release_age_hours: float | None
     max_rtd_age_hours: float | None
+    waivers: list[OpsCloseoutWaiver]
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -41,6 +58,7 @@ class OpsCloseoutPolicy:
                 "max_release_age_hours": self.max_release_age_hours,
                 "max_rtd_age_hours": self.max_rtd_age_hours,
             },
+            "waivers": [waiver.to_dict() for waiver in self.waivers],
         }
 
 
@@ -78,6 +96,10 @@ class OpsCloseoutResult:
     freshness_metrics: dict[str, float | None]
     freshness_thresholds: dict[str, float | None]
     freshness_reason_codes: list[str]
+    waiver_summary: dict[str, int]
+    waived_reason_codes: list[str]
+    expired_waiver_reason_codes: list[str]
+    effective_reason_codes: list[str]
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -90,6 +112,10 @@ class OpsCloseoutResult:
             "freshness_metrics": dict(self.freshness_metrics),
             "freshness_thresholds": dict(self.freshness_thresholds),
             "freshness_reason_codes": list(self.freshness_reason_codes),
+            "waiver_summary": dict(self.waiver_summary),
+            "waived_reason_codes": list(self.waived_reason_codes),
+            "expired_waiver_reason_codes": list(self.expired_waiver_reason_codes),
+            "effective_reason_codes": list(self.effective_reason_codes),
         }
 
 
@@ -111,6 +137,7 @@ class OpsCloseoutEvaluator:
         max_run_age_hours: float | None = None,
         max_release_age_hours: float | None = None,
         max_rtd_age_hours: float | None = None,
+        waivers: list[OpsCloseoutWaiver] | None = None,
     ) -> OpsCloseoutResult:
         """Run all closeout checks and return deterministic decision payload."""
         with httpx.Client(timeout=timeout_seconds, follow_redirects=True) as client:
@@ -178,9 +205,29 @@ class OpsCloseoutEvaluator:
         reason_codes = [f"{name}_failed" for name in failed_checks]
         reason_codes.extend(freshness_reason_codes)
 
+        waivers = waivers or []
+        waived_reason_codes: set[str] = set()
+        expired_waiver_reason_codes: set[str] = set()
+        reason_set = set(reason_codes)
+        for waiver in waivers:
+            if waiver.reason_code not in reason_set:
+                continue
+            if waiver.expires_at >= now_utc:
+                waived_reason_codes.add(waiver.reason_code)
+            else:
+                expired_waiver_reason_codes.add(waiver.reason_code)
+
+        effective_reason_codes = [code for code in reason_codes if code not in waived_reason_codes]
+        waiver_summary = {
+            "configured_count": len(waivers),
+            "matched_count": len(waived_reason_codes | expired_waiver_reason_codes),
+            "waived_count": len(waived_reason_codes),
+            "expired_count": len(expired_waiver_reason_codes),
+        }
+
         return OpsCloseoutResult(
             mode=mode,
-            failed=bool(failed_checks or freshness_reason_codes),
+            failed=bool(effective_reason_codes),
             reason_codes=reason_codes,
             failed_checks=failed_checks,
             passed_checks=passed_checks,
@@ -188,6 +235,10 @@ class OpsCloseoutEvaluator:
             freshness_metrics=freshness_metrics,
             freshness_thresholds=freshness_thresholds,
             freshness_reason_codes=freshness_reason_codes,
+            waiver_summary=waiver_summary,
+            waived_reason_codes=sorted(waived_reason_codes),
+            expired_waiver_reason_codes=sorted(expired_waiver_reason_codes),
+            effective_reason_codes=effective_reason_codes,
         )
 
     def _check_github_run(
@@ -502,6 +553,7 @@ def resolve_ops_closeout_policy(
     max_run_age_hours: float | None = None,
     max_release_age_hours: float | None = None,
     max_rtd_age_hours: float | None = None,
+    waivers: list[dict[str, str | None]] | None = None,
 ) -> OpsCloseoutPolicy:
     """Resolve ops closeout policy with precedence: CLI > policy file > defaults."""
     values: dict[str, Any] = {
@@ -514,6 +566,7 @@ def resolve_ops_closeout_policy(
         "max_run_age_hours": None,
         "max_release_age_hours": None,
         "max_rtd_age_hours": None,
+        "waivers": [],
     }
 
     if policy_payload is not None:
@@ -546,6 +599,9 @@ def resolve_ops_closeout_policy(
                 values["max_release_age_hours"] = thresholds_payload.get("max_release_age_hours")
             if "max_rtd_age_hours" in thresholds_payload:
                 values["max_rtd_age_hours"] = thresholds_payload.get("max_rtd_age_hours")
+        waivers_payload = policy_payload.get("waivers")
+        if waivers_payload is not None:
+            values["waivers"] = waivers_payload
 
     if mode is not None:
         values["mode"] = mode
@@ -565,6 +621,8 @@ def resolve_ops_closeout_policy(
         values["max_release_age_hours"] = max_release_age_hours
     if max_rtd_age_hours is not None:
         values["max_rtd_age_hours"] = max_rtd_age_hours
+    if waivers is not None:
+        values["waivers"] = waivers
 
     resolved_mode = normalize_ops_closeout_mode(str(values["mode"]))
 
@@ -606,6 +664,7 @@ def resolve_ops_closeout_policy(
     resolved_max_rtd_age_hours = _coerce_optional_positive_float(
         values["max_rtd_age_hours"], "Policy thresholds.max_rtd_age_hours"
     )
+    resolved_waivers = _coerce_ops_closeout_waivers(values["waivers"])
 
     return OpsCloseoutPolicy(
         mode=resolved_mode,
@@ -617,6 +676,7 @@ def resolve_ops_closeout_policy(
         max_run_age_hours=resolved_max_run_age_hours,
         max_release_age_hours=resolved_max_release_age_hours,
         max_rtd_age_hours=resolved_max_rtd_age_hours,
+        waivers=resolved_waivers,
     )
 
 
@@ -630,4 +690,50 @@ def _coerce_optional_positive_float(value: Any, field_name: str) -> float | None
         raise ValueError(f"{field_name} must be a number.") from exc
     if normalized <= 0:
         raise ValueError(f"{field_name} must be > 0 when provided.")
+    return normalized
+
+
+def _coerce_ops_closeout_waivers(value: Any) -> list[OpsCloseoutWaiver]:
+    """Normalize optional waiver list payload."""
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise ValueError("Policy waivers must be a list.")
+
+    normalized: list[OpsCloseoutWaiver] = []
+    for index, raw in enumerate(value):
+        entry_name = f"Policy waivers[{index}]"
+        if not isinstance(raw, dict):
+            raise ValueError(f"{entry_name} must be an object.")
+
+        reason_code_raw = raw.get("reason_code")
+        reason_code = str(reason_code_raw or "").strip()
+        if not reason_code:
+            raise ValueError(f"{entry_name}.reason_code must be a non-empty string.")
+
+        expires_at_raw = raw.get("expires_at")
+        expires_at_text = str(expires_at_raw or "").strip()
+        if not expires_at_text:
+            raise ValueError(f"{entry_name}.expires_at must be a non-empty ISO8601 UTC string.")
+
+        expires_at = OpsCloseoutEvaluator._parse_datetime(expires_at_text)
+        if expires_at is None:
+            raise ValueError(f"{entry_name}.expires_at must be a valid ISO8601 UTC datetime.")
+        if expires_at.utcoffset() != UTC.utcoffset(expires_at):
+            raise ValueError(f"{entry_name}.expires_at must be in UTC.")
+
+        note_raw = raw.get("note")
+        note: str | None
+        if note_raw is None:
+            note = None
+        else:
+            note = str(note_raw).strip() or None
+
+        normalized.append(
+            OpsCloseoutWaiver(
+                reason_code=reason_code,
+                expires_at=expires_at,
+                note=note,
+            )
+        )
     return normalized

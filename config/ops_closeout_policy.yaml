@@ -9,3 +9,4 @@ thresholds:
   max_run_age_hours: null
   max_release_age_hours: null
   max_rtd_age_hours: null
+waivers: []

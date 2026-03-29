@@ -115,9 +115,13 @@ def test_ci_contains_ops_closeout_rollout_smoke_job():
     assert "ai-act ops closeout" in joined_run
     assert "--policy config/ops_closeout_policy.yaml" in joined_run
     assert '--mode "$GATE_MODE"' in joined_run
-    assert "--max-run-age-hours 999999" in joined_run
-    assert "--max-release-age-hours 999999" in joined_run
-    assert "--max-rtd-age-hours 999999" in joined_run
+    assert "--max-run-age-hours 1" in joined_run
+    assert "--max-release-age-hours 1" in joined_run
+    assert "--max-rtd-age-hours 1" in joined_run
+    assert "--waiver-reason-code github_run_stale" in joined_run
+    assert "--waiver-reason-code github_release_stale" in joined_run
+    assert "--waiver-reason-code rtd_stale_or_unknown" in joined_run
+    assert "--waiver-expires-at 2099-01-01T00:00:00Z" in joined_run
     assert "ops_closeout_manifest.json" in joined_run
     assert "ops_closeout_checks.json" in joined_run
     assert "ops_closeout_evidence.md" in joined_run
@@ -427,6 +431,8 @@ def test_action_exposes_security_gate_input_and_outputs():
     assert "ops_closeout_run_age_hours" in outputs
     assert "ops_closeout_release_age_hours" in outputs
     assert "ops_closeout_rtd_age_hours" in outputs
+    assert "ops_closeout_waived_reason_codes" in outputs
+    assert "ops_closeout_expired_waiver_reason_codes" in outputs
 
 
 def test_ci_action_smoke_exercises_security_gate_enforcement():

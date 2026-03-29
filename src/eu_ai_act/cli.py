@@ -1236,6 +1236,18 @@ def ops() -> None:
     help="Optional YAML policy file (precedence: CLI flags > policy file > defaults).",
 )
 @click.option(
+    "--waiver-reason-code",
+    "waiver_reason_codes",
+    multiple=True,
+    help="Optional waiver reason code override (repeatable, paired with --waiver-expires-at).",
+)
+@click.option(
+    "--waiver-expires-at",
+    "waiver_expires_at_values",
+    multiple=True,
+    help="Optional waiver expiry override as ISO8601 UTC datetime (repeatable).",
+)
+@click.option(
     "--output-dir",
     type=click.Path(file_okay=False),
     help="Directory where closeout artifacts will be written (default: current working directory).",
@@ -1273,6 +1285,8 @@ def ops_closeout(
     max_release_age_hours: float | None,
     max_rtd_age_hours: float | None,
     policy: str | None,
+    waiver_reason_codes: tuple[str, ...],
+    waiver_expires_at_values: tuple[str, ...],
     output_dir: str | None,
     github_api_base_url: str,
     pypi_base_url: str,
@@ -1294,6 +1308,11 @@ def ops_closeout(
         sys.exit(1)
     if max_rtd_age_hours is not None and max_rtd_age_hours <= 0:
         console.print("[red]Error: --max-rtd-age-hours must be > 0[/red]")
+        sys.exit(1)
+    if len(waiver_reason_codes) != len(waiver_expires_at_values):
+        console.print(
+            "[red]Error: --waiver-reason-code and --waiver-expires-at counts must match[/red]"
+        )
         sys.exit(1)
 
     try:
@@ -1337,6 +1356,26 @@ def ops_closeout(
             if ctx.get_parameter_source("max_rtd_age_hours") == ParameterSource.COMMANDLINE
             else None
         )
+        waiver_reason_codes_from_cli = (
+            ctx.get_parameter_source("waiver_reason_codes") == ParameterSource.COMMANDLINE
+        )
+        waiver_expires_from_cli = (
+            ctx.get_parameter_source("waiver_expires_at_values") == ParameterSource.COMMANDLINE
+        )
+        waiver_overrides: list[dict[str, str | None]] | None = None
+        if waiver_reason_codes_from_cli or waiver_expires_from_cli:
+            waiver_overrides = [
+                {
+                    "reason_code": reason_code,
+                    "expires_at": expires_at,
+                    "note": None,
+                }
+                for reason_code, expires_at in zip(
+                    waiver_reason_codes,
+                    waiver_expires_at_values,
+                    strict=False,
+                )
+            ]
         resolved_policy = resolve_ops_closeout_policy(
             policy_payload=policy_payload,
             mode=mode_override,
@@ -1348,6 +1387,7 @@ def ops_closeout(
             max_run_age_hours=max_run_age_hours_override,
             max_release_age_hours=max_release_age_hours_override,
             max_rtd_age_hours=max_rtd_age_hours_override,
+            waivers=waiver_overrides,
         )
     except Exception as e:
         console.print(f"[red]Error resolving ops closeout policy: {e}[/red]")
@@ -1371,6 +1411,10 @@ def ops_closeout(
     freshness_metrics: dict[str, float | None]
     freshness_thresholds: dict[str, float | None]
     freshness_reason_codes: list[str]
+    waiver_summary: dict[str, int]
+    waived_reason_codes: list[str]
+    expired_waiver_reason_codes: list[str]
+    effective_reason_codes: list[str]
 
     if missing_reason_codes:
         missing_details = ", ".join(
@@ -1400,6 +1444,15 @@ def ops_closeout(
             "max_rtd_age_hours": resolved_policy.max_rtd_age_hours,
         }
         freshness_reason_codes = []
+        waiver_summary = {
+            "configured_count": len(resolved_policy.waivers),
+            "matched_count": 0,
+            "waived_count": 0,
+            "expired_count": 0,
+        }
+        waived_reason_codes = []
+        expired_waiver_reason_codes = []
+        effective_reason_codes = list(reason_codes)
     else:
         try:
             closeout_result = OpsCloseoutEvaluator().evaluate(
@@ -1415,6 +1468,7 @@ def ops_closeout(
                 max_run_age_hours=resolved_policy.max_run_age_hours,
                 max_release_age_hours=resolved_policy.max_release_age_hours,
                 max_rtd_age_hours=resolved_policy.max_rtd_age_hours,
+                waivers=resolved_policy.waivers,
             )
         except Exception as e:
             console.print(f"[red]Error running ops closeout checks: {e}[/red]")
@@ -1427,6 +1481,10 @@ def ops_closeout(
         freshness_metrics = closeout_result.freshness_metrics
         freshness_thresholds = closeout_result.freshness_thresholds
         freshness_reason_codes = closeout_result.freshness_reason_codes
+        waiver_summary = closeout_result.waiver_summary
+        waived_reason_codes = closeout_result.waived_reason_codes
+        expired_waiver_reason_codes = closeout_result.expired_waiver_reason_codes
+        effective_reason_codes = closeout_result.effective_reason_codes
 
     checks_payload = {
         "generated_at": generated_at,
@@ -1439,6 +1497,10 @@ def ops_closeout(
         "freshness_metrics": freshness_metrics,
         "freshness_thresholds": freshness_thresholds,
         "freshness_reason_codes": freshness_reason_codes,
+        "waiver_summary": waiver_summary,
+        "waived_reason_codes": waived_reason_codes,
+        "expired_waiver_reason_codes": expired_waiver_reason_codes,
+        "effective_reason_codes": effective_reason_codes,
         "checks": [check.to_dict() for check in checks],
     }
 
@@ -1462,6 +1524,10 @@ def ops_closeout(
         "freshness_metrics": freshness_metrics,
         "freshness_thresholds": freshness_thresholds,
         "freshness_reason_codes": freshness_reason_codes,
+        "waiver_summary": waiver_summary,
+        "waived_reason_codes": waived_reason_codes,
+        "expired_waiver_reason_codes": expired_waiver_reason_codes,
+        "effective_reason_codes": effective_reason_codes,
         "effective_policy": resolved_policy.to_dict(),
         "artifacts": {
             "ops_closeout_checks.json": str(checks_path),
@@ -1484,6 +1550,10 @@ def ops_closeout(
                 freshness_metrics=freshness_metrics,
                 freshness_thresholds=freshness_thresholds,
                 freshness_reason_codes=freshness_reason_codes,
+                waiver_summary=waiver_summary,
+                waived_reason_codes=waived_reason_codes,
+                expired_waiver_reason_codes=expired_waiver_reason_codes,
+                effective_reason_codes=effective_reason_codes,
             ),
             encoding="utf-8",
         )
@@ -1514,6 +1584,13 @@ def ops_closeout(
         if freshness_reason_codes:
             console.print(
                 f"[yellow]Freshness Reasons:[/yellow] {', '.join(freshness_reason_codes)}"
+            )
+        if waived_reason_codes:
+            console.print(f"[green]Waived Reasons:[/green] {', '.join(waived_reason_codes)}")
+        if expired_waiver_reason_codes:
+            console.print(
+                "[yellow]Expired Waiver Reasons:[/yellow] "
+                f"{', '.join(expired_waiver_reason_codes)}"
             )
 
     if resolved_policy.mode == "enforce" and failed:
@@ -3335,6 +3412,10 @@ def _render_ops_closeout_evidence_markdown(
     freshness_metrics: dict[str, float | None],
     freshness_thresholds: dict[str, float | None],
     freshness_reason_codes: list[str],
+    waiver_summary: dict[str, int],
+    waived_reason_codes: list[str],
+    expired_waiver_reason_codes: list[str],
+    effective_reason_codes: list[str],
 ) -> str:
     """Render closeout evidence markdown from deterministic check payload."""
     lines = [
@@ -3346,7 +3427,11 @@ def _render_ops_closeout_evidence_markdown(
         f"- Mode: {mode}",
         f"- Status: {'failed' if failed else 'success'}",
         f"- Reason codes: {', '.join(reason_codes) if reason_codes else 'none'}",
+        f"- Effective reason codes: {', '.join(effective_reason_codes) if effective_reason_codes else 'none'}",
         f"- Freshness reason codes: {', '.join(freshness_reason_codes) if freshness_reason_codes else 'none'}",
+        f"- Waived reason codes: {', '.join(waived_reason_codes) if waived_reason_codes else 'none'}",
+        "- Expired waiver reason codes: "
+        f"{', '.join(expired_waiver_reason_codes) if expired_waiver_reason_codes else 'none'}",
         "",
         "## Checks",
     ]
@@ -3369,6 +3454,12 @@ def _render_ops_closeout_evidence_markdown(
             f"- max_run_age_hours: {freshness_thresholds.get('max_run_age_hours')}",
             f"- max_release_age_hours: {freshness_thresholds.get('max_release_age_hours')}",
             f"- max_rtd_age_hours: {freshness_thresholds.get('max_rtd_age_hours')}",
+            "",
+            "## Waivers",
+            f"- configured_count: {waiver_summary.get('configured_count', 0)}",
+            f"- matched_count: {waiver_summary.get('matched_count', 0)}",
+            f"- waived_count: {waiver_summary.get('waived_count', 0)}",
+            f"- expired_count: {waiver_summary.get('expired_count', 0)}",
         ]
     )
     lines.append("")

@@ -8,10 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- _None._
+- Phase 40 kickoff (Ops Closeout V4 time-bounded waiver governance):
+  - additive ops closeout waiver support via policy `waivers[]` and paired CLI override flags
+  - additive closeout payload fields: `waiver_summary`, `waived_reason_codes`, `expired_waiver_reason_codes`, `effective_reason_codes`
+  - additive action outputs for closeout waiver telemetry
 
 ### Changed
-- _None._
+- CI `ops-closeout-rollout-smoke` now exercises stale-threshold waiver suppression path deterministically.
+- Status surfaces mark Phase 40 as in progress (`README`, `docs/index`, `ROADMAP`).
 
 ### Fixed
 - _None._
