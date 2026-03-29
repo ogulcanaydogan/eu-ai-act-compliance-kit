@@ -9,9 +9,7 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "ci.yml"
 ACTION_PATH = REPO_ROOT / "action.yml"
-OPS_CLOSEOUT_DAILY_WORKFLOW_PATH = (
-    REPO_ROOT / ".github" / "workflows" / "ops-closeout-daily.yml"
-)
+OPS_CLOSEOUT_DAILY_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "ops-closeout-daily.yml"
 
 
 def _load_ci_jobs() -> dict:
@@ -478,7 +476,9 @@ def test_ops_closeout_daily_workflow_contract():
     assert isinstance(on_payload, dict)
     schedule_payload = on_payload.get("schedule", [])
     assert isinstance(schedule_payload, list)
-    assert any(item.get("cron") == "0 9 * * *" for item in schedule_payload if isinstance(item, dict))
+    assert any(
+        item.get("cron") == "0 9 * * *" for item in schedule_payload if isinstance(item, dict)
+    )
 
     workflow_dispatch = on_payload.get("workflow_dispatch", {})
     assert isinstance(workflow_dispatch, dict)
@@ -499,12 +499,10 @@ def test_ops_closeout_daily_workflow_contract():
     assert "ai-act ops closeout" in joined_run
     assert "--policy config/ops_closeout_policy.yaml" in joined_run
     assert "--resolve-latest-release" in joined_run
-    assert "--mode \"$MODE\"" in joined_run
+    assert '--mode "$MODE"' in joined_run
     assert "ops_closeout_manifest.json" in joined_run
 
     uses_payload = "\n".join(
-        str(step)
-        for step in steps
-        if isinstance(step, dict) and "uses" in step
+        str(step) for step in steps if isinstance(step, dict) and "uses" in step
     )
     assert "actions/upload-artifact@v4" in uses_payload

@@ -545,10 +545,30 @@ def test_resolve_latest_release_inputs_success(monkeypatch: pytest.MonkeyPatch) 
                 200,
                 json={
                     "workflow_runs": [
-                        {"id": 900, "head_branch": "v0.1.30", "status": "completed", "conclusion": "success"},
-                        {"id": 1000, "head_branch": "v0.1.31", "status": "completed", "conclusion": "failure"},
-                        {"id": 1001, "head_branch": "v0.1.31", "status": "completed", "conclusion": "success"},
-                        {"id": 1002, "head_branch": "v0.1.31", "status": "completed", "conclusion": "success"},
+                        {
+                            "id": 900,
+                            "head_branch": "v0.1.30",
+                            "status": "completed",
+                            "conclusion": "success",
+                        },
+                        {
+                            "id": 1000,
+                            "head_branch": "v0.1.31",
+                            "status": "completed",
+                            "conclusion": "failure",
+                        },
+                        {
+                            "id": 1001,
+                            "head_branch": "v0.1.31",
+                            "status": "completed",
+                            "conclusion": "success",
+                        },
+                        {
+                            "id": 1002,
+                            "head_branch": "v0.1.31",
+                            "status": "completed",
+                            "conclusion": "success",
+                        },
                     ]
                 },
             )
@@ -566,7 +586,9 @@ def test_resolve_latest_release_inputs_success(monkeypatch: pytest.MonkeyPatch) 
     assert result.resolution_source == "github_release_workflow_runs_api"
 
 
-def test_resolve_latest_release_inputs_reports_missing_release(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_resolve_latest_release_inputs_reports_missing_release(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Resolver should emit deterministic reason when no semver release exists."""
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -598,8 +620,18 @@ def test_resolve_latest_release_inputs_reports_missing_release_run(
                 200,
                 json={
                     "workflow_runs": [
-                        {"id": 1000, "head_branch": "v0.1.31", "status": "in_progress", "conclusion": ""},
-                        {"id": 1001, "head_branch": "v0.1.31", "status": "completed", "conclusion": "failure"},
+                        {
+                            "id": 1000,
+                            "head_branch": "v0.1.31",
+                            "status": "in_progress",
+                            "conclusion": "",
+                        },
+                        {
+                            "id": 1001,
+                            "head_branch": "v0.1.31",
+                            "status": "completed",
+                            "conclusion": "failure",
+                        },
                     ]
                 },
             )
@@ -616,7 +648,9 @@ def test_resolve_latest_release_inputs_reports_missing_release_run(
     assert result.reason_codes == ["latest_release_run_not_found"]
 
 
-def test_resolve_latest_release_inputs_reports_resolution_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_resolve_latest_release_inputs_reports_resolution_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Resolver should emit generic resolution failure on upstream request error."""
 
     def handler(request: httpx.Request) -> httpx.Response:

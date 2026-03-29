@@ -1418,9 +1418,8 @@ def ops_closeout(
     resolution_reason_codes: list[str] = []
     resolution_source = "explicit_inputs"
     resolution_attempted = False
-    if (
-        resolved_policy.resolve_latest_release
-        and (effective_release_version is None or effective_release_run_id is None)
+    if resolved_policy.resolve_latest_release and (
+        effective_release_version is None or effective_release_run_id is None
     ):
         resolution_attempted = True
         try:
