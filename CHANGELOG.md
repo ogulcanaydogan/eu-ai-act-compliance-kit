@@ -16,6 +16,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - _None._
 
+## [0.1.29] - 2026-03-29
+
+### Added
+- Completed Phase 38 ops closeout governance rollout:
+  - canonical ops closeout policy file (`config/ops_closeout_policy.yaml`)
+  - additive ops closeout CLI policy flag: `--policy`
+  - additive action inputs/outputs for ops closeout rollout
+  - required CI rollout smoke job: `ops-closeout-rollout-smoke` (PR observe, main/tag enforce)
+- Added deterministic ops closeout policy resolver with precedence:
+  - CLI flags > policy file > defaults.
+
+### Changed
+- `ops closeout` now supports policy-driven input resolution and deterministic missing-release-input reporting:
+  - observe mode reports missing release inputs in payload and exits `0`
+  - enforce mode exits non-zero when required release inputs are missing.
+- Status surfaces synchronized to mark Phase 38 as completed (`README`, `docs/index`, `ROADMAP`).
+
 ## [0.1.28] - 2026-03-28
 
 ### Added

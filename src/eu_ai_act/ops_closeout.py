@@ -11,6 +11,30 @@ OpsCloseoutMode = Literal["observe", "enforce"]
 
 
 @dataclass(frozen=True)
+class OpsCloseoutPolicy:
+    """Resolved ops closeout policy with deterministic precedence."""
+
+    mode: OpsCloseoutMode
+    release_version: str | None
+    release_run_id: int | None
+    repo: str
+    pypi_project: str
+    rtd_url: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "mode": self.mode,
+            "repo": self.repo,
+            "pypi_project": self.pypi_project,
+            "rtd_url": self.rtd_url,
+            "release": {
+                "version": self.release_version,
+                "run_id": self.release_run_id,
+            },
+        }
+
+
+@dataclass(frozen=True)
 class OpsCloseoutCheck:
     """Single deterministic closeout check result."""
 
@@ -331,3 +355,97 @@ def normalize_ops_closeout_mode(mode: str) -> OpsCloseoutMode:
     if resolved not in {"observe", "enforce"}:
         raise ValueError("mode must be one of: observe, enforce")
     return cast(OpsCloseoutMode, resolved)
+
+
+def resolve_ops_closeout_policy(
+    *,
+    policy_payload: dict[str, Any] | None = None,
+    mode: str | None = None,
+    release_version: str | None = None,
+    release_run_id: int | None = None,
+    repo: str | None = None,
+    pypi_project: str | None = None,
+    rtd_url: str | None = None,
+) -> OpsCloseoutPolicy:
+    """Resolve ops closeout policy with precedence: CLI > policy file > defaults."""
+    values: dict[str, Any] = {
+        "mode": "observe",
+        "repo": "ogulcanaydogan/eu-ai-act-compliance-kit",
+        "pypi_project": "eu-ai-act-compliance-kit",
+        "rtd_url": "https://eu-ai-act-compliance-kit.readthedocs.io/en/latest/",
+        "release_version": None,
+        "release_run_id": None,
+    }
+
+    if policy_payload is not None:
+        if not isinstance(policy_payload, dict):
+            raise ValueError("Policy file must be a mapping object.")
+        if "mode" in policy_payload:
+            values["mode"] = policy_payload.get("mode")
+        if "repo" in policy_payload:
+            values["repo"] = policy_payload.get("repo")
+        if "pypi_project" in policy_payload:
+            values["pypi_project"] = policy_payload.get("pypi_project")
+        if "rtd_url" in policy_payload:
+            values["rtd_url"] = policy_payload.get("rtd_url")
+        release_payload = policy_payload.get("release")
+        if release_payload is not None:
+            if not isinstance(release_payload, dict):
+                raise ValueError("Policy field 'release' must be an object.")
+            if "version" in release_payload:
+                values["release_version"] = release_payload.get("version")
+            if "run_id" in release_payload:
+                values["release_run_id"] = release_payload.get("run_id")
+
+    if mode is not None:
+        values["mode"] = mode
+    if release_version is not None:
+        values["release_version"] = release_version
+    if release_run_id is not None:
+        values["release_run_id"] = release_run_id
+    if repo is not None:
+        values["repo"] = repo
+    if pypi_project is not None:
+        values["pypi_project"] = pypi_project
+    if rtd_url is not None:
+        values["rtd_url"] = rtd_url
+
+    resolved_mode = normalize_ops_closeout_mode(str(values["mode"]))
+
+    resolved_repo = str(values["repo"] or "").strip()
+    if "/" not in resolved_repo or resolved_repo.count("/") != 1:
+        raise ValueError("Policy repo must be in '<owner>/<name>' format.")
+
+    resolved_pypi_project = str(values["pypi_project"] or "").strip()
+    if not resolved_pypi_project:
+        raise ValueError("Policy pypi_project must be a non-empty string.")
+
+    resolved_rtd_url = str(values["rtd_url"] or "").strip()
+    if not resolved_rtd_url:
+        raise ValueError("Policy rtd_url must be a non-empty string.")
+
+    raw_version = values["release_version"]
+    resolved_release_version: str | None = None
+    if raw_version is not None:
+        resolved_release_version = str(raw_version).strip()
+        if not resolved_release_version:
+            raise ValueError("Policy release.version must be non-empty when provided.")
+
+    raw_run_id = values["release_run_id"]
+    resolved_release_run_id: int | None = None
+    if raw_run_id is not None:
+        try:
+            resolved_release_run_id = int(raw_run_id)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Policy release.run_id must be an integer.") from exc
+        if resolved_release_run_id < 1:
+            raise ValueError("Policy release.run_id must be >= 1.")
+
+    return OpsCloseoutPolicy(
+        mode=resolved_mode,
+        release_version=resolved_release_version,
+        release_run_id=resolved_release_run_id,
+        repo=resolved_repo,
+        pypi_project=resolved_pypi_project,
+        rtd_url=resolved_rtd_url,
+    )

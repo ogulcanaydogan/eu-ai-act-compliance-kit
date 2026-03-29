@@ -65,6 +65,38 @@ inputs:
     description: "Optional export target for governance handoff gate (jira or servicenow)"
     required: false
     default: ""
+  ops_closeout_enabled:
+    description: "Enable ops closeout governance execution and outputs (true/false)"
+    required: false
+    default: "false"
+  ops_closeout_mode:
+    description: "Ops closeout mode (observe or enforce)"
+    required: false
+    default: "observe"
+  ops_closeout_policy_path:
+    description: "Path to ops closeout policy file, relative to action root unless absolute"
+    required: false
+    default: "config/ops_closeout_policy.yaml"
+  ops_closeout_version:
+    description: "Optional release version override for ops closeout checks"
+    required: false
+    default: ""
+  ops_closeout_release_run_id:
+    description: "Optional release run id override for ops closeout checks"
+    required: false
+    default: ""
+  ops_closeout_repo:
+    description: "Optional repo override for ops closeout checks (owner/name)"
+    required: false
+    default: ""
+  ops_closeout_pypi_project:
+    description: "Optional PyPI project override for ops closeout checks"
+    required: false
+    default: ""
+  ops_closeout_rtd_url:
+    description: "Optional RTD URL override for ops closeout checks"
+    required: false
+    default: ""
   report_format:
     description: "Report output format (json, md, html)"
     required: false
@@ -171,6 +203,15 @@ outputs:
   handoff_governance_failed_gates:
     description: "Comma-separated failed gate names from handoff governance summary"
     value: ${{ steps.analyze.outputs.handoff_governance_failed_gates }}
+  ops_closeout_failed:
+    description: "Ops closeout failure flag (true/false)"
+    value: ${{ steps.analyze.outputs.ops_closeout_failed }}
+  ops_closeout_reason_codes:
+    description: "Comma-separated ops closeout reason codes"
+    value: ${{ steps.analyze.outputs.ops_closeout_reason_codes }}
+  ops_closeout_failed_checks:
+    description: "Comma-separated failed ops closeout checks"
+    value: ${{ steps.analyze.outputs.ops_closeout_failed_checks }}
 
 runs:
   using: "composite"
@@ -287,7 +328,66 @@ runs:
         fi
         echo "handoff_governance_exit_code=$HANDOFF_GOVERNANCE_EXIT_CODE" >> "$GITHUB_OUTPUT"
 
-        SECURITY_GATE_MODE="${{ inputs.security_gate_mode }}" SECURITY_GATE_PROFILE="${{ inputs.security_gate_profile }}" COLLABORATION_GATE_MODE_INPUT="${{ inputs.collaboration_gate_mode }}" HANDOFF_GOVERNANCE_MODE_INPUT="${{ inputs.handoff_governance_mode }}" python - <<'PY' >> "$GITHUB_OUTPUT"
+        OPS_CLOSEOUT_ENABLED="${{ inputs.ops_closeout_enabled }}"
+        OPS_CLOSEOUT_EXIT_CODE=0
+        if [[ "$OPS_CLOSEOUT_ENABLED" == "true" ]]; then
+          OPS_CLOSEOUT_POLICY_INPUT="${{ inputs.ops_closeout_policy_path }}"
+          if [[ "$OPS_CLOSEOUT_POLICY_INPUT" = /* ]]; then
+            OPS_CLOSEOUT_POLICY_PATH="$OPS_CLOSEOUT_POLICY_INPUT"
+          else
+            OPS_CLOSEOUT_POLICY_PATH="$GITHUB_ACTION_PATH/$OPS_CLOSEOUT_POLICY_INPUT"
+          fi
+          OPS_CLOSEOUT_POLICY_ARGS=()
+          if [[ -f "$OPS_CLOSEOUT_POLICY_PATH" ]]; then
+            OPS_CLOSEOUT_POLICY_ARGS=(--policy "$OPS_CLOSEOUT_POLICY_PATH")
+          else
+            echo "Warning: Ops closeout policy file not found: $OPS_CLOSEOUT_POLICY_PATH"
+          fi
+
+          OPS_CLOSEOUT_VERSION_INPUT="${{ inputs.ops_closeout_version }}"
+          OPS_CLOSEOUT_VERSION_ARGS=()
+          if [[ -n "$OPS_CLOSEOUT_VERSION_INPUT" ]]; then
+            OPS_CLOSEOUT_VERSION_ARGS=(--version "$OPS_CLOSEOUT_VERSION_INPUT")
+          fi
+          OPS_CLOSEOUT_RUN_ID_INPUT="${{ inputs.ops_closeout_release_run_id }}"
+          OPS_CLOSEOUT_RUN_ID_ARGS=()
+          if [[ -n "$OPS_CLOSEOUT_RUN_ID_INPUT" ]]; then
+            OPS_CLOSEOUT_RUN_ID_ARGS=(--release-run-id "$OPS_CLOSEOUT_RUN_ID_INPUT")
+          fi
+          OPS_CLOSEOUT_REPO_INPUT="${{ inputs.ops_closeout_repo }}"
+          OPS_CLOSEOUT_REPO_ARGS=()
+          if [[ -n "$OPS_CLOSEOUT_REPO_INPUT" ]]; then
+            OPS_CLOSEOUT_REPO_ARGS=(--repo "$OPS_CLOSEOUT_REPO_INPUT")
+          fi
+          OPS_CLOSEOUT_PYPI_PROJECT_INPUT="${{ inputs.ops_closeout_pypi_project }}"
+          OPS_CLOSEOUT_PYPI_PROJECT_ARGS=()
+          if [[ -n "$OPS_CLOSEOUT_PYPI_PROJECT_INPUT" ]]; then
+            OPS_CLOSEOUT_PYPI_PROJECT_ARGS=(--pypi-project "$OPS_CLOSEOUT_PYPI_PROJECT_INPUT")
+          fi
+          OPS_CLOSEOUT_RTD_URL_INPUT="${{ inputs.ops_closeout_rtd_url }}"
+          OPS_CLOSEOUT_RTD_URL_ARGS=()
+          if [[ -n "$OPS_CLOSEOUT_RTD_URL_INPUT" ]]; then
+            OPS_CLOSEOUT_RTD_URL_ARGS=(--rtd-url "$OPS_CLOSEOUT_RTD_URL_INPUT")
+          fi
+
+          set +e
+          ai-act ops closeout \
+            --mode "${{ inputs.ops_closeout_mode }}" \
+            "${OPS_CLOSEOUT_POLICY_ARGS[@]}" \
+            "${OPS_CLOSEOUT_VERSION_ARGS[@]}" \
+            "${OPS_CLOSEOUT_RUN_ID_ARGS[@]}" \
+            "${OPS_CLOSEOUT_REPO_ARGS[@]}" \
+            "${OPS_CLOSEOUT_PYPI_PROJECT_ARGS[@]}" \
+            "${OPS_CLOSEOUT_RTD_URL_ARGS[@]}" \
+            --json > /tmp/ops_closeout_gate.json
+          OPS_CLOSEOUT_EXIT_CODE=$?
+          set -e
+        else
+          echo '{}' > /tmp/ops_closeout_gate.json
+        fi
+        echo "ops_closeout_exit_code=$OPS_CLOSEOUT_EXIT_CODE" >> "$GITHUB_OUTPUT"
+
+        SECURITY_GATE_MODE="${{ inputs.security_gate_mode }}" SECURITY_GATE_PROFILE="${{ inputs.security_gate_profile }}" COLLABORATION_GATE_MODE_INPUT="${{ inputs.collaboration_gate_mode }}" HANDOFF_GOVERNANCE_MODE_INPUT="${{ inputs.handoff_governance_mode }}" OPS_CLOSEOUT_MODE_INPUT="${{ inputs.ops_closeout_mode }}" python - <<'PY' >> "$GITHUB_OUTPUT"
         import json
         import os
         import pathlib
@@ -398,6 +498,28 @@ runs:
         handoff_governance_failed_gates = ",".join(
             str(name) for name in handoff_governance_failed_gates_list if str(name)
         )
+        try:
+            ops_closeout = json.loads(pathlib.Path("/tmp/ops_closeout_gate.json").read_text())
+        except Exception:
+            ops_closeout = {}
+        if not isinstance(ops_closeout, dict):
+            ops_closeout = {}
+        ops_closeout_mode = str(
+            ops_closeout.get("mode", os.environ.get("OPS_CLOSEOUT_MODE_INPUT", "observe"))
+        ).strip().lower()
+        ops_closeout_failed = bool(ops_closeout.get("failed", False))
+        ops_closeout_reason_codes_list = ops_closeout.get("reason_codes", [])
+        if not isinstance(ops_closeout_reason_codes_list, list):
+            ops_closeout_reason_codes_list = []
+        ops_closeout_failed_checks_list = ops_closeout.get("failed_checks", [])
+        if not isinstance(ops_closeout_failed_checks_list, list):
+            ops_closeout_failed_checks_list = []
+        ops_closeout_reason_codes = ",".join(
+            str(code) for code in ops_closeout_reason_codes_list if str(code)
+        )
+        ops_closeout_failed_checks = ",".join(
+            str(name) for name in ops_closeout_failed_checks_list if str(name)
+        )
         rollup_metrics = export_ops_gate.get("rollup_metrics", {}) or {}
         reconcile_metrics = export_ops_gate.get("reconcile_metrics", {}) or {}
         reason_codes = export_ops_gate.get("reason_codes", [])
@@ -447,6 +569,10 @@ runs:
         print(f"handoff_governance_failed={'true' if handoff_governance_failed else 'false'}")
         print(f"handoff_governance_reason_codes={handoff_governance_reason_codes}")
         print(f"handoff_governance_failed_gates={handoff_governance_failed_gates}")
+        print(f"ops_closeout_mode={ops_closeout_mode}")
+        print(f"ops_closeout_failed={'true' if ops_closeout_failed else 'false'}")
+        print(f"ops_closeout_reason_codes={ops_closeout_reason_codes}")
+        print(f"ops_closeout_failed_checks={ops_closeout_failed_checks}")
         PY
 
     - name: "Generate report"
@@ -537,6 +663,12 @@ runs:
         HANDOFF_GOVERNANCE_REASON_CODES="${{ steps.analyze.outputs.handoff_governance_reason_codes }}"
         HANDOFF_GOVERNANCE_FAILED_GATES="${{ steps.analyze.outputs.handoff_governance_failed_gates }}"
         HANDOFF_GOVERNANCE_EXIT_CODE="${{ steps.analyze.outputs.handoff_governance_exit_code }}"
+        OPS_CLOSEOUT_ENABLED="${{ inputs.ops_closeout_enabled }}"
+        OPS_CLOSEOUT_MODE="${{ steps.analyze.outputs.ops_closeout_mode }}"
+        OPS_CLOSEOUT_FAILED="${{ steps.analyze.outputs.ops_closeout_failed }}"
+        OPS_CLOSEOUT_REASON_CODES="${{ steps.analyze.outputs.ops_closeout_reason_codes }}"
+        OPS_CLOSEOUT_FAILED_CHECKS="${{ steps.analyze.outputs.ops_closeout_failed_checks }}"
+        OPS_CLOSEOUT_EXIT_CODE="${{ steps.analyze.outputs.ops_closeout_exit_code }}"
 
         if [[ "$RISK_TIER" == "unacceptable" ]]; then
           echo "❌ Workflow failed: System classified as UNACCEPTABLE"
@@ -578,6 +710,13 @@ runs:
           echo "❌ Workflow failed: Governance handoff policy blocked this run"
           echo "   mode=$HANDOFF_GOVERNANCE_MODE exit_code=$HANDOFF_GOVERNANCE_EXIT_CODE failed_gates=$HANDOFF_GOVERNANCE_FAILED_GATES reason_codes=$HANDOFF_GOVERNANCE_REASON_CODES"
           echo "   Address governance handoff findings before merging."
+          exit 1
+        fi
+
+        if [[ "$OPS_CLOSEOUT_ENABLED" == "true" && "$OPS_CLOSEOUT_MODE" == "enforce" && ( "$OPS_CLOSEOUT_FAILED" == "true" || "$OPS_CLOSEOUT_EXIT_CODE" != "0" ) ]]; then
+          echo "❌ Workflow failed: Ops closeout policy blocked this run"
+          echo "   mode=$OPS_CLOSEOUT_MODE exit_code=$OPS_CLOSEOUT_EXIT_CODE failed_checks=$OPS_CLOSEOUT_FAILED_CHECKS reason_codes=$OPS_CLOSEOUT_REASON_CODES"
+          echo "   Address ops closeout findings before merging."
           exit 1
         fi
 

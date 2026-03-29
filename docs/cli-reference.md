@@ -76,9 +76,10 @@ Precedence:
 Runs deterministic release closeout checks and writes an evidence pack.
 
 ```bash
-ai-act ops closeout --version 0.1.28 --release-run-id 23489289129 --json
-ai-act ops closeout --version 0.1.28 --release-run-id 23489289129 --mode enforce --output-dir ops_closeout --json
-ai-act ops closeout --version 0.1.28 --release-run-id 23489289129 --repo ogulcanaydogan/eu-ai-act-compliance-kit --pypi-project eu-ai-act-compliance-kit --rtd-url https://eu-ai-act-compliance-kit.readthedocs.io/en/latest/ --json
+ai-act ops closeout --version 0.1.29 --release-run-id 23489289129 --json
+ai-act ops closeout --policy config/ops_closeout_policy.yaml --json
+ai-act ops closeout --version 0.1.29 --release-run-id 23489289129 --mode enforce --output-dir ops_closeout --json
+ai-act ops closeout --version 0.1.29 --release-run-id 23489289129 --policy config/ops_closeout_policy.yaml --repo ogulcanaydogan/eu-ai-act-compliance-kit --pypi-project eu-ai-act-compliance-kit --rtd-url https://eu-ai-act-compliance-kit.readthedocs.io/en/latest/ --json
 ```
 
 Checks:
@@ -98,7 +99,14 @@ Exit contract:
 
 - `--mode observe`: always exit `0`, but `failed` can be `true` in payload.
 - `--mode enforce`: exits non-zero when any check fails.
+- Missing release inputs (`version`, `release_run_id`) are reported as deterministic reason codes in observe mode and exit `0`.
+- Missing release inputs in enforce mode exit non-zero with a clear stderr error.
 - Artifact write failure always exits non-zero with deterministic stderr error.
+
+Precedence:
+
+- CLI flags override policy file values.
+- Policy file values override built-in defaults.
 
 JSON manifest includes:
 

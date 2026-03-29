@@ -333,9 +333,9 @@ jobs:
           assert gate_payload["evaluated_gates"] == ["security_gate", "collaboration_gate"]
           PY
 
-  ops-closeout-smoke:
+  ops-closeout-rollout-smoke:
     runs-on: ubuntu-latest
-    name: Ops Closeout Smoke
+    name: Ops Closeout Rollout Smoke
     needs: [lint, test]
     steps:
       - uses: actions/checkout@v6
@@ -355,8 +355,8 @@ jobs:
         env:
           IS_MAIN_OR_TAG: ${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') }}
         run: |
-          mkdir -p /tmp/ops-closeout-smoke/out
-          cat <<'PY' >/tmp/ops-closeout-smoke/mock_server.py
+          mkdir -p /tmp/ops-closeout-rollout-smoke/out
+          cat <<'PY' >/tmp/ops-closeout-rollout-smoke/mock_server.py
           from __future__ import annotations
 
           import json
@@ -374,20 +374,20 @@ jobs:
                           },
                       )
                       return
-                  if self.path == "/repos/acme/repo/releases/tags/v0.1.28":
+                  if self.path == "/repos/acme/repo/releases/tags/v0.1.29":
                       self._send_json(
                           200,
                           {
-                              "html_url": "https://github.com/acme/repo/releases/tag/v0.1.28",
+                              "html_url": "https://github.com/acme/repo/releases/tag/v0.1.29",
                               "assets": [
-                                  {"name": "eu_ai_act_compliance_kit-0.1.28-py3-none-any.whl"},
-                                  {"name": "eu_ai_act_compliance_kit-0.1.28.tar.gz"},
+                                  {"name": "eu_ai_act_compliance_kit-0.1.29-py3-none-any.whl"},
+                                  {"name": "eu_ai_act_compliance_kit-0.1.29.tar.gz"},
                               ],
                           },
                       )
                       return
                   if self.path == "/pypi/eu-ai-act-compliance-kit/json":
-                      self._send_json(200, {"info": {"version": "0.1.28"}})
+                      self._send_json(200, {"info": {"version": "0.1.29"}})
                       return
                   if self.path == "/rtd":
                       self.send_response(200)
@@ -413,7 +413,7 @@ jobs:
           HTTPServer(("127.0.0.1", 8877), Handler).serve_forever()
           PY
 
-          python /tmp/ops-closeout-smoke/mock_server.py &
+          python /tmp/ops-closeout-rollout-smoke/mock_server.py &
           SERVER_PID=$!
           trap "kill $SERVER_PID" EXIT
           sleep 1
@@ -424,21 +424,22 @@ jobs:
           fi
 
           ai-act ops closeout \
-            --version 0.1.28 \
+            --version 0.1.29 \
             --release-run-id 234 \
             --mode "$GATE_MODE" \
+            --policy config/ops_closeout_policy.yaml \
             --repo acme/repo \
             --github-api-base-url http://127.0.0.1:8877 \
             --pypi-base-url http://127.0.0.1:8877 \
             --rtd-url http://127.0.0.1:8877/rtd \
-            --output-dir /tmp/ops-closeout-smoke/out \
-            --json > /tmp/ops-closeout-smoke/stdout_manifest.json
+            --output-dir /tmp/ops-closeout-rollout-smoke/out \
+            --json > /tmp/ops-closeout-rollout-smoke/stdout_manifest.json
 
           python - <<'PY'
           import json
           from pathlib import Path
 
-          out = Path("/tmp/ops-closeout-smoke/out")
+          out = Path("/tmp/ops-closeout-rollout-smoke/out")
           manifest = json.loads((out / "ops_closeout_manifest.json").read_text())
           checks = json.loads((out / "ops_closeout_checks.json").read_text())
           evidence = (out / "ops_closeout_evidence.md").read_text()
@@ -864,12 +865,12 @@ jobs:
   all-checks:
     runs-on: ubuntu-latest
     name: All Checks Passed
-    needs: [lint, test, compat-smoke, quickstart-smoke, examples-smoke, handoff-smoke, handoff-governance-rollout-smoke, ops-closeout-smoke, export-ops-gate-smoke, collaboration-smoke, collaboration-gate-smoke, build, docker, docs, security, action-smoke]
+    needs: [lint, test, compat-smoke, quickstart-smoke, examples-smoke, handoff-smoke, handoff-governance-rollout-smoke, ops-closeout-rollout-smoke, export-ops-gate-smoke, collaboration-smoke, collaboration-gate-smoke, build, docker, docs, security, action-smoke]
     if: always()
     steps:
       - name: Check status
         run: |
-          if [[ "${{ needs.lint.result }}" == "failure" || "${{ needs.test.result }}" == "failure" || "${{ needs.compat-smoke.result }}" == "failure" || "${{ needs.quickstart-smoke.result }}" == "failure" || "${{ needs.examples-smoke.result }}" == "failure" || "${{ needs.handoff-smoke.result }}" == "failure" || "${{ needs.handoff-governance-rollout-smoke.result }}" == "failure" || "${{ needs.ops-closeout-smoke.result }}" == "failure" || "${{ needs.export-ops-gate-smoke.result }}" == "failure" || "${{ needs.collaboration-smoke.result }}" == "failure" || "${{ needs.collaboration-gate-smoke.result }}" == "failure" || "${{ needs.build.result }}" == "failure" || "${{ needs.docker.result }}" == "failure" || "${{ needs.action-smoke.result }}" == "failure" ]]; then
+          if [[ "${{ needs.lint.result }}" == "failure" || "${{ needs.test.result }}" == "failure" || "${{ needs.compat-smoke.result }}" == "failure" || "${{ needs.quickstart-smoke.result }}" == "failure" || "${{ needs.examples-smoke.result }}" == "failure" || "${{ needs.handoff-smoke.result }}" == "failure" || "${{ needs.handoff-governance-rollout-smoke.result }}" == "failure" || "${{ needs.ops-closeout-rollout-smoke.result }}" == "failure" || "${{ needs.export-ops-gate-smoke.result }}" == "failure" || "${{ needs.collaboration-smoke.result }}" == "failure" || "${{ needs.collaboration-gate-smoke.result }}" == "failure" || "${{ needs.build.result }}" == "failure" || "${{ needs.docker.result }}" == "failure" || "${{ needs.action-smoke.result }}" == "failure" ]]; then
             echo "One or more checks failed"
             exit 1
           fi

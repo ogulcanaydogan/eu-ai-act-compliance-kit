@@ -20,7 +20,7 @@ checks transparency and GPAI obligations, and renders audit-oriented reports.
 - Add governance-aware handoff outputs for decision-ready operations (`--governance`)
 - Generate one-command ops closeout evidence for release channels (`ai-act ops closeout`)
 
-## Current Delivery Status (March 28, 2026)
+## Current Delivery Status (March 29, 2026)
 
 - Phase 1: Risk classification complete
 - Phase 2: Compliance checker, checklist, transparency, GPAI complete
@@ -59,6 +59,7 @@ checks transparency and GPAI obligations, and renders audit-oriented reports.
 - Phase 35: Governance handoff V2 completed (policy-driven action/CI rollout with PR observe and main/tag enforce)
 - Phase 36: GA stabilization hardening completed (deterministic handoff diagnostics + required Python 3.11/3.12/3.13 compatibility smoke gate)
 - Phase 37: Ops automation closeout pack completed (`ops closeout` command + run/release/PyPI/RTD evidence artifacts + CI rollout smoke)
+- Phase 38: Ops closeout governance rollout completed (policy-driven `ops closeout` for CLI/action/CI with PR observe and main/tag enforce)
 
 ## End-to-End Flow
 
