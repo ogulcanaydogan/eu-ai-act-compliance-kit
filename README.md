@@ -79,7 +79,7 @@ pip install -e ".[reporting]"
 ai-act handoff examples/medical_diagnosis.yaml --output-dir handoff_pack --json
 ai-act handoff examples/medical_diagnosis.yaml --output-dir handoff_pack --governance --governance-mode observe --json
 ai-act handoff examples/medical_diagnosis.yaml --output-dir handoff_pack --governance --governance-policy config/governance_handoff_policy.yaml --json
-ai-act ops closeout --version 0.1.29 --release-run-id 23489289129 --json
+ai-act ops closeout --version 0.1.30 --release-run-id 23489289129 --json
 ai-act ops closeout --policy config/ops_closeout_policy.yaml --json
 ai-act ops closeout --policy config/ops_closeout_policy.yaml --max-run-age-hours 24 --max-release-age-hours 24 --max-rtd-age-hours 24 --json
 ai-act validate examples/medical_diagnosis.yaml
@@ -298,7 +298,7 @@ pre-commit run --hook-stage pre-push --all-files
 - Phase 36: GA stabilization hardening completed (deterministic handoff diagnostics + required Python 3.11/3.12/3.13 compatibility smoke gate)
 - Phase 37: ops automation closeout pack completed (`ops closeout` command + run/release/PyPI/RTD evidence artifacts + CI rollout smoke)
 - Phase 38: ops closeout governance rollout completed (policy-driven CLI/action/CI rollout with PR observe and main/tag enforce)
-- Phase 39: ops closeout v3 in progress (freshness/SLA thresholds and additive freshness signals across CLI/action/CI)
+- Phase 39: ops closeout v3 completed (freshness/SLA thresholds and additive freshness signals across CLI/action/CI)
 
 ## Disclaimer
 

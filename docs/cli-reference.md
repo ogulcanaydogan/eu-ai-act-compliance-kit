@@ -76,11 +76,11 @@ Precedence:
 Runs deterministic release closeout checks and writes an evidence pack.
 
 ```bash
-ai-act ops closeout --version 0.1.29 --release-run-id 23489289129 --json
+ai-act ops closeout --version 0.1.30 --release-run-id 23489289129 --json
 ai-act ops closeout --policy config/ops_closeout_policy.yaml --json
-ai-act ops closeout --version 0.1.29 --release-run-id 23489289129 --mode enforce --output-dir ops_closeout --json
-ai-act ops closeout --version 0.1.29 --release-run-id 23489289129 --policy config/ops_closeout_policy.yaml --repo ogulcanaydogan/eu-ai-act-compliance-kit --pypi-project eu-ai-act-compliance-kit --rtd-url https://eu-ai-act-compliance-kit.readthedocs.io/en/latest/ --json
-ai-act ops closeout --version 0.1.29 --release-run-id 23489289129 --max-run-age-hours 24 --max-release-age-hours 24 --max-rtd-age-hours 24 --json
+ai-act ops closeout --version 0.1.30 --release-run-id 23489289129 --mode enforce --output-dir ops_closeout --json
+ai-act ops closeout --version 0.1.30 --release-run-id 23489289129 --policy config/ops_closeout_policy.yaml --repo ogulcanaydogan/eu-ai-act-compliance-kit --pypi-project eu-ai-act-compliance-kit --rtd-url https://eu-ai-act-compliance-kit.readthedocs.io/en/latest/ --json
+ai-act ops closeout --version 0.1.30 --release-run-id 23489289129 --max-run-age-hours 24 --max-release-age-hours 24 --max-rtd-age-hours 24 --json
 ```
 
 Checks:
