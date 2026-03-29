@@ -5,11 +5,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
+import re
 from typing import Any, Literal, cast
 
 import httpx
 
 OpsCloseoutMode = Literal["observe", "enforce"]
+_SEMVER_TAG_PATTERN = re.compile(r"^v(?P<major>\d+)\.(?P<minor>\d+)\.(?P<patch>\d+)$")
 
 
 @dataclass(frozen=True)
@@ -41,6 +43,7 @@ class OpsCloseoutPolicy:
     max_run_age_hours: float | None
     max_release_age_hours: float | None
     max_rtd_age_hours: float | None
+    resolve_latest_release: bool
     waivers: list[OpsCloseoutWaiver]
 
     def to_dict(self) -> dict[str, Any]:
@@ -52,6 +55,7 @@ class OpsCloseoutPolicy:
             "release": {
                 "version": self.release_version,
                 "run_id": self.release_run_id,
+                "resolve_latest": self.resolve_latest_release,
             },
             "thresholds": {
                 "max_run_age_hours": self.max_run_age_hours,
@@ -116,6 +120,24 @@ class OpsCloseoutResult:
             "waived_reason_codes": list(self.waived_reason_codes),
             "expired_waiver_reason_codes": list(self.expired_waiver_reason_codes),
             "effective_reason_codes": list(self.effective_reason_codes),
+        }
+
+
+@dataclass(frozen=True)
+class OpsCloseoutReleaseResolution:
+    """Resolved release inputs for closeout automation."""
+
+    resolved_version: str | None
+    resolved_run_id: int | None
+    reason_codes: list[str]
+    resolution_source: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "resolved_version": self.resolved_version,
+            "resolved_run_id": self.resolved_run_id,
+            "reason_codes": list(self.reason_codes),
+            "resolution_source": self.resolution_source,
         }
 
 
@@ -464,6 +486,13 @@ class OpsCloseoutEvaluator:
         return raw
 
     @staticmethod
+    def _safe_json_any(payload: bytes) -> Any | None:
+        try:
+            return httpx.Response(200, content=payload).json()
+        except Exception:
+            return None
+
+    @staticmethod
     def _safe_get(*, client: httpx.Client, url: str) -> _SafeHttpResponse:
         try:
             response = client.get(url)
@@ -553,6 +582,7 @@ def resolve_ops_closeout_policy(
     max_run_age_hours: float | None = None,
     max_release_age_hours: float | None = None,
     max_rtd_age_hours: float | None = None,
+    resolve_latest_release: bool | None = None,
     waivers: list[dict[str, str | None]] | None = None,
 ) -> OpsCloseoutPolicy:
     """Resolve ops closeout policy with precedence: CLI > policy file > defaults."""
@@ -566,6 +596,7 @@ def resolve_ops_closeout_policy(
         "max_run_age_hours": None,
         "max_release_age_hours": None,
         "max_rtd_age_hours": None,
+        "resolve_latest_release": False,
         "waivers": [],
     }
 
@@ -588,6 +619,8 @@ def resolve_ops_closeout_policy(
                 values["release_version"] = release_payload.get("version")
             if "run_id" in release_payload:
                 values["release_run_id"] = release_payload.get("run_id")
+            if "resolve_latest" in release_payload:
+                values["resolve_latest_release"] = release_payload.get("resolve_latest")
 
         thresholds_payload = policy_payload.get("thresholds")
         if thresholds_payload is not None:
@@ -621,6 +654,8 @@ def resolve_ops_closeout_policy(
         values["max_release_age_hours"] = max_release_age_hours
     if max_rtd_age_hours is not None:
         values["max_rtd_age_hours"] = max_rtd_age_hours
+    if resolve_latest_release is not None:
+        values["resolve_latest_release"] = resolve_latest_release
     if waivers is not None:
         values["waivers"] = waivers
 
@@ -664,6 +699,10 @@ def resolve_ops_closeout_policy(
     resolved_max_rtd_age_hours = _coerce_optional_positive_float(
         values["max_rtd_age_hours"], "Policy thresholds.max_rtd_age_hours"
     )
+    resolved_resolve_latest_release = _coerce_bool(
+        values["resolve_latest_release"],
+        "Policy release.resolve_latest",
+    )
     resolved_waivers = _coerce_ops_closeout_waivers(values["waivers"])
 
     return OpsCloseoutPolicy(
@@ -676,6 +715,7 @@ def resolve_ops_closeout_policy(
         max_run_age_hours=resolved_max_run_age_hours,
         max_release_age_hours=resolved_max_release_age_hours,
         max_rtd_age_hours=resolved_max_rtd_age_hours,
+        resolve_latest_release=resolved_resolve_latest_release,
         waivers=resolved_waivers,
     )
 
@@ -691,6 +731,20 @@ def _coerce_optional_positive_float(value: Any, field_name: str) -> float | None
     if normalized <= 0:
         raise ValueError(f"{field_name} must be > 0 when provided.")
     return normalized
+
+
+def _coerce_bool(value: Any, field_name: str) -> bool:
+    """Normalize boolean policy fields."""
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    normalized = str(value).strip().lower()
+    if normalized in {"true", "1", "yes", "on"}:
+        return True
+    if normalized in {"false", "0", "no", "off"}:
+        return False
+    raise ValueError(f"{field_name} must be a boolean.")
 
 
 def _coerce_ops_closeout_waivers(value: Any) -> list[OpsCloseoutWaiver]:
@@ -737,3 +791,136 @@ def _coerce_ops_closeout_waivers(value: Any) -> list[OpsCloseoutWaiver]:
             )
         )
     return normalized
+
+
+def resolve_latest_release_inputs(
+    *,
+    repo: str,
+    github_api_base_url: str = "https://api.github.com",
+    timeout_seconds: float = 20.0,
+) -> OpsCloseoutReleaseResolution:
+    """Resolve latest semver release version and successful release workflow run id."""
+    with httpx.Client(timeout=timeout_seconds, follow_redirects=True) as client:
+        releases_response = OpsCloseoutEvaluator._safe_get(
+            client=client,
+            url=f"{github_api_base_url.rstrip('/')}/repos/{repo}/releases?per_page=100",
+        )
+        if releases_response.error is not None or releases_response.status_code != 200:
+            return OpsCloseoutReleaseResolution(
+                resolved_version=None,
+                resolved_run_id=None,
+                reason_codes=["release_resolution_failed"],
+                resolution_source="github_releases_api",
+            )
+
+        releases_payload = OpsCloseoutEvaluator._safe_json_any(releases_response.body)
+        if not isinstance(releases_payload, list):
+            return OpsCloseoutReleaseResolution(
+                resolved_version=None,
+                resolved_run_id=None,
+                reason_codes=["release_resolution_failed"],
+                resolution_source="github_releases_api",
+            )
+
+        semver_candidates: list[tuple[tuple[int, int, int], str]] = []
+        for raw_release in releases_payload:
+            if not isinstance(raw_release, dict):
+                continue
+            if bool(raw_release.get("draft")):
+                continue
+            tag_name = str(raw_release.get("tag_name") or "").strip()
+            match = _SEMVER_TAG_PATTERN.match(tag_name)
+            if not match:
+                continue
+            semver_candidates.append(
+                (
+                    (
+                        int(match.group("major")),
+                        int(match.group("minor")),
+                        int(match.group("patch")),
+                    ),
+                    tag_name,
+                )
+            )
+
+        if not semver_candidates:
+            return OpsCloseoutReleaseResolution(
+                resolved_version=None,
+                resolved_run_id=None,
+                reason_codes=["latest_release_not_found"],
+                resolution_source="github_releases_api",
+            )
+
+        semver_candidates.sort(key=lambda item: item[0], reverse=True)
+        latest_tag = semver_candidates[0][1]
+        latest_version = latest_tag.removeprefix("v")
+
+        runs_response = OpsCloseoutEvaluator._safe_get(
+            client=client,
+            url=(
+                f"{github_api_base_url.rstrip('/')}/repos/{repo}/actions/workflows/release.yml/runs"
+                "?event=push&per_page=100"
+            ),
+        )
+        if runs_response.error is not None or runs_response.status_code != 200:
+            return OpsCloseoutReleaseResolution(
+                resolved_version=latest_version,
+                resolved_run_id=None,
+                reason_codes=["release_resolution_failed"],
+                resolution_source="github_release_workflow_runs_api",
+            )
+
+        runs_payload = OpsCloseoutEvaluator._safe_json(runs_response.body)
+        if not isinstance(runs_payload, dict):
+            return OpsCloseoutReleaseResolution(
+                resolved_version=latest_version,
+                resolved_run_id=None,
+                reason_codes=["release_resolution_failed"],
+                resolution_source="github_release_workflow_runs_api",
+            )
+
+        workflow_runs = runs_payload.get("workflow_runs")
+        if not isinstance(workflow_runs, list):
+            return OpsCloseoutReleaseResolution(
+                resolved_version=latest_version,
+                resolved_run_id=None,
+                reason_codes=["release_resolution_failed"],
+                resolution_source="github_release_workflow_runs_api",
+            )
+
+        matched_run_ids: list[int] = []
+        for raw_run in workflow_runs:
+            if not isinstance(raw_run, dict):
+                continue
+            head_branch = str(raw_run.get("head_branch") or "").strip()
+            status = str(raw_run.get("status") or "").strip().lower()
+            conclusion = str(raw_run.get("conclusion") or "").strip().lower()
+            if head_branch != latest_tag:
+                continue
+            if status != "completed" or conclusion != "success":
+                continue
+            run_id_raw = raw_run.get("id")
+            if run_id_raw is None:
+                continue
+            try:
+                run_id = int(run_id_raw)
+            except (TypeError, ValueError):
+                continue
+            if run_id < 1:
+                continue
+            matched_run_ids.append(run_id)
+
+        if not matched_run_ids:
+            return OpsCloseoutReleaseResolution(
+                resolved_version=latest_version,
+                resolved_run_id=None,
+                reason_codes=["latest_release_run_not_found"],
+                resolution_source="github_release_workflow_runs_api",
+            )
+
+        return OpsCloseoutReleaseResolution(
+            resolved_version=latest_version,
+            resolved_run_id=max(matched_run_ids),
+            reason_codes=[],
+            resolution_source="github_release_workflow_runs_api",
+        )

@@ -76,12 +76,13 @@ Precedence:
 Runs deterministic release closeout checks and writes an evidence pack.
 
 ```bash
-ai-act ops closeout --version 0.1.31 --release-run-id 23489289129 --json
+ai-act ops closeout --version 0.1.31 --release-run-id 23718807136 --json
 ai-act ops closeout --policy config/ops_closeout_policy.yaml --json
-ai-act ops closeout --version 0.1.31 --release-run-id 23489289129 --mode enforce --output-dir ops_closeout --json
-ai-act ops closeout --version 0.1.31 --release-run-id 23489289129 --policy config/ops_closeout_policy.yaml --repo ogulcanaydogan/eu-ai-act-compliance-kit --pypi-project eu-ai-act-compliance-kit --rtd-url https://eu-ai-act-compliance-kit.readthedocs.io/en/latest/ --json
-ai-act ops closeout --version 0.1.31 --release-run-id 23489289129 --max-run-age-hours 24 --max-release-age-hours 24 --max-rtd-age-hours 24 --json
-ai-act ops closeout --version 0.1.31 --release-run-id 23489289129 --max-run-age-hours 1 --max-release-age-hours 1 --max-rtd-age-hours 1 --waiver-reason-code github_run_stale --waiver-expires-at 2099-01-01T00:00:00Z --json
+ai-act ops closeout --policy config/ops_closeout_policy.yaml --resolve-latest-release --json
+ai-act ops closeout --version 0.1.31 --release-run-id 23718807136 --mode enforce --output-dir ops_closeout --json
+ai-act ops closeout --version 0.1.31 --release-run-id 23718807136 --policy config/ops_closeout_policy.yaml --repo ogulcanaydogan/eu-ai-act-compliance-kit --pypi-project eu-ai-act-compliance-kit --rtd-url https://eu-ai-act-compliance-kit.readthedocs.io/en/latest/ --json
+ai-act ops closeout --version 0.1.31 --release-run-id 23718807136 --max-run-age-hours 24 --max-release-age-hours 24 --max-rtd-age-hours 24 --json
+ai-act ops closeout --version 0.1.31 --release-run-id 23718807136 --max-run-age-hours 1 --max-release-age-hours 1 --max-rtd-age-hours 1 --waiver-reason-code github_run_stale --waiver-expires-at 2099-01-01T00:00:00Z --json
 ```
 
 Checks:
@@ -112,6 +113,13 @@ Exit contract:
 - `--mode enforce`: exits non-zero when any check fails.
 - Missing release inputs (`version`, `release_run_id`) are reported as deterministic reason codes in observe mode and exit `0`.
 - Missing release inputs in enforce mode exit non-zero with a clear stderr error.
+- `--resolve-latest-release` can auto-fill missing release inputs from latest semver release and latest successful `release.yml` run.
+- Policy toggle `release.resolve_latest: true|false` controls the same behavior via policy file.
+- Manifest/check payload includes additive `resolution` block:
+  - `resolved_version`
+  - `resolved_run_id`
+  - `resolution_source`
+  - `reason_codes`
 - Freshness violations append additive reason codes:
   - `github_run_stale`
   - `github_release_stale`

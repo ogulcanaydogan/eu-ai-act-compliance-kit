@@ -8,6 +8,7 @@ import pytest
 from eu_ai_act.ops_closeout import (
     OpsCloseoutEvaluator,
     normalize_ops_closeout_mode,
+    resolve_latest_release_inputs,
     resolve_ops_closeout_policy,
 )
 
@@ -405,6 +406,7 @@ def test_resolve_ops_closeout_policy_precedence_cli_over_file() -> None:
             "release": {
                 "version": "9.9.9",
                 "run_id": 99,
+                "resolve_latest": True,
             },
             "thresholds": {
                 "max_run_age_hours": 48,
@@ -419,6 +421,7 @@ def test_resolve_ops_closeout_policy_precedence_cli_over_file() -> None:
         pypi_project="eu-ai-act-compliance-kit",
         rtd_url="https://example.test/rtd",
         max_run_age_hours=12,
+        resolve_latest_release=False,
     )
 
     assert policy.mode == "observe"
@@ -430,6 +433,7 @@ def test_resolve_ops_closeout_policy_precedence_cli_over_file() -> None:
     assert policy.max_run_age_hours == 12
     assert policy.max_release_age_hours == 72
     assert policy.max_rtd_age_hours == 24
+    assert policy.resolve_latest_release is False
     assert policy.waivers == []
 
 
@@ -465,6 +469,7 @@ def test_resolve_ops_closeout_policy_defaults_allow_missing_release_inputs() -> 
     assert policy.mode == "observe"
     assert policy.release_version is None
     assert policy.release_run_id is None
+    assert policy.resolve_latest_release is False
     assert policy.waivers == []
 
 
@@ -478,6 +483,18 @@ def test_resolve_ops_closeout_policy_rejects_invalid_freshness_threshold() -> No
     """Policy parser should reject non-positive freshness threshold values."""
     with pytest.raises(ValueError, match="max_run_age_hours"):
         resolve_ops_closeout_policy(policy_payload={"thresholds": {"max_run_age_hours": 0}})
+
+
+def test_resolve_ops_closeout_policy_parses_resolve_latest_flag() -> None:
+    """Policy parser should preserve release.resolve_latest toggle."""
+    policy = resolve_ops_closeout_policy(policy_payload={"release": {"resolve_latest": True}})
+    assert policy.resolve_latest_release is True
+
+
+def test_resolve_ops_closeout_policy_rejects_invalid_resolve_latest_flag() -> None:
+    """Policy parser should reject invalid non-boolean resolve_latest values."""
+    with pytest.raises(ValueError, match="release.resolve_latest"):
+        resolve_ops_closeout_policy(policy_payload={"release": {"resolve_latest": "maybe"}})
 
 
 def test_resolve_ops_closeout_policy_rejects_invalid_waiver_expires_at() -> None:
@@ -508,3 +525,111 @@ def test_resolve_ops_closeout_policy_rejects_missing_waiver_reason_code() -> Non
                 ]
             }
         )
+
+
+def test_resolve_latest_release_inputs_success(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Latest release resolver should return highest semver and matching successful run id."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/repos/acme/repo/releases"):
+            return httpx.Response(
+                200,
+                json=[
+                    {"tag_name": "v0.1.30", "draft": False},
+                    {"tag_name": "v0.1.31", "draft": False},
+                    {"tag_name": "docs-preview", "draft": False},
+                ],
+            )
+        if request.url.path.endswith("/repos/acme/repo/actions/workflows/release.yml/runs"):
+            return httpx.Response(
+                200,
+                json={
+                    "workflow_runs": [
+                        {"id": 900, "head_branch": "v0.1.30", "status": "completed", "conclusion": "success"},
+                        {"id": 1000, "head_branch": "v0.1.31", "status": "completed", "conclusion": "failure"},
+                        {"id": 1001, "head_branch": "v0.1.31", "status": "completed", "conclusion": "success"},
+                        {"id": 1002, "head_branch": "v0.1.31", "status": "completed", "conclusion": "success"},
+                    ]
+                },
+            )
+        return httpx.Response(404)
+
+    _patch_http_client(monkeypatch, handler)
+    result = resolve_latest_release_inputs(
+        repo="acme/repo",
+        github_api_base_url="https://example.test/api",
+    )
+
+    assert result.resolved_version == "0.1.31"
+    assert result.resolved_run_id == 1002
+    assert result.reason_codes == []
+    assert result.resolution_source == "github_release_workflow_runs_api"
+
+
+def test_resolve_latest_release_inputs_reports_missing_release(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Resolver should emit deterministic reason when no semver release exists."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/repos/acme/repo/releases"):
+            return httpx.Response(200, json=[{"tag_name": "nightly", "draft": False}])
+        return httpx.Response(404)
+
+    _patch_http_client(monkeypatch, handler)
+    result = resolve_latest_release_inputs(
+        repo="acme/repo",
+        github_api_base_url="https://example.test/api",
+    )
+
+    assert result.resolved_version is None
+    assert result.resolved_run_id is None
+    assert result.reason_codes == ["latest_release_not_found"]
+
+
+def test_resolve_latest_release_inputs_reports_missing_release_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Resolver should emit deterministic reason when matching successful release run is absent."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/repos/acme/repo/releases"):
+            return httpx.Response(200, json=[{"tag_name": "v0.1.31", "draft": False}])
+        if request.url.path.endswith("/repos/acme/repo/actions/workflows/release.yml/runs"):
+            return httpx.Response(
+                200,
+                json={
+                    "workflow_runs": [
+                        {"id": 1000, "head_branch": "v0.1.31", "status": "in_progress", "conclusion": ""},
+                        {"id": 1001, "head_branch": "v0.1.31", "status": "completed", "conclusion": "failure"},
+                    ]
+                },
+            )
+        return httpx.Response(404)
+
+    _patch_http_client(monkeypatch, handler)
+    result = resolve_latest_release_inputs(
+        repo="acme/repo",
+        github_api_base_url="https://example.test/api",
+    )
+
+    assert result.resolved_version == "0.1.31"
+    assert result.resolved_run_id is None
+    assert result.reason_codes == ["latest_release_run_not_found"]
+
+
+def test_resolve_latest_release_inputs_reports_resolution_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Resolver should emit generic resolution failure on upstream request error."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/repos/acme/repo/releases"):
+            return httpx.Response(500, text="boom")
+        return httpx.Response(404)
+
+    _patch_http_client(monkeypatch, handler)
+    result = resolve_latest_release_inputs(
+        repo="acme/repo",
+        github_api_base_url="https://example.test/api",
+    )
+
+    assert result.resolved_version is None
+    assert result.resolved_run_id is None
+    assert result.reason_codes == ["release_resolution_failed"]

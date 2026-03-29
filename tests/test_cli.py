@@ -693,6 +693,9 @@ class TestCLI:
             assert payload["failed"] is False
             assert payload["reason_codes"] == []
             assert payload["effective_reason_codes"] == []
+            assert payload["resolution"]["attempted"] is False
+            assert payload["resolution"]["resolution_source"] == "explicit_inputs"
+            assert payload["resolution"]["reason_codes"] == []
             assert payload["freshness_reason_codes"] == []
             assert payload["waived_reason_codes"] == []
             assert payload["expired_waiver_reason_codes"] == []
@@ -1171,6 +1174,133 @@ class TestCLI:
             assert payload["status"] == "failed"
             assert "missing_release_version" in payload["reason_codes"]
             assert "missing_release_run_id" in payload["reason_codes"]
+
+    def test_ops_closeout_resolve_latest_release_success(self, monkeypatch):
+        """`--resolve-latest-release` should populate version/run-id and execute checks."""
+        runner = CliRunner()
+
+        def handler(request):
+            if str(request.url).endswith("/repos/acme/repo/releases?per_page=100"):
+                return httpx.Response(200, json=[{"tag_name": "v0.1.31", "draft": False}])
+            if str(request.url).endswith(
+                "/repos/acme/repo/actions/workflows/release.yml/runs?event=push&per_page=100"
+            ):
+                return httpx.Response(
+                    200,
+                    json={
+                        "workflow_runs": [
+                            {
+                                "id": 333,
+                                "head_branch": "v0.1.31",
+                                "status": "completed",
+                                "conclusion": "success",
+                            }
+                        ]
+                    },
+                )
+            if str(request.url).endswith("/repos/acme/repo/actions/runs/333"):
+                return httpx.Response(
+                    200,
+                    json={"status": "completed", "conclusion": "success"},
+                )
+            if str(request.url).endswith("/repos/acme/repo/releases/tags/v0.1.31"):
+                return httpx.Response(
+                    200,
+                    json={
+                        "assets": [
+                            {"name": "pkg-0.1.31-py3-none-any.whl"},
+                            {"name": "pkg-0.1.31.tar.gz"},
+                        ]
+                    },
+                )
+            if str(request.url).endswith("/pypi/eu-ai-act-compliance-kit/json"):
+                return httpx.Response(200, json={"info": {"version": "0.1.31"}})
+            if str(request.url).endswith("/rtd"):
+                return httpx.Response(status_code=200, text="ok")
+            return httpx.Response(status_code=404)
+
+        transport = httpx.MockTransport(handler)
+        original_client = httpx.Client
+
+        def _fake_client(*args, **kwargs):
+            return original_client(transport=transport)
+
+        monkeypatch.setattr("eu_ai_act.ops_closeout.httpx.Client", _fake_client)
+
+        result = runner.invoke(
+            main,
+            [
+                "ops",
+                "closeout",
+                "--resolve-latest-release",
+                "--repo",
+                "acme/repo",
+                "--github-api-base-url",
+                "https://example.test/api",
+                "--pypi-base-url",
+                "https://example.test",
+                "--rtd-url",
+                "https://example.test/rtd",
+                "--json",
+            ],
+        )
+
+        assert result.exit_code == 0
+        payload = json.loads(result.output[result.output.find("{") :])
+        assert payload["failed"] is False
+        assert payload["version"] == "0.1.31"
+        assert payload["release_run_id"] == 333
+        assert payload["resolution"]["attempted"] is True
+        assert payload["resolution"]["resolved_version"] == "0.1.31"
+        assert payload["resolution"]["resolved_run_id"] == 333
+        assert payload["resolution"]["reason_codes"] == []
+
+    def test_ops_closeout_resolve_latest_release_enforce_fails_when_run_missing(self, monkeypatch):
+        """Enforce mode should fail when auto-resolution cannot produce release run id."""
+        runner = CliRunner()
+
+        def handler(request):
+            if str(request.url).endswith("/repos/acme/repo/releases?per_page=100"):
+                return httpx.Response(200, json=[{"tag_name": "v0.1.31", "draft": False}])
+            if str(request.url).endswith(
+                "/repos/acme/repo/actions/workflows/release.yml/runs?event=push&per_page=100"
+            ):
+                return httpx.Response(200, json={"workflow_runs": []})
+            return httpx.Response(status_code=404)
+
+        transport = httpx.MockTransport(handler)
+        original_client = httpx.Client
+
+        def _fake_client(*args, **kwargs):
+            return original_client(transport=transport)
+
+        monkeypatch.setattr("eu_ai_act.ops_closeout.httpx.Client", _fake_client)
+
+        result = runner.invoke(
+            main,
+            [
+                "ops",
+                "closeout",
+                "--resolve-latest-release",
+                "--mode",
+                "enforce",
+                "--repo",
+                "acme/repo",
+                "--github-api-base-url",
+                "https://example.test/api",
+                "--json",
+            ],
+        )
+
+        assert result.exit_code != 0
+        decoder = json.JSONDecoder()
+        payload, _ = decoder.raw_decode(result.output[result.output.find("{") :])
+        assert payload["failed"] is True
+        assert "latest_release_run_not_found" in payload["reason_codes"]
+        assert "missing_release_run_id" in payload["reason_codes"]
+        assert payload["resolution"]["attempted"] is True
+        assert payload["resolution"]["resolved_version"] == "0.1.31"
+        assert payload["resolution"]["resolved_run_id"] is None
 
     def test_ops_closeout_enforce_mode_fails_when_release_inputs_missing(self):
         """Enforce mode should exit non-zero with clear error when required release inputs are missing."""
