@@ -1281,7 +1281,9 @@ def ops_closeout(
             if ctx.get_parameter_source("release_run_id") == ParameterSource.COMMANDLINE
             else None
         )
-        mode_override = mode if ctx.get_parameter_source("mode") == ParameterSource.COMMANDLINE else None
+        mode_override = (
+            mode if ctx.get_parameter_source("mode") == ParameterSource.COMMANDLINE else None
+        )
         repo_override = (
             repo if ctx.get_parameter_source("repo") == ParameterSource.COMMANDLINE else None
         )
@@ -1291,9 +1293,7 @@ def ops_closeout(
             else None
         )
         rtd_url_override = (
-            rtd_url
-            if ctx.get_parameter_source("rtd_url") == ParameterSource.COMMANDLINE
-            else None
+            rtd_url if ctx.get_parameter_source("rtd_url") == ParameterSource.COMMANDLINE else None
         )
         resolved_policy = resolve_ops_closeout_policy(
             policy_payload=policy_payload,
