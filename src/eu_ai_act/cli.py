@@ -77,7 +77,6 @@ from eu_ai_act.history import (
 from eu_ai_act.ops_closeout import (
     OpsCloseoutCheck,
     OpsCloseoutEvaluator,
-    OpsCloseoutMode,
     resolve_ops_closeout_policy,
 )
 from eu_ai_act.reporter import ReportGenerator
