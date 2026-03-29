@@ -81,6 +81,7 @@ ai-act handoff examples/medical_diagnosis.yaml --output-dir handoff_pack --gover
 ai-act handoff examples/medical_diagnosis.yaml --output-dir handoff_pack --governance --governance-policy config/governance_handoff_policy.yaml --json
 ai-act ops closeout --version 0.1.29 --release-run-id 23489289129 --json
 ai-act ops closeout --policy config/ops_closeout_policy.yaml --json
+ai-act ops closeout --policy config/ops_closeout_policy.yaml --max-run-age-hours 24 --max-release-age-hours 24 --max-rtd-age-hours 24 --json
 ai-act validate examples/medical_diagnosis.yaml
 ai-act classify examples/medical_diagnosis.yaml --json
 ai-act check examples/medical_diagnosis.yaml --json
@@ -93,7 +94,7 @@ ai-act export check examples/medical_diagnosis.yaml --target generic --json
 ## CLI Surface
 
 - `ai-act handoff <system.yaml> [--output-dir PATH] [--json] [--governance] [--governance-mode observe|enforce] [--governance-policy PATH] [--export-target jira|servicenow]`
-- `ai-act ops closeout [--version <semver>] [--release-run-id <id>] [--mode observe|enforce] [--policy PATH] [--repo owner/name] [--pypi-project NAME] [--rtd-url URL] [--output-dir PATH] [--json]`
+- `ai-act ops closeout [--version <semver>] [--release-run-id <id>] [--mode observe|enforce] [--policy PATH] [--repo owner/name] [--pypi-project NAME] [--rtd-url URL] [--max-run-age-hours H] [--max-release-age-hours H] [--max-rtd-age-hours H] [--output-dir PATH] [--json]`
 - `ai-act classify <system.yaml> [--json]`
 - `ai-act check <system.yaml> [--json] [--security-gate observe|enforce] [--security-gate-profile strict|balanced|lenient]`
 - `ai-act security-map <system.yaml> [--json] [--output PATH]`
@@ -183,6 +184,10 @@ Outputs:
 - `ops_closeout_failed`
 - `ops_closeout_reason_codes`
 - `ops_closeout_failed_checks`
+- `ops_closeout_freshness_reason_codes`
+- `ops_closeout_run_age_hours`
+- `ops_closeout_release_age_hours`
+- `ops_closeout_rtd_age_hours`
 
 Fail policy:
 
@@ -293,6 +298,7 @@ pre-commit run --hook-stage pre-push --all-files
 - Phase 36: GA stabilization hardening completed (deterministic handoff diagnostics + required Python 3.11/3.12/3.13 compatibility smoke gate)
 - Phase 37: ops automation closeout pack completed (`ops closeout` command + run/release/PyPI/RTD evidence artifacts + CI rollout smoke)
 - Phase 38: ops closeout governance rollout completed (policy-driven CLI/action/CI rollout with PR observe and main/tag enforce)
+- Phase 39: ops closeout v3 in progress (freshness/SLA thresholds and additive freshness signals across CLI/action/CI)
 
 ## Disclaimer
 

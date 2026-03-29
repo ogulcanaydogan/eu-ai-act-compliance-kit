@@ -5,3 +5,7 @@ rtd_url: https://eu-ai-act-compliance-kit.readthedocs.io/en/latest/
 release:
   version: 0.1.29
   run_id: 23489289129
+thresholds:
+  max_run_age_hours: null
+  max_release_age_hours: null
+  max_rtd_age_hours: null

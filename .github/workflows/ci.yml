@@ -371,6 +371,7 @@ jobs:
                               "status": "completed",
                               "conclusion": "success",
                               "html_url": "https://github.com/acme/repo/actions/runs/234",
+                              "updated_at": "2026-03-29T15:00:00Z",
                           },
                       )
                       return
@@ -383,6 +384,7 @@ jobs:
                                   {"name": "eu_ai_act_compliance_kit-0.1.29-py3-none-any.whl"},
                                   {"name": "eu_ai_act_compliance_kit-0.1.29.tar.gz"},
                               ],
+                              "published_at": "2026-03-29T15:00:00Z",
                           },
                       )
                       return
@@ -392,6 +394,7 @@ jobs:
                   if self.path == "/rtd":
                       self.send_response(200)
                       self.send_header("Content-Type", "text/plain; charset=utf-8")
+                      self.send_header("Last-Modified", "Sat, 29 Mar 2026 15:00:00 GMT")
                       self.end_headers()
                       self.wfile.write(b"ok")
                       return
@@ -432,6 +435,9 @@ jobs:
             --github-api-base-url http://127.0.0.1:8877 \
             --pypi-base-url http://127.0.0.1:8877 \
             --rtd-url http://127.0.0.1:8877/rtd \
+            --max-run-age-hours 999999 \
+            --max-release-age-hours 999999 \
+            --max-rtd-age-hours 999999 \
             --output-dir /tmp/ops-closeout-rollout-smoke/out \
             --json > /tmp/ops-closeout-rollout-smoke/stdout_manifest.json
 
@@ -449,6 +455,13 @@ jobs:
           assert manifest["failed"] is False
           assert manifest["reason_codes"] == []
           assert manifest["failed_checks"] == []
+          assert manifest["freshness_reason_codes"] == []
+          assert manifest["freshness_metrics"]["run_age_hours"] is not None
+          assert manifest["freshness_metrics"]["release_age_hours"] is not None
+          assert manifest["freshness_metrics"]["rtd_age_hours"] is not None
+          assert manifest["freshness_thresholds"]["max_run_age_hours"] == 999999
+          assert manifest["freshness_thresholds"]["max_release_age_hours"] == 999999
+          assert manifest["freshness_thresholds"]["max_rtd_age_hours"] == 999999
           assert sorted(manifest["passed_checks"]) == [
               "github_release",
               "github_run",
@@ -458,8 +471,11 @@ jobs:
 
           assert "checks" in checks
           assert len(checks["checks"]) == 4
+          assert checks["freshness_reason_codes"] == []
+          assert checks["freshness_metrics"]["run_age_hours"] is not None
           assert "# Ops Closeout Evidence" in evidence
           assert "Reason codes: none" in evidence
+          assert "Freshness reason codes: none" in evidence
           PY
 
   export-ops-gate-smoke:

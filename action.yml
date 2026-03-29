@@ -212,6 +212,18 @@ outputs:
   ops_closeout_failed_checks:
     description: "Comma-separated failed ops closeout checks"
     value: ${{ steps.analyze.outputs.ops_closeout_failed_checks }}
+  ops_closeout_freshness_reason_codes:
+    description: "Comma-separated ops closeout freshness reason codes"
+    value: ${{ steps.analyze.outputs.ops_closeout_freshness_reason_codes }}
+  ops_closeout_run_age_hours:
+    description: "GitHub run freshness age in hours from ops closeout payload"
+    value: ${{ steps.analyze.outputs.ops_closeout_run_age_hours }}
+  ops_closeout_release_age_hours:
+    description: "GitHub release freshness age in hours from ops closeout payload"
+    value: ${{ steps.analyze.outputs.ops_closeout_release_age_hours }}
+  ops_closeout_rtd_age_hours:
+    description: "RTD freshness age in hours from ops closeout payload"
+    value: ${{ steps.analyze.outputs.ops_closeout_rtd_age_hours }}
 
 runs:
   using: "composite"
@@ -514,12 +526,27 @@ runs:
         ops_closeout_failed_checks_list = ops_closeout.get("failed_checks", [])
         if not isinstance(ops_closeout_failed_checks_list, list):
             ops_closeout_failed_checks_list = []
+        ops_closeout_freshness_reason_codes_list = ops_closeout.get("freshness_reason_codes", [])
+        if not isinstance(ops_closeout_freshness_reason_codes_list, list):
+            ops_closeout_freshness_reason_codes_list = []
+        ops_closeout_freshness_metrics = ops_closeout.get("freshness_metrics", {})
+        if not isinstance(ops_closeout_freshness_metrics, dict):
+            ops_closeout_freshness_metrics = {}
         ops_closeout_reason_codes = ",".join(
             str(code) for code in ops_closeout_reason_codes_list if str(code)
         )
         ops_closeout_failed_checks = ",".join(
             str(name) for name in ops_closeout_failed_checks_list if str(name)
         )
+        ops_closeout_freshness_reason_codes = ",".join(
+            str(code) for code in ops_closeout_freshness_reason_codes_list if str(code)
+        )
+        run_age_raw = ops_closeout_freshness_metrics.get("run_age_hours")
+        release_age_raw = ops_closeout_freshness_metrics.get("release_age_hours")
+        rtd_age_raw = ops_closeout_freshness_metrics.get("rtd_age_hours")
+        ops_closeout_run_age_hours = "" if run_age_raw is None else str(run_age_raw)
+        ops_closeout_release_age_hours = "" if release_age_raw is None else str(release_age_raw)
+        ops_closeout_rtd_age_hours = "" if rtd_age_raw is None else str(rtd_age_raw)
         rollup_metrics = export_ops_gate.get("rollup_metrics", {}) or {}
         reconcile_metrics = export_ops_gate.get("reconcile_metrics", {}) or {}
         reason_codes = export_ops_gate.get("reason_codes", [])
@@ -573,6 +600,10 @@ runs:
         print(f"ops_closeout_failed={'true' if ops_closeout_failed else 'false'}")
         print(f"ops_closeout_reason_codes={ops_closeout_reason_codes}")
         print(f"ops_closeout_failed_checks={ops_closeout_failed_checks}")
+        print(f"ops_closeout_freshness_reason_codes={ops_closeout_freshness_reason_codes}")
+        print(f"ops_closeout_run_age_hours={ops_closeout_run_age_hours}")
+        print(f"ops_closeout_release_age_hours={ops_closeout_release_age_hours}")
+        print(f"ops_closeout_rtd_age_hours={ops_closeout_rtd_age_hours}")
         PY
 
     - name: "Generate report"

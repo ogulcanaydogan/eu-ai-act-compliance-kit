@@ -115,6 +115,9 @@ def test_ci_contains_ops_closeout_rollout_smoke_job():
     assert "ai-act ops closeout" in joined_run
     assert "--policy config/ops_closeout_policy.yaml" in joined_run
     assert '--mode "$GATE_MODE"' in joined_run
+    assert "--max-run-age-hours 999999" in joined_run
+    assert "--max-release-age-hours 999999" in joined_run
+    assert "--max-rtd-age-hours 999999" in joined_run
     assert "ops_closeout_manifest.json" in joined_run
     assert "ops_closeout_checks.json" in joined_run
     assert "ops_closeout_evidence.md" in joined_run
@@ -420,6 +423,10 @@ def test_action_exposes_security_gate_input_and_outputs():
     assert "ops_closeout_failed" in outputs
     assert "ops_closeout_reason_codes" in outputs
     assert "ops_closeout_failed_checks" in outputs
+    assert "ops_closeout_freshness_reason_codes" in outputs
+    assert "ops_closeout_run_age_hours" in outputs
+    assert "ops_closeout_release_age_hours" in outputs
+    assert "ops_closeout_rtd_age_hours" in outputs
 
 
 def test_ci_action_smoke_exercises_security_gate_enforcement():
