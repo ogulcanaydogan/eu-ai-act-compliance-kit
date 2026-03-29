@@ -692,7 +692,16 @@ class TestCLI:
             assert payload["status"] == "success"
             assert payload["failed"] is False
             assert payload["reason_codes"] == []
+            assert payload["effective_reason_codes"] == []
             assert payload["freshness_reason_codes"] == []
+            assert payload["waived_reason_codes"] == []
+            assert payload["expired_waiver_reason_codes"] == []
+            assert payload["waiver_summary"] == {
+                "configured_count": 0,
+                "matched_count": 0,
+                "waived_count": 0,
+                "expired_count": 0,
+            }
             assert payload["freshness_metrics"] == {
                 "run_age_hours": None,
                 "release_age_hours": None,
@@ -761,7 +770,10 @@ class TestCLI:
         assert "github_release_failed" in payload["reason_codes"]
         assert "pypi_version_failed" in payload["reason_codes"]
         assert "rtd_failed" in payload["reason_codes"]
+        assert "github_run_failed" in payload["effective_reason_codes"]
         assert payload["freshness_reason_codes"] == []
+        assert payload["waived_reason_codes"] == []
+        assert payload["expired_waiver_reason_codes"] == []
 
     def test_ops_closeout_invalid_repo_format_fails(self):
         """`ops closeout` should fail fast for invalid repo value."""
@@ -857,6 +869,7 @@ class TestCLI:
             assert payload["status"] == "success"
             assert payload["version"] == "0.1.29"
             assert payload["release_run_id"] == 234
+            assert payload["waiver_summary"]["configured_count"] == 0
 
     def test_ops_closeout_freshness_thresholds_enforce_fail(self, monkeypatch):
         """`ops closeout --mode enforce` should fail when configured freshness thresholds are violated."""
@@ -932,6 +945,220 @@ class TestCLI:
         assert "github_run_stale" in payload["freshness_reason_codes"]
         assert "github_release_stale" in payload["freshness_reason_codes"]
         assert "rtd_stale_or_unknown" in payload["freshness_reason_codes"]
+        assert "github_run_stale" in payload["effective_reason_codes"]
+        assert payload["waived_reason_codes"] == []
+        assert payload["expired_waiver_reason_codes"] == []
+
+    def test_ops_closeout_enforce_can_waive_stale_reasons_via_cli(self, monkeypatch):
+        """Active CLI waivers should suppress matching stale reason codes in enforce mode."""
+        runner = CliRunner()
+
+        def handler(request):
+            if str(request.url).endswith("/actions/runs/234"):
+                return httpx.Response(
+                    status_code=200,
+                    json={
+                        "status": "completed",
+                        "conclusion": "success",
+                        "updated_at": "2026-03-20T00:00:00Z",
+                    },
+                )
+            if str(request.url).endswith("/releases/tags/v0.1.29"):
+                return httpx.Response(
+                    status_code=200,
+                    json={
+                        "assets": [
+                            {"name": "pkg-0.1.29-py3-none-any.whl"},
+                            {"name": "pkg-0.1.29.tar.gz"},
+                        ],
+                        "published_at": "2026-03-20T00:00:00Z",
+                    },
+                )
+            if str(request.url).endswith("/pypi/eu-ai-act-compliance-kit/json"):
+                return httpx.Response(status_code=200, json={"info": {"version": "0.1.29"}})
+            if str(request.url).endswith("/rtd"):
+                return httpx.Response(
+                    status_code=200,
+                    text="ok",
+                    headers={"Last-Modified": "Fri, 20 Mar 2026 00:00:00 GMT"},
+                )
+            return httpx.Response(status_code=404)
+
+        transport = httpx.MockTransport(handler)
+        original_client = httpx.Client
+
+        def _fake_client(*args, **kwargs):
+            return original_client(transport=transport)
+
+        monkeypatch.setattr("eu_ai_act.ops_closeout.httpx.Client", _fake_client)
+
+        result = runner.invoke(
+            main,
+            [
+                "ops",
+                "closeout",
+                "--version",
+                "0.1.29",
+                "--release-run-id",
+                "234",
+                "--mode",
+                "enforce",
+                "--repo",
+                "acme/repo",
+                "--github-api-base-url",
+                "https://example.test/api",
+                "--pypi-base-url",
+                "https://example.test",
+                "--rtd-url",
+                "https://example.test/rtd",
+                "--max-run-age-hours",
+                "1",
+                "--max-release-age-hours",
+                "1",
+                "--max-rtd-age-hours",
+                "1",
+                "--waiver-reason-code",
+                "github_run_stale",
+                "--waiver-expires-at",
+                "2099-01-01T00:00:00Z",
+                "--waiver-reason-code",
+                "github_release_stale",
+                "--waiver-expires-at",
+                "2099-01-01T00:00:00Z",
+                "--waiver-reason-code",
+                "rtd_stale_or_unknown",
+                "--waiver-expires-at",
+                "2099-01-01T00:00:00Z",
+                "--json",
+            ],
+        )
+
+        assert result.exit_code == 0
+        payload = json.loads(result.output[result.output.find("{") :])
+        assert payload["failed"] is False
+        assert payload["effective_reason_codes"] == []
+        assert sorted(payload["waived_reason_codes"]) == [
+            "github_release_stale",
+            "github_run_stale",
+            "rtd_stale_or_unknown",
+        ]
+        assert payload["expired_waiver_reason_codes"] == []
+
+    def test_ops_closeout_enforce_fails_with_expired_waiver(self, monkeypatch):
+        """Expired waiver should not suppress stale failure in enforce mode."""
+        runner = CliRunner()
+
+        def handler(request):
+            if str(request.url).endswith("/actions/runs/234"):
+                return httpx.Response(
+                    status_code=200,
+                    json={
+                        "status": "completed",
+                        "conclusion": "success",
+                        "updated_at": "2026-03-20T00:00:00Z",
+                    },
+                )
+            if str(request.url).endswith("/releases/tags/v0.1.29"):
+                return httpx.Response(
+                    status_code=200,
+                    json={
+                        "assets": [
+                            {"name": "pkg-0.1.29-py3-none-any.whl"},
+                            {"name": "pkg-0.1.29.tar.gz"},
+                        ],
+                        "published_at": "2026-03-20T00:00:00Z",
+                    },
+                )
+            if str(request.url).endswith("/pypi/eu-ai-act-compliance-kit/json"):
+                return httpx.Response(status_code=200, json={"info": {"version": "0.1.29"}})
+            if str(request.url).endswith("/rtd"):
+                return httpx.Response(
+                    status_code=200,
+                    text="ok",
+                    headers={"Last-Modified": "Fri, 20 Mar 2026 00:00:00 GMT"},
+                )
+            return httpx.Response(status_code=404)
+
+        transport = httpx.MockTransport(handler)
+        original_client = httpx.Client
+
+        def _fake_client(*args, **kwargs):
+            return original_client(transport=transport)
+
+        monkeypatch.setattr("eu_ai_act.ops_closeout.httpx.Client", _fake_client)
+
+        result = runner.invoke(
+            main,
+            [
+                "ops",
+                "closeout",
+                "--version",
+                "0.1.29",
+                "--release-run-id",
+                "234",
+                "--mode",
+                "enforce",
+                "--repo",
+                "acme/repo",
+                "--github-api-base-url",
+                "https://example.test/api",
+                "--pypi-base-url",
+                "https://example.test",
+                "--rtd-url",
+                "https://example.test/rtd",
+                "--max-run-age-hours",
+                "1",
+                "--max-release-age-hours",
+                "1",
+                "--max-rtd-age-hours",
+                "1",
+                "--waiver-reason-code",
+                "github_run_stale",
+                "--waiver-expires-at",
+                "2000-01-01T00:00:00Z",
+                "--json",
+            ],
+        )
+
+        assert result.exit_code != 0
+        payload = json.loads(result.output[result.output.find("{") :])
+        assert payload["failed"] is True
+        assert "github_run_stale" in payload["effective_reason_codes"]
+        assert payload["waived_reason_codes"] == []
+        assert payload["expired_waiver_reason_codes"] == ["github_run_stale"]
+
+    def test_ops_closeout_rejects_mismatched_waiver_flags(self):
+        """CLI should fail fast when waiver reason and expiry counts differ."""
+        runner = CliRunner()
+        result = runner.invoke(
+            main,
+            [
+                "ops",
+                "closeout",
+                "--waiver-reason-code",
+                "github_run_stale",
+            ],
+        )
+        assert result.exit_code != 0
+        assert "--waiver-reason-code and --waiver-expires-at counts must match" in result.output
+
+    def test_ops_closeout_rejects_invalid_waiver_expires_at(self):
+        """CLI should fail with deterministic policy error for invalid waiver expiry format."""
+        runner = CliRunner()
+        result = runner.invoke(
+            main,
+            [
+                "ops",
+                "closeout",
+                "--waiver-reason-code",
+                "github_run_stale",
+                "--waiver-expires-at",
+                "not-a-date",
+            ],
+        )
+        assert result.exit_code != 0
+        assert "Error resolving ops closeout policy" in result.output
+        assert "expires_at" in result.output
 
     def test_ops_closeout_observe_mode_reports_missing_release_inputs_without_failing(self):
         """Observe mode should report missing release inputs in payload but exit successfully."""

@@ -82,6 +82,7 @@ ai-act handoff examples/medical_diagnosis.yaml --output-dir handoff_pack --gover
 ai-act ops closeout --version 0.1.30 --release-run-id 23489289129 --json
 ai-act ops closeout --policy config/ops_closeout_policy.yaml --json
 ai-act ops closeout --policy config/ops_closeout_policy.yaml --max-run-age-hours 24 --max-release-age-hours 24 --max-rtd-age-hours 24 --json
+ai-act ops closeout --version 0.1.30 --release-run-id 23489289129 --max-run-age-hours 1 --max-release-age-hours 1 --max-rtd-age-hours 1 --waiver-reason-code github_run_stale --waiver-expires-at 2099-01-01T00:00:00Z --json
 ai-act validate examples/medical_diagnosis.yaml
 ai-act classify examples/medical_diagnosis.yaml --json
 ai-act check examples/medical_diagnosis.yaml --json
@@ -94,7 +95,7 @@ ai-act export check examples/medical_diagnosis.yaml --target generic --json
 ## CLI Surface
 
 - `ai-act handoff <system.yaml> [--output-dir PATH] [--json] [--governance] [--governance-mode observe|enforce] [--governance-policy PATH] [--export-target jira|servicenow]`
-- `ai-act ops closeout [--version <semver>] [--release-run-id <id>] [--mode observe|enforce] [--policy PATH] [--repo owner/name] [--pypi-project NAME] [--rtd-url URL] [--max-run-age-hours H] [--max-release-age-hours H] [--max-rtd-age-hours H] [--output-dir PATH] [--json]`
+- `ai-act ops closeout [--version <semver>] [--release-run-id <id>] [--mode observe|enforce] [--policy PATH] [--repo owner/name] [--pypi-project NAME] [--rtd-url URL] [--max-run-age-hours H] [--max-release-age-hours H] [--max-rtd-age-hours H] [--waiver-reason-code CODE --waiver-expires-at ISO8601_UTC] [--output-dir PATH] [--json]`
 - `ai-act classify <system.yaml> [--json]`
 - `ai-act check <system.yaml> [--json] [--security-gate observe|enforce] [--security-gate-profile strict|balanced|lenient]`
 - `ai-act security-map <system.yaml> [--json] [--output PATH]`
@@ -135,6 +136,7 @@ Full reference: [docs/cli-reference.md](docs/cli-reference.md)
 - Ops closeout governance supports policy-driven execution via `ai-act ops closeout --policy ...`:
   - pull requests: `observe`
   - main/tag flows: `enforce`
+  - optional time-bounded waivers suppress matching reason codes until expiry.
 
 ## Example Systems
 
@@ -188,6 +190,8 @@ Outputs:
 - `ops_closeout_run_age_hours`
 - `ops_closeout_release_age_hours`
 - `ops_closeout_rtd_age_hours`
+- `ops_closeout_waived_reason_codes`
+- `ops_closeout_expired_waiver_reason_codes`
 
 Fail policy:
 
@@ -299,6 +303,7 @@ pre-commit run --hook-stage pre-push --all-files
 - Phase 37: ops automation closeout pack completed (`ops closeout` command + run/release/PyPI/RTD evidence artifacts + CI rollout smoke)
 - Phase 38: ops closeout governance rollout completed (policy-driven CLI/action/CI rollout with PR observe and main/tag enforce)
 - Phase 39: ops closeout v3 completed (freshness/SLA thresholds and additive freshness signals across CLI/action/CI)
+- Phase 40: ops closeout v4 in progress (time-bounded reason-code waivers with additive waiver telemetry)
 
 ## Disclaimer
 
