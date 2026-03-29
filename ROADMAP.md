@@ -44,6 +44,7 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
 - Phase 38 completed (ops closeout governance rollout with policy-driven CLI/action/CI and PR-observe/main-tag enforce)
 - Phase 39 completed (ops closeout V3 freshness/SLA threshold governance)
 - Phase 40 completed (ops closeout V4 time-bounded waiver governance)
+- Phase 41 in progress (ops automation V5 with scheduled closeout and auto-resolved release inputs)
 
 ## Phase 1: Risk Classification Engine (Weeks 1-2) ✅ Completed
 
@@ -770,6 +771,21 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
   - Additive action outputs:
     - `ops_closeout_waived_reason_codes`
     - `ops_closeout_expired_waiver_reason_codes`
+
+## Phase 41: Ops Automation V5 (Scheduled Closeout + Auto Resolution) 🚧 In Progress
+
+- Scope:
+  - Add automation-first closeout execution with scheduled workflow and deterministic artifacts.
+  - Auto-resolve missing closeout release inputs from latest semver release and successful `release.yml` run.
+- Planned in this phase:
+  - Additive closeout flag:
+    - `--resolve-latest-release`
+  - Additive policy field:
+    - `release.resolve_latest`
+  - Additive payload field:
+    - `resolution` (`resolved_version`, `resolved_run_id`, `resolution_source`, `reason_codes`)
+  - New scheduled workflow:
+    - `.github/workflows/ops-closeout-daily.yml` (daily 09:00 UTC + workflow_dispatch)
 
 ## Timeline Summary (Historical Plan)
 - **Week 1-2**: Risk Classification Engine (Phases 1.1-1.5)

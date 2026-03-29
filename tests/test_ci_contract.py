@@ -9,6 +9,7 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "ci.yml"
 ACTION_PATH = REPO_ROOT / "action.yml"
+OPS_CLOSEOUT_DAILY_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "ops-closeout-daily.yml"
 
 
 def _load_ci_jobs() -> dict:
@@ -18,6 +19,10 @@ def _load_ci_jobs() -> dict:
 
 def _load_action_payload() -> dict:
     return yaml.safe_load(ACTION_PATH.read_text(encoding="utf-8"))
+
+
+def _load_ops_closeout_daily_payload() -> dict:
+    return yaml.safe_load(OPS_CLOSEOUT_DAILY_WORKFLOW_PATH.read_text(encoding="utf-8"))
 
 
 def test_ci_contains_required_quickstart_smoke_job():
@@ -461,3 +466,43 @@ def test_ci_action_smoke_exercises_security_gate_enforcement():
     assert "handoff_governance_enabled" in uses_payload
     assert "handoff_governance_mode" in uses_payload
     assert "handoff_governance_policy_path" in uses_payload
+
+
+def test_ops_closeout_daily_workflow_contract():
+    """Daily ops closeout workflow must schedule at 09:00 UTC and run closeout automation."""
+    payload = _load_ops_closeout_daily_payload()
+
+    on_payload = payload.get("on", payload.get(True, {}))
+    assert isinstance(on_payload, dict)
+    schedule_payload = on_payload.get("schedule", [])
+    assert isinstance(schedule_payload, list)
+    assert any(
+        item.get("cron") == "0 9 * * *" for item in schedule_payload if isinstance(item, dict)
+    )
+
+    workflow_dispatch = on_payload.get("workflow_dispatch", {})
+    assert isinstance(workflow_dispatch, dict)
+    dispatch_inputs = workflow_dispatch.get("inputs", {})
+    assert "mode" in dispatch_inputs
+    assert dispatch_inputs["mode"].get("default") == "observe"
+    assert "release_version" in dispatch_inputs
+    assert "release_run_id" in dispatch_inputs
+
+    jobs = payload.get("jobs", {})
+    assert "ops-closeout-daily" in jobs
+    daily_job = jobs["ops-closeout-daily"]
+    assert daily_job.get("name") == "Ops Closeout Daily"
+
+    steps = daily_job.get("steps", [])
+    run_blocks = [step.get("run", "") for step in steps if isinstance(step, dict)]
+    joined_run = "\n".join(run_blocks)
+    assert "ai-act ops closeout" in joined_run
+    assert "--policy config/ops_closeout_policy.yaml" in joined_run
+    assert "--resolve-latest-release" in joined_run
+    assert '--mode "$MODE"' in joined_run
+    assert "ops_closeout_manifest.json" in joined_run
+
+    uses_payload = "\n".join(
+        str(step) for step in steps if isinstance(step, dict) and "uses" in step
+    )
+    assert "actions/upload-artifact@v4" in uses_payload

@@ -9,7 +9,7 @@ import json
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import click
 import yaml
@@ -77,6 +77,7 @@ from eu_ai_act.history import (
 from eu_ai_act.ops_closeout import (
     OpsCloseoutCheck,
     OpsCloseoutEvaluator,
+    resolve_latest_release_inputs,
     resolve_ops_closeout_policy,
 )
 from eu_ai_act.reporter import ReportGenerator
@@ -1236,6 +1237,14 @@ def ops() -> None:
     help="Optional YAML policy file (precedence: CLI flags > policy file > defaults).",
 )
 @click.option(
+    "--resolve-latest-release",
+    is_flag=True,
+    help=(
+        "Resolve missing release version/run id from latest GitHub semver release and latest "
+        "successful release workflow run."
+    ),
+)
+@click.option(
     "--waiver-reason-code",
     "waiver_reason_codes",
     multiple=True,
@@ -1285,6 +1294,7 @@ def ops_closeout(
     max_release_age_hours: float | None,
     max_rtd_age_hours: float | None,
     policy: str | None,
+    resolve_latest_release: bool,
     waiver_reason_codes: tuple[str, ...],
     waiver_expires_at_values: tuple[str, ...],
     output_dir: str | None,
@@ -1356,6 +1366,11 @@ def ops_closeout(
             if ctx.get_parameter_source("max_rtd_age_hours") == ParameterSource.COMMANDLINE
             else None
         )
+        resolve_latest_release_override = (
+            resolve_latest_release
+            if ctx.get_parameter_source("resolve_latest_release") == ParameterSource.COMMANDLINE
+            else None
+        )
         waiver_reason_codes_from_cli = (
             ctx.get_parameter_source("waiver_reason_codes") == ParameterSource.COMMANDLINE
         )
@@ -1387,6 +1402,7 @@ def ops_closeout(
             max_run_age_hours=max_run_age_hours_override,
             max_release_age_hours=max_release_age_hours_override,
             max_rtd_age_hours=max_rtd_age_hours_override,
+            resolve_latest_release=resolve_latest_release_override,
             waivers=waiver_overrides,
         )
     except Exception as e:
@@ -1397,10 +1413,44 @@ def ops_closeout(
     output_root.mkdir(parents=True, exist_ok=True)
 
     generated_at = datetime.now(UTC).isoformat()
+    effective_release_version = resolved_policy.release_version
+    effective_release_run_id = resolved_policy.release_run_id
+    resolution_reason_codes: list[str] = []
+    resolution_source = "explicit_inputs"
+    resolution_attempted = False
+    if resolved_policy.resolve_latest_release and (
+        effective_release_version is None or effective_release_run_id is None
+    ):
+        resolution_attempted = True
+        try:
+            release_resolution = resolve_latest_release_inputs(
+                repo=resolved_policy.repo,
+                preferred_version=effective_release_version,
+                github_api_base_url=github_api_base_url.strip(),
+                timeout_seconds=timeout_seconds,
+            )
+            resolution_source = release_resolution.resolution_source
+            resolution_reason_codes = list(release_resolution.reason_codes)
+            if effective_release_version is None:
+                effective_release_version = release_resolution.resolved_version
+            if effective_release_run_id is None:
+                effective_release_run_id = release_resolution.resolved_run_id
+        except Exception:
+            resolution_source = "github_release_workflow_runs_api"
+            resolution_reason_codes = ["release_resolution_failed"]
+
+    resolution_payload = {
+        "attempted": resolution_attempted,
+        "resolved_version": effective_release_version,
+        "resolved_run_id": effective_release_run_id,
+        "resolution_source": resolution_source,
+        "reason_codes": list(resolution_reason_codes),
+    }
+
     missing_reason_codes: list[str] = []
-    if resolved_policy.release_version is None:
+    if effective_release_version is None:
         missing_reason_codes.append("missing_release_version")
-    if resolved_policy.release_run_id is None:
+    if effective_release_run_id is None:
         missing_reason_codes.append("missing_release_run_id")
 
     checks: list[OpsCloseoutCheck]
@@ -1430,7 +1480,7 @@ def ops_closeout(
             )
         ]
         failed = True
-        reason_codes = list(missing_reason_codes)
+        reason_codes = list(dict.fromkeys([*resolution_reason_codes, *missing_reason_codes]))
         failed_checks = ["required_inputs"]
         passed_checks = []
         freshness_metrics = {
@@ -1457,8 +1507,8 @@ def ops_closeout(
         try:
             closeout_result = OpsCloseoutEvaluator().evaluate(
                 mode=resolved_policy.mode,
-                version=resolved_policy.release_version or "",
-                release_run_id=cast(int, resolved_policy.release_run_id),
+                version=effective_release_version or "",
+                release_run_id=cast(int, effective_release_run_id),
                 repo=resolved_policy.repo,
                 pypi_project=resolved_policy.pypi_project,
                 rtd_url=resolved_policy.rtd_url,
@@ -1489,11 +1539,12 @@ def ops_closeout(
     checks_payload = {
         "generated_at": generated_at,
         "mode": resolved_policy.mode,
-        "version": resolved_policy.release_version,
-        "release_run_id": resolved_policy.release_run_id,
+        "version": effective_release_version,
+        "release_run_id": effective_release_run_id,
         "repo": resolved_policy.repo,
         "pypi_project": resolved_policy.pypi_project,
         "rtd_url": resolved_policy.rtd_url,
+        "resolution": resolution_payload,
         "freshness_metrics": freshness_metrics,
         "freshness_thresholds": freshness_thresholds,
         "freshness_reason_codes": freshness_reason_codes,
@@ -1513,11 +1564,12 @@ def ops_closeout(
         "mode": resolved_policy.mode,
         "status": "failed" if failed else "success",
         "failed": failed,
-        "version": resolved_policy.release_version,
-        "release_run_id": resolved_policy.release_run_id,
+        "version": effective_release_version,
+        "release_run_id": effective_release_run_id,
         "repo": resolved_policy.repo,
         "pypi_project": resolved_policy.pypi_project,
         "rtd_url": resolved_policy.rtd_url,
+        "resolution": resolution_payload,
         "reason_codes": reason_codes,
         "failed_checks": failed_checks,
         "passed_checks": passed_checks,
@@ -1541,12 +1593,13 @@ def ops_closeout(
         evidence_path.write_text(
             _render_ops_closeout_evidence_markdown(
                 generated_at=generated_at,
-                version=resolved_policy.release_version or "missing",
+                version=effective_release_version or "missing",
                 repo=resolved_policy.repo,
                 mode=resolved_policy.mode,
                 checks=checks,
                 failed=failed,
                 reason_codes=reason_codes,
+                resolution=resolution_payload,
                 freshness_metrics=freshness_metrics,
                 freshness_thresholds=freshness_thresholds,
                 freshness_reason_codes=freshness_reason_codes,
@@ -1570,8 +1623,9 @@ def ops_closeout(
                 (
                     f"[bold]Mode:[/bold] {resolved_policy.mode}\n"
                     f"[bold]Status:[/bold] {'FAILED' if failed else 'SUCCESS'}\n"
-                    f"[bold]Version:[/bold] {resolved_policy.release_version or 'missing'}\n"
-                    f"[bold]Release Run ID:[/bold] {resolved_policy.release_run_id or 'missing'}\n"
+                    f"[bold]Version:[/bold] {effective_release_version or 'missing'}\n"
+                    f"[bold]Release Run ID:[/bold] {effective_release_run_id or 'missing'}\n"
+                    f"[bold]Resolution Source:[/bold] {resolution_source}\n"
                     f"[bold]Output Dir:[/bold] {output_root}\n"
                     f"[bold]Failed Checks:[/bold] {len(failed_checks)}"
                 ),
@@ -3409,6 +3463,7 @@ def _render_ops_closeout_evidence_markdown(
     checks: list[OpsCloseoutCheck],
     failed: bool,
     reason_codes: list[str],
+    resolution: dict[str, Any],
     freshness_metrics: dict[str, float | None],
     freshness_thresholds: dict[str, float | None],
     freshness_reason_codes: list[str],
@@ -3428,6 +3483,10 @@ def _render_ops_closeout_evidence_markdown(
         f"- Status: {'failed' if failed else 'success'}",
         f"- Reason codes: {', '.join(reason_codes) if reason_codes else 'none'}",
         f"- Effective reason codes: {', '.join(effective_reason_codes) if effective_reason_codes else 'none'}",
+        f"- Resolution source: {resolution.get('resolution_source', 'none')}",
+        f"- Resolution attempted: {str(bool(resolution.get('attempted', False))).lower()}",
+        "- Resolution reason codes: "
+        f"{', '.join(cast(list[str], resolution.get('reason_codes', []))) if resolution.get('reason_codes') else 'none'}",
         f"- Freshness reason codes: {', '.join(freshness_reason_codes) if freshness_reason_codes else 'none'}",
         f"- Waived reason codes: {', '.join(waived_reason_codes) if waived_reason_codes else 'none'}",
         "- Expired waiver reason codes: "

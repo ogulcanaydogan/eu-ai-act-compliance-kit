@@ -79,10 +79,11 @@ pip install -e ".[reporting]"
 ai-act handoff examples/medical_diagnosis.yaml --output-dir handoff_pack --json
 ai-act handoff examples/medical_diagnosis.yaml --output-dir handoff_pack --governance --governance-mode observe --json
 ai-act handoff examples/medical_diagnosis.yaml --output-dir handoff_pack --governance --governance-policy config/governance_handoff_policy.yaml --json
-ai-act ops closeout --version 0.1.31 --release-run-id 23489289129 --json
+ai-act ops closeout --version 0.1.31 --release-run-id 23718807136 --json
 ai-act ops closeout --policy config/ops_closeout_policy.yaml --json
+ai-act ops closeout --policy config/ops_closeout_policy.yaml --resolve-latest-release --json
 ai-act ops closeout --policy config/ops_closeout_policy.yaml --max-run-age-hours 24 --max-release-age-hours 24 --max-rtd-age-hours 24 --json
-ai-act ops closeout --version 0.1.31 --release-run-id 23489289129 --max-run-age-hours 1 --max-release-age-hours 1 --max-rtd-age-hours 1 --waiver-reason-code github_run_stale --waiver-expires-at 2099-01-01T00:00:00Z --json
+ai-act ops closeout --version 0.1.31 --release-run-id 23718807136 --max-run-age-hours 1 --max-release-age-hours 1 --max-rtd-age-hours 1 --waiver-reason-code github_run_stale --waiver-expires-at 2099-01-01T00:00:00Z --json
 ai-act validate examples/medical_diagnosis.yaml
 ai-act classify examples/medical_diagnosis.yaml --json
 ai-act check examples/medical_diagnosis.yaml --json
@@ -95,7 +96,7 @@ ai-act export check examples/medical_diagnosis.yaml --target generic --json
 ## CLI Surface
 
 - `ai-act handoff <system.yaml> [--output-dir PATH] [--json] [--governance] [--governance-mode observe|enforce] [--governance-policy PATH] [--export-target jira|servicenow]`
-- `ai-act ops closeout [--version <semver>] [--release-run-id <id>] [--mode observe|enforce] [--policy PATH] [--repo owner/name] [--pypi-project NAME] [--rtd-url URL] [--max-run-age-hours H] [--max-release-age-hours H] [--max-rtd-age-hours H] [--waiver-reason-code CODE --waiver-expires-at ISO8601_UTC] [--output-dir PATH] [--json]`
+- `ai-act ops closeout [--version <semver>] [--release-run-id <id>] [--mode observe|enforce] [--policy PATH] [--resolve-latest-release] [--repo owner/name] [--pypi-project NAME] [--rtd-url URL] [--max-run-age-hours H] [--max-release-age-hours H] [--max-rtd-age-hours H] [--waiver-reason-code CODE --waiver-expires-at ISO8601_UTC] [--output-dir PATH] [--json]`
 - `ai-act classify <system.yaml> [--json]`
 - `ai-act check <system.yaml> [--json] [--security-gate observe|enforce] [--security-gate-profile strict|balanced|lenient]`
 - `ai-act security-map <system.yaml> [--json] [--output PATH]`
@@ -304,6 +305,7 @@ pre-commit run --hook-stage pre-push --all-files
 - Phase 38: ops closeout governance rollout completed (policy-driven CLI/action/CI rollout with PR observe and main/tag enforce)
 - Phase 39: ops closeout v3 completed (freshness/SLA thresholds and additive freshness signals across CLI/action/CI)
 - Phase 40: ops closeout v4 completed (time-bounded reason-code waivers with additive waiver telemetry)
+- Phase 41: ops automation v5 in progress (scheduled closeout + auto-resolved release inputs)
 
 ## Disclaimer
 

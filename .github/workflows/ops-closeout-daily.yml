@@ -1,0 +1,134 @@
+name: Ops Closeout Daily
+
+on:
+  schedule:
+    - cron: "0 9 * * *"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Ops closeout mode override"
+        required: false
+        default: observe
+        type: choice
+        options:
+          - observe
+          - enforce
+      release_version:
+        description: "Optional release version override (e.g. 0.1.31)"
+        required: false
+        type: string
+      release_run_id:
+        description: "Optional release run id override"
+        required: false
+        type: string
+
+jobs:
+  ops-closeout-daily:
+    runs-on: ubuntu-latest
+    name: Ops Closeout Daily
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run ops closeout automation
+        id: closeout
+        env:
+          INPUT_MODE: ${{ github.event.inputs.mode }}
+          INPUT_RELEASE_VERSION: ${{ github.event.inputs.release_version }}
+          INPUT_RELEASE_RUN_ID: ${{ github.event.inputs.release_run_id }}
+        run: |
+          mkdir -p /tmp/ops-closeout-daily/out
+
+          MODE="enforce"
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "$INPUT_MODE" ]]; then
+            MODE="$INPUT_MODE"
+          fi
+
+          EXTRA_ARGS=()
+          if [[ -n "$INPUT_RELEASE_VERSION" ]]; then
+            EXTRA_ARGS+=(--version "$INPUT_RELEASE_VERSION")
+          fi
+          if [[ -n "$INPUT_RELEASE_RUN_ID" ]]; then
+            EXTRA_ARGS+=(--release-run-id "$INPUT_RELEASE_RUN_ID")
+          fi
+
+          set +e
+          ai-act ops closeout \
+            --policy config/ops_closeout_policy.yaml \
+            --resolve-latest-release \
+            --mode "$MODE" \
+            "${EXTRA_ARGS[@]}" \
+            --output-dir /tmp/ops-closeout-daily/out \
+            --json > /tmp/ops-closeout-daily/stdout_manifest.json
+          CLOSEOUT_EXIT_CODE=$?
+          set -e
+
+          echo "mode=$MODE" >> "$GITHUB_OUTPUT"
+          echo "closeout_exit_code=$CLOSEOUT_EXIT_CODE" >> "$GITHUB_OUTPUT"
+
+      - name: Build workflow summary
+        if: always()
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          summary_path = Path("/tmp/ops-closeout-daily/out/ops_closeout_manifest.json")
+          lines = ["## Ops Closeout Daily Summary"]
+
+          if summary_path.exists():
+              payload = json.loads(summary_path.read_text())
+              lines.append(f"- mode: {payload.get('mode')}")
+              lines.append(f"- status: {payload.get('status')}")
+              lines.append(f"- version: {payload.get('version')}")
+              lines.append(f"- release_run_id: {payload.get('release_run_id')}")
+              lines.append(
+                  "- failed_checks: "
+                  + (", ".join(payload.get("failed_checks", [])) or "none")
+              )
+              lines.append(
+                  "- reason_codes: "
+                  + (", ".join(payload.get("reason_codes", [])) or "none")
+              )
+              lines.append(
+                  "- effective_reason_codes: "
+                  + (", ".join(payload.get("effective_reason_codes", [])) or "none")
+              )
+          else:
+              lines.append("- status: manifest_missing")
+
+          with Path(Path.cwd() / "ops_closeout_daily_summary.md").open("w", encoding="utf-8") as fh:
+              fh.write("\n".join(lines) + "\n")
+          PY
+          cat ops_closeout_daily_summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload closeout artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ops-closeout-daily-evidence
+          path: |
+            /tmp/ops-closeout-daily/out/ops_closeout_checks.json
+            /tmp/ops-closeout-daily/out/ops_closeout_manifest.json
+            /tmp/ops-closeout-daily/out/ops_closeout_evidence.md
+            /tmp/ops-closeout-daily/stdout_manifest.json
+            ops_closeout_daily_summary.md
+          if-no-files-found: warn
+
+      - name: Enforce closeout result
+        if: always()
+        run: |
+          if [[ "${{ steps.closeout.outputs.closeout_exit_code }}" != "0" ]]; then
+            echo "Ops closeout failed in mode=${{ steps.closeout.outputs.mode }}"
+            exit "${{ steps.closeout.outputs.closeout_exit_code }}"
+          fi

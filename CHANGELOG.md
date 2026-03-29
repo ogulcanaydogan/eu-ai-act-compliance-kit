@@ -8,10 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- _None._
+- Phase 41 kickoff: Ops Automation V5 (scheduled closeout + auto-resolved release inputs).
+- Additive `ops closeout` auto-resolution controls:
+  - CLI flag `--resolve-latest-release`
+  - policy field `release.resolve_latest`
+  - additive payload field `resolution` (`resolved_version`, `resolved_run_id`, `resolution_source`, `reason_codes`)
+- New scheduled workflow: `.github/workflows/ops-closeout-daily.yml` (daily 09:00 UTC + workflow_dispatch).
 
 ### Changed
-- _None._
+- Status surfaces synchronized for Phase 41 in progress (`README`, `docs/index`, `ROADMAP`).
 
 ### Fixed
 - _None._
