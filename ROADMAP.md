@@ -3,7 +3,7 @@
 ## Vision
 Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifies AI systems by risk tier, generates compliance checklists, and produces audit-ready reports. The first open-source tool that makes EU AI Act compliance accessible to every AI team.
 
-## Status Snapshot (March 28, 2026)
+## Status Snapshot (March 29, 2026)
 - Phase 1 completed
 - Phase 2 completed
 - Phase 3 JSON/Markdown/HTML/PDF completed
@@ -41,6 +41,7 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
 - Phase 35 completed (governance handoff V2 with policy-driven action/CI rollout)
 - Phase 36 completed (GA stabilization hardening with deterministic handoff diagnostics + Python 3.11/3.12/3.13 compatibility smoke)
 - Phase 37 completed (ops automation closeout pack with deterministic run/release/PyPI/RTD evidence artifacts)
+- Phase 38 completed (ops closeout governance rollout with policy-driven CLI/action/CI and PR-observe/main-tag enforce)
 
 ## Phase 1: Risk Classification Engine (Weeks 1-2) ✅ Completed
 
@@ -707,7 +708,26 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
     - `ops_closeout_manifest.json`
     - `ops_closeout_evidence.md`
   - Added required CI rollout smoke gate:
-    - `ops-closeout-smoke`
+    - `ops-closeout-rollout-smoke`
+  - Rollout model:
+    - PR observe
+    - main/tag enforce
+
+## Phase 38: Ops Closeout Governance V2 ✅ Completed
+
+- Scope:
+  - Standardize ops closeout policy source and rollout in action/CI.
+  - Preserve existing closeout contracts while adding policy-driven orchestration.
+- Delivered in this phase:
+  - Added canonical policy file:
+    - `config/ops_closeout_policy.yaml`
+  - Added additive closeout CLI policy override:
+    - `--policy PATH`
+  - Added composite action ops closeout controls and outputs:
+    - inputs: `ops_closeout_enabled`, `ops_closeout_mode`, `ops_closeout_policy_path`, `ops_closeout_version`, `ops_closeout_release_run_id`, `ops_closeout_repo`, `ops_closeout_pypi_project`, `ops_closeout_rtd_url`
+    - outputs: `ops_closeout_failed`, `ops_closeout_reason_codes`, `ops_closeout_failed_checks`
+  - Added required CI rollout smoke gate:
+    - `ops-closeout-rollout-smoke`
   - Rollout model:
     - PR observe
     - main/tag enforce

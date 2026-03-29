@@ -1,0 +1,7 @@
+mode: observe
+repo: ogulcanaydogan/eu-ai-act-compliance-kit
+pypi_project: eu-ai-act-compliance-kit
+rtd_url: https://eu-ai-act-compliance-kit.readthedocs.io/en/latest/
+release:
+  version: 0.1.29
+  run_id: 23489289129

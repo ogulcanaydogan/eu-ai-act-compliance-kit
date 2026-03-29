@@ -30,7 +30,7 @@ class TestCLI:
 
         assert result.exit_code == 0
         assert "version" in result.output.lower()
-        assert "0.1.28" in result.output
+        assert "0.1.29" in result.output
         assert "runtimeerror" not in result.output.lower()
 
     def test_articles_uses_normalized_mapping(self):
@@ -637,19 +637,19 @@ class TestCLI:
                         "html_url": "https://github.com/acme/repo/actions/runs/234",
                     },
                 )
-            if str(request.url).endswith("/releases/tags/v0.1.28"):
+            if str(request.url).endswith("/releases/tags/v0.1.29"):
                 return httpx.Response(
                     status_code=200,
                     json={
-                        "html_url": "https://github.com/acme/repo/releases/tag/v0.1.28",
+                        "html_url": "https://github.com/acme/repo/releases/tag/v0.1.29",
                         "assets": [
-                            {"name": "pkg-0.1.28-py3-none-any.whl"},
-                            {"name": "pkg-0.1.28.tar.gz"},
+                            {"name": "pkg-0.1.29-py3-none-any.whl"},
+                            {"name": "pkg-0.1.29.tar.gz"},
                         ],
                     },
                 )
             if str(request.url).endswith("/pypi/eu-ai-act-compliance-kit/json"):
-                return httpx.Response(status_code=200, json={"info": {"version": "0.1.28"}})
+                return httpx.Response(status_code=200, json={"info": {"version": "0.1.29"}})
             if str(request.url).endswith("/rtd"):
                 return httpx.Response(status_code=200, text="ok")
             return httpx.Response(status_code=404)
@@ -670,7 +670,7 @@ class TestCLI:
                     "ops",
                     "closeout",
                     "--version",
-                    "0.1.28",
+                    "0.1.29",
                     "--release-run-id",
                     "234",
                     "--repo",
@@ -705,7 +705,7 @@ class TestCLI:
                 return httpx.Response(
                     status_code=200, json={"status": "completed", "conclusion": "failure"}
                 )
-            if str(request.url).endswith("/releases/tags/v0.1.28"):
+            if str(request.url).endswith("/releases/tags/v0.1.29"):
                 return httpx.Response(status_code=404, text="missing")
             if str(request.url).endswith("/pypi/eu-ai-act-compliance-kit/json"):
                 return httpx.Response(status_code=404, text="missing")
@@ -729,7 +729,7 @@ class TestCLI:
                     "ops",
                     "closeout",
                     "--version",
-                    "0.1.28",
+                    "0.1.29",
                     "--release-run-id",
                     "11",
                     "--mode",
@@ -765,7 +765,7 @@ class TestCLI:
                 "ops",
                 "closeout",
                 "--version",
-                "0.1.28",
+                "0.1.29",
                 "--release-run-id",
                 "10",
                 "--repo",
@@ -774,7 +774,106 @@ class TestCLI:
         )
 
         assert result.exit_code != 0
-        assert "--repo must be in '<owner>/<name>' format" in result.output
+        assert "Policy repo must be in '<owner>/<name>'" in result.output
+
+    def test_ops_closeout_policy_file_is_used_when_cli_release_inputs_missing(self, monkeypatch):
+        """`ops closeout --policy` should resolve release inputs from policy file."""
+        runner = CliRunner()
+
+        def handler(request):
+            if str(request.url).endswith("/actions/runs/234"):
+                return httpx.Response(
+                    status_code=200,
+                    json={
+                        "status": "completed",
+                        "conclusion": "success",
+                        "html_url": "https://github.com/acme/repo/actions/runs/234",
+                    },
+                )
+            if str(request.url).endswith("/releases/tags/v0.1.29"):
+                return httpx.Response(
+                    status_code=200,
+                    json={
+                        "html_url": "https://github.com/acme/repo/releases/tag/v0.1.29",
+                        "assets": [
+                            {"name": "pkg-0.1.29-py3-none-any.whl"},
+                            {"name": "pkg-0.1.29.tar.gz"},
+                        ],
+                    },
+                )
+            if str(request.url).endswith("/pypi/eu-ai-act-compliance-kit/json"):
+                return httpx.Response(status_code=200, json={"info": {"version": "0.1.29"}})
+            if str(request.url).endswith("/rtd"):
+                return httpx.Response(status_code=200, text="ok")
+            return httpx.Response(status_code=404)
+
+        transport = httpx.MockTransport(handler)
+        original_client = httpx.Client
+
+        def _fake_client(*args, **kwargs):
+            return original_client(transport=transport)
+
+        monkeypatch.setattr("eu_ai_act.ops_closeout.httpx.Client", _fake_client)
+
+        with runner.isolated_filesystem():
+            Path("ops_policy.yaml").write_text(
+                "\n".join(
+                    [
+                        "mode: observe",
+                        "repo: acme/repo",
+                        "pypi_project: eu-ai-act-compliance-kit",
+                        "rtd_url: https://example.test/rtd",
+                        "release:",
+                        "  version: 0.1.29",
+                        "  run_id: 234",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            result = runner.invoke(
+                main,
+                [
+                    "ops",
+                    "closeout",
+                    "--policy",
+                    "ops_policy.yaml",
+                    "--github-api-base-url",
+                    "https://example.test/api",
+                    "--pypi-base-url",
+                    "https://example.test",
+                    "--json",
+                ],
+            )
+
+            assert result.exit_code == 0
+            payload = json.loads(result.output[result.output.find("{") :])
+            assert payload["status"] == "success"
+            assert payload["version"] == "0.1.29"
+            assert payload["release_run_id"] == 234
+
+    def test_ops_closeout_observe_mode_reports_missing_release_inputs_without_failing(self):
+        """Observe mode should report missing release inputs in payload but exit successfully."""
+        runner = CliRunner()
+        with runner.isolated_filesystem():
+            result = runner.invoke(main, ["ops", "closeout", "--json"])
+            assert result.exit_code == 0
+            payload = json.loads(result.output[result.output.find("{") :])
+            assert payload["failed"] is True
+            assert payload["status"] == "failed"
+            assert "missing_release_version" in payload["reason_codes"]
+            assert "missing_release_run_id" in payload["reason_codes"]
+
+    def test_ops_closeout_enforce_mode_fails_when_release_inputs_missing(self):
+        """Enforce mode should exit non-zero with clear error when required release inputs are missing."""
+        runner = CliRunner()
+        with runner.isolated_filesystem():
+            result = runner.invoke(main, ["ops", "closeout", "--mode", "enforce", "--json"])
+            assert result.exit_code != 0
+            decoder = json.JSONDecoder()
+            payload, _ = decoder.raw_decode(result.output[result.output.find("{") :])
+            assert payload["failed"] is True
+            assert "missing_release_version" in payload["reason_codes"]
+            assert "missing required release input(s) for enforce mode" in result.output
 
     def test_history_commands_list_show_diff_json(self):
         """`history` commands should return structured list/show/diff payloads."""

@@ -101,18 +101,19 @@ def test_ci_contains_handoff_governance_rollout_smoke_job():
     assert "github.event_name" in joined_run
 
 
-def test_ci_contains_ops_closeout_smoke_job():
-    """CI must include ops-closeout-smoke job with PR observe / main-tag enforce rollout."""
+def test_ci_contains_ops_closeout_rollout_smoke_job():
+    """CI must include ops-closeout-rollout-smoke job with PR observe/main-tag enforce."""
     jobs = _load_ci_jobs()
-    assert "ops-closeout-smoke" in jobs
+    assert "ops-closeout-rollout-smoke" in jobs
 
-    closeout_job = jobs["ops-closeout-smoke"]
-    assert closeout_job.get("name") == "Ops Closeout Smoke"
+    closeout_job = jobs["ops-closeout-rollout-smoke"]
+    assert closeout_job.get("name") == "Ops Closeout Rollout Smoke"
 
     steps = closeout_job.get("steps", [])
     run_blocks = [step.get("run", "") for step in steps if isinstance(step, dict)]
     joined_run = "\n".join(run_blocks)
     assert "ai-act ops closeout" in joined_run
+    assert "--policy config/ops_closeout_policy.yaml" in joined_run
     assert '--mode "$GATE_MODE"' in joined_run
     assert "ops_closeout_manifest.json" in joined_run
     assert "ops_closeout_checks.json" in joined_run
@@ -215,20 +216,20 @@ def test_all_checks_treats_handoff_governance_rollout_smoke_as_required():
     assert "needs.handoff-governance-rollout-smoke.result" in run_script
 
 
-def test_all_checks_treats_ops_closeout_smoke_as_required():
-    """All-checks gate must evaluate ops-closeout-smoke result as required."""
+def test_all_checks_treats_ops_closeout_rollout_smoke_as_required():
+    """All-checks gate must evaluate ops-closeout-rollout-smoke as required."""
     jobs = _load_ci_jobs()
     assert "all-checks" in jobs
 
     all_checks_job = jobs["all-checks"]
     needs = all_checks_job.get("needs", [])
-    assert "ops-closeout-smoke" in needs
+    assert "ops-closeout-rollout-smoke" in needs
 
     check_status_step = next(
         step for step in all_checks_job.get("steps", []) if step.get("name") == "Check status"
     )
     run_script = check_status_step.get("run", "")
-    assert "needs.ops-closeout-smoke.result" in run_script
+    assert "needs.ops-closeout-rollout-smoke.result" in run_script
 
 
 def test_ci_contains_export_ops_gate_smoke_job():
@@ -392,6 +393,17 @@ def test_action_exposes_security_gate_input_and_outputs():
         == "config/governance_handoff_policy.yaml"
     )
     assert "handoff_governance_export_target" in inputs
+    assert "ops_closeout_enabled" in inputs
+    assert inputs["ops_closeout_enabled"].get("default") == "false"
+    assert "ops_closeout_mode" in inputs
+    assert inputs["ops_closeout_mode"].get("default") == "observe"
+    assert "ops_closeout_policy_path" in inputs
+    assert inputs["ops_closeout_policy_path"].get("default") == "config/ops_closeout_policy.yaml"
+    assert "ops_closeout_version" in inputs
+    assert "ops_closeout_release_run_id" in inputs
+    assert "ops_closeout_repo" in inputs
+    assert "ops_closeout_pypi_project" in inputs
+    assert "ops_closeout_rtd_url" in inputs
     assert "collaboration_open_count" in outputs
     assert "collaboration_in_review_count" in outputs
     assert "collaboration_blocked_count" in outputs
@@ -405,6 +417,9 @@ def test_action_exposes_security_gate_input_and_outputs():
     assert "handoff_governance_failed" in outputs
     assert "handoff_governance_reason_codes" in outputs
     assert "handoff_governance_failed_gates" in outputs
+    assert "ops_closeout_failed" in outputs
+    assert "ops_closeout_reason_codes" in outputs
+    assert "ops_closeout_failed_checks" in outputs
 
 
 def test_ci_action_smoke_exercises_security_gate_enforcement():

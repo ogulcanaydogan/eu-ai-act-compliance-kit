@@ -74,7 +74,12 @@ from eu_ai_act.history import (
     list_events,
     resolve_history_path,
 )
-from eu_ai_act.ops_closeout import OpsCloseoutCheck, OpsCloseoutEvaluator, OpsCloseoutMode
+from eu_ai_act.ops_closeout import (
+    OpsCloseoutCheck,
+    OpsCloseoutEvaluator,
+    OpsCloseoutMode,
+    resolve_ops_closeout_policy,
+)
 from eu_ai_act.reporter import ReportGenerator
 from eu_ai_act.schema import (
     AISystemDescriptor,
@@ -1184,39 +1189,37 @@ def ops() -> None:
 @click.option(
     "--version",
     "release_version",
-    required=True,
-    help="Target release version (for example: 0.1.28).",
+    help="Target release version (for example: 0.1.29).",
 )
 @click.option(
     "--release-run-id",
     type=int,
-    required=True,
     help="GitHub Actions run id expected to be successful.",
 )
 @click.option(
     "--mode",
     type=click.Choice(["observe", "enforce"]),
-    default="observe",
-    show_default=True,
-    help="observe reports findings without failing; enforce exits non-zero on failure.",
+    help=(
+        "Closeout mode override. If omitted, policy/defaults are used "
+        "(default behavior is observe)."
+    ),
 )
 @click.option(
     "--repo",
-    default="ogulcanaydogan/eu-ai-act-compliance-kit",
-    show_default=True,
     help="GitHub repository owner/name used for run and release checks.",
 )
 @click.option(
     "--pypi-project",
-    default="eu-ai-act-compliance-kit",
-    show_default=True,
     help="PyPI project name for version validation.",
 )
 @click.option(
     "--rtd-url",
-    default="https://eu-ai-act-compliance-kit.readthedocs.io/en/latest/",
-    show_default=True,
     help="Read the Docs URL expected to return HTTP 200.",
+)
+@click.option(
+    "--policy",
+    type=click.Path(exists=True, dir_okay=False),
+    help="Optional YAML policy file (precedence: CLI flags > policy file > defaults).",
 )
 @click.option(
     "--output-dir",
@@ -1243,13 +1246,16 @@ def ops() -> None:
     help="HTTP timeout in seconds for each closeout check.",
 )
 @click.option("--json", "output_json", is_flag=True, help="Output manifest as JSON")
+@click.pass_context
 def ops_closeout(
-    release_version: str,
-    release_run_id: int,
-    mode: str,
-    repo: str,
-    pypi_project: str,
-    rtd_url: str,
+    ctx: click.Context,
+    release_version: str | None,
+    release_run_id: int | None,
+    mode: str | None,
+    repo: str | None,
+    pypi_project: str | None,
+    rtd_url: str | None,
+    policy: str | None,
     output_dir: str | None,
     github_api_base_url: str,
     pypi_base_url: str,
@@ -1257,47 +1263,116 @@ def ops_closeout(
     output_json: bool,
 ) -> None:
     """Generate deterministic ops closeout evidence for run/release/PyPI/RTD."""
-    if release_run_id < 1:
-        console.print("[red]Error: --release-run-id must be >= 1[/red]")
-        sys.exit(1)
     if timeout_seconds <= 0:
         console.print("[red]Error: --timeout-seconds must be > 0[/red]")
         sys.exit(1)
-    if "/" not in repo or repo.strip().count("/") != 1:
-        console.print("[red]Error: --repo must be in '<owner>/<name>' format[/red]")
+    if release_run_id is not None and release_run_id < 1:
+        console.print("[red]Error: --release-run-id must be >= 1[/red]")
         sys.exit(1)
-    if not release_version.strip():
-        console.print("[red]Error: --version must be a non-empty value[/red]")
+
+    try:
+        policy_payload = _load_ops_closeout_policy_file(policy)
+        release_version_override = (
+            release_version
+            if ctx.get_parameter_source("release_version") == ParameterSource.COMMANDLINE
+            else None
+        )
+        release_run_id_override = (
+            release_run_id
+            if ctx.get_parameter_source("release_run_id") == ParameterSource.COMMANDLINE
+            else None
+        )
+        mode_override = mode if ctx.get_parameter_source("mode") == ParameterSource.COMMANDLINE else None
+        repo_override = (
+            repo if ctx.get_parameter_source("repo") == ParameterSource.COMMANDLINE else None
+        )
+        pypi_project_override = (
+            pypi_project
+            if ctx.get_parameter_source("pypi_project") == ParameterSource.COMMANDLINE
+            else None
+        )
+        rtd_url_override = (
+            rtd_url
+            if ctx.get_parameter_source("rtd_url") == ParameterSource.COMMANDLINE
+            else None
+        )
+        resolved_policy = resolve_ops_closeout_policy(
+            policy_payload=policy_payload,
+            mode=mode_override,
+            release_version=release_version_override,
+            release_run_id=release_run_id_override,
+            repo=repo_override,
+            pypi_project=pypi_project_override,
+            rtd_url=rtd_url_override,
+        )
+    except Exception as e:
+        console.print(f"[red]Error resolving ops closeout policy: {e}[/red]")
         sys.exit(1)
 
     output_root = Path(output_dir).resolve() if output_dir else Path.cwd().resolve()
     output_root.mkdir(parents=True, exist_ok=True)
 
     generated_at = datetime.now(UTC).isoformat()
-    try:
-        closeout_result = OpsCloseoutEvaluator().evaluate(
-            mode=cast(OpsCloseoutMode, mode),
-            version=release_version.strip(),
-            release_run_id=release_run_id,
-            repo=repo.strip(),
-            pypi_project=pypi_project.strip(),
-            rtd_url=rtd_url.strip(),
-            github_api_base_url=github_api_base_url.strip(),
-            pypi_base_url=pypi_base_url.strip(),
-            timeout_seconds=timeout_seconds,
+    missing_reason_codes: list[str] = []
+    if resolved_policy.release_version is None:
+        missing_reason_codes.append("missing_release_version")
+    if resolved_policy.release_run_id is None:
+        missing_reason_codes.append("missing_release_run_id")
+
+    checks: list[OpsCloseoutCheck]
+    failed: bool
+    reason_codes: list[str]
+    failed_checks: list[str]
+    passed_checks: list[str]
+
+    if missing_reason_codes:
+        missing_details = ", ".join(
+            reason_code.removeprefix("missing_") for reason_code in missing_reason_codes
         )
-    except Exception as e:
-        console.print(f"[red]Error running ops closeout checks: {e}[/red]")
-        sys.exit(1)
+        checks = [
+            OpsCloseoutCheck(
+                name="required_inputs",
+                url="n/a",
+                ok=False,
+                http_status=None,
+                details=f"missing={missing_details}",
+            )
+        ]
+        failed = True
+        reason_codes = list(missing_reason_codes)
+        failed_checks = ["required_inputs"]
+        passed_checks = []
+    else:
+        try:
+            closeout_result = OpsCloseoutEvaluator().evaluate(
+                mode=resolved_policy.mode,
+                version=resolved_policy.release_version or "",
+                release_run_id=cast(int, resolved_policy.release_run_id),
+                repo=resolved_policy.repo,
+                pypi_project=resolved_policy.pypi_project,
+                rtd_url=resolved_policy.rtd_url,
+                github_api_base_url=github_api_base_url.strip(),
+                pypi_base_url=pypi_base_url.strip(),
+                timeout_seconds=timeout_seconds,
+            )
+        except Exception as e:
+            console.print(f"[red]Error running ops closeout checks: {e}[/red]")
+            sys.exit(1)
+        checks = closeout_result.checks
+        failed = closeout_result.failed
+        reason_codes = closeout_result.reason_codes
+        failed_checks = closeout_result.failed_checks
+        passed_checks = closeout_result.passed_checks
 
     checks_payload = {
         "generated_at": generated_at,
-        "version": release_version.strip(),
-        "release_run_id": release_run_id,
-        "repo": repo.strip(),
-        "pypi_project": pypi_project.strip(),
-        "rtd_url": rtd_url.strip(),
-        "checks": [check.to_dict() for check in closeout_result.checks],
+        "mode": resolved_policy.mode,
+        "version": resolved_policy.release_version,
+        "release_run_id": resolved_policy.release_run_id,
+        "repo": resolved_policy.repo,
+        "pypi_project": resolved_policy.pypi_project,
+        "rtd_url": resolved_policy.rtd_url,
+        "checks": [check.to_dict() for check in checks],
     }
 
     checks_path = output_root / "ops_closeout_checks.json"
@@ -1306,17 +1381,18 @@ def ops_closeout(
 
     manifest_payload = {
         "generated_at": generated_at,
-        "mode": closeout_result.mode,
-        "status": "failed" if closeout_result.failed else "success",
-        "failed": closeout_result.failed,
-        "version": release_version.strip(),
-        "release_run_id": release_run_id,
-        "repo": repo.strip(),
-        "pypi_project": pypi_project.strip(),
-        "rtd_url": rtd_url.strip(),
-        "reason_codes": closeout_result.reason_codes,
-        "failed_checks": closeout_result.failed_checks,
-        "passed_checks": closeout_result.passed_checks,
+        "mode": resolved_policy.mode,
+        "status": "failed" if failed else "success",
+        "failed": failed,
+        "version": resolved_policy.release_version,
+        "release_run_id": resolved_policy.release_run_id,
+        "repo": resolved_policy.repo,
+        "pypi_project": resolved_policy.pypi_project,
+        "rtd_url": resolved_policy.rtd_url,
+        "reason_codes": reason_codes,
+        "failed_checks": failed_checks,
+        "passed_checks": passed_checks,
+        "effective_policy": resolved_policy.to_dict(),
         "artifacts": {
             "ops_closeout_checks.json": str(checks_path),
             "ops_closeout_manifest.json": str(manifest_path),
@@ -1329,12 +1405,12 @@ def ops_closeout(
         evidence_path.write_text(
             _render_ops_closeout_evidence_markdown(
                 generated_at=generated_at,
-                version=release_version.strip(),
-                repo=repo.strip(),
-                mode=closeout_result.mode,
-                checks=closeout_result.checks,
-                failed=closeout_result.failed,
-                reason_codes=closeout_result.reason_codes,
+                version=resolved_policy.release_version or "missing",
+                repo=resolved_policy.repo,
+                mode=resolved_policy.mode,
+                checks=checks,
+                failed=failed,
+                reason_codes=reason_codes,
             ),
             encoding="utf-8",
         )
@@ -1349,23 +1425,27 @@ def ops_closeout(
         console.print(
             Panel(
                 (
-                    f"[bold]Mode:[/bold] {closeout_result.mode}\n"
-                    f"[bold]Status:[/bold] {'FAILED' if closeout_result.failed else 'SUCCESS'}\n"
-                    f"[bold]Version:[/bold] {release_version.strip()}\n"
-                    f"[bold]Release Run ID:[/bold] {release_run_id}\n"
+                    f"[bold]Mode:[/bold] {resolved_policy.mode}\n"
+                    f"[bold]Status:[/bold] {'FAILED' if failed else 'SUCCESS'}\n"
+                    f"[bold]Version:[/bold] {resolved_policy.release_version or 'missing'}\n"
+                    f"[bold]Release Run ID:[/bold] {resolved_policy.release_run_id or 'missing'}\n"
                     f"[bold]Output Dir:[/bold] {output_root}\n"
-                    f"[bold]Failed Checks:[/bold] {len(closeout_result.failed_checks)}"
+                    f"[bold]Failed Checks:[/bold] {len(failed_checks)}"
                 ),
                 title="Ops Closeout",
                 border_style="blue",
             )
         )
-        if closeout_result.failed:
-            console.print(
-                f"[yellow]Reason Codes:[/yellow] {', '.join(closeout_result.reason_codes)}"
-            )
+        if failed:
+            console.print(f"[yellow]Reason Codes:[/yellow] {', '.join(reason_codes)}")
 
-    if closeout_result.mode == "enforce" and closeout_result.failed:
+    if resolved_policy.mode == "enforce" and failed:
+        if missing_reason_codes:
+            click.echo(
+                "Error: missing required release input(s) for enforce mode: "
+                f"{', '.join(missing_reason_codes)}",
+                err=True,
+            )
         sys.exit(1)
 
 
@@ -3259,6 +3339,20 @@ def _build_check_output_payload(
         "audit_trail": report_result.audit_trail,
         "generated_at": report_result.generated_at,
     }
+
+
+def _load_ops_closeout_policy_file(policy_path: str | None) -> dict[str, object]:
+    if policy_path is None:
+        return {}
+    try:
+        parsed = yaml.safe_load(Path(policy_path).read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise ValueError(f"Unable to read ops closeout policy file: {exc}") from exc
+    if parsed is None:
+        return {}
+    if not isinstance(parsed, dict):
+        raise ValueError("Ops closeout policy file must contain a YAML object at top level.")
+    return {str(key): value for key, value in parsed.items()}
 
 
 def _load_export_gate_policy_file(policy_path: str | None) -> dict[str, object]:
