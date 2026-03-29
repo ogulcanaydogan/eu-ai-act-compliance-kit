@@ -62,7 +62,7 @@ checks transparency and GPAI obligations, and renders audit-oriented reports.
 - Phase 38: Ops closeout governance rollout completed (policy-driven `ops closeout` for CLI/action/CI with PR observe and main/tag enforce)
 - Phase 39: Ops closeout V3 completed (freshness/SLA threshold governance with additive closeout telemetry)
 - Phase 40: Ops closeout V4 completed (time-bounded reason-code waiver governance with additive closeout waiver telemetry)
-- Phase 41: Ops automation V5 in progress (scheduled closeout workflow + auto-resolved release inputs)
+- Phase 41: Ops automation V5 completed (scheduled closeout workflow + auto-resolved release inputs)
 
 ## End-to-End Flow
 
