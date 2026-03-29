@@ -44,7 +44,7 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
 - Phase 38 completed (ops closeout governance rollout with policy-driven CLI/action/CI and PR-observe/main-tag enforce)
 - Phase 39 completed (ops closeout V3 freshness/SLA threshold governance)
 - Phase 40 completed (ops closeout V4 time-bounded waiver governance)
-- Phase 41 in progress (ops automation V5 with scheduled closeout and auto-resolved release inputs)
+- Phase 41 completed (ops automation V5 with scheduled closeout and auto-resolved release inputs)
 
 ## Phase 1: Risk Classification Engine (Weeks 1-2) ✅ Completed
 
@@ -772,20 +772,21 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
     - `ops_closeout_waived_reason_codes`
     - `ops_closeout_expired_waiver_reason_codes`
 
-## Phase 41: Ops Automation V5 (Scheduled Closeout + Auto Resolution) 🚧 In Progress
+## Phase 41: Ops Automation V5 (Scheduled Closeout + Auto Resolution) ✅ Completed
 
-- Scope:
-  - Add automation-first closeout execution with scheduled workflow and deterministic artifacts.
-  - Auto-resolve missing closeout release inputs from latest semver release and successful `release.yml` run.
-- Planned in this phase:
-  - Additive closeout flag:
+- Delivered in this phase:
+  - Added automation-first closeout execution with scheduled workflow and deterministic artifacts.
+  - Added auto-resolution for missing closeout release inputs from latest semver release and successful `release.yml` run.
+  - Added additive closeout flag:
     - `--resolve-latest-release`
-  - Additive policy field:
+  - Added additive policy field:
     - `release.resolve_latest`
-  - Additive payload field:
+  - Added additive payload field:
     - `resolution` (`resolved_version`, `resolved_run_id`, `resolution_source`, `reason_codes`)
-  - New scheduled workflow:
+  - Added scheduled workflow:
     - `.github/workflows/ops-closeout-daily.yml` (daily 09:00 UTC + workflow_dispatch)
+  - Hardened run-resolution behavior:
+    - when release version is explicitly provided and run id is missing, closeout resolves the successful run for that explicit version instead of always pairing with the latest release tag.
 
 ## Timeline Summary (Historical Plan)
 - **Week 1-2**: Risk Classification Engine (Phases 1.1-1.5)

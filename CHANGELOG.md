@@ -8,18 +8,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Phase 41 kickoff: Ops Automation V5 (scheduled closeout + auto-resolved release inputs).
-- Additive `ops closeout` auto-resolution controls:
-  - CLI flag `--resolve-latest-release`
-  - policy field `release.resolve_latest`
-  - additive payload field `resolution` (`resolved_version`, `resolved_run_id`, `resolution_source`, `reason_codes`)
-- New scheduled workflow: `.github/workflows/ops-closeout-daily.yml` (daily 09:00 UTC + workflow_dispatch).
+- _None._
 
 ### Changed
-- Status surfaces synchronized for Phase 41 in progress (`README`, `docs/index`, `ROADMAP`).
+- _None._
 
 ### Fixed
 - _None._
+
+## [0.1.32] - 2026-03-29
+
+### Added
+- Completed Phase 41 Ops Automation V5 (scheduled closeout + auto-resolved release inputs):
+  - additive `ops closeout` auto-resolution controls:
+    - CLI flag `--resolve-latest-release`
+    - policy field `release.resolve_latest`
+    - additive payload field `resolution` (`resolved_version`, `resolved_run_id`, `resolution_source`, `reason_codes`)
+  - new scheduled workflow: `.github/workflows/ops-closeout-daily.yml` (daily 09:00 UTC + workflow_dispatch).
+
+### Changed
+- `ops closeout --resolve-latest-release` now resolves `release_run_id` for an explicitly provided release version instead of always pairing with the latest tag.
+- `config/ops_closeout_policy.yaml` now keeps `release.version` and `release.run_id` empty by default so scheduled automation resolves current release inputs deterministically.
+- Status surfaces synchronized to mark Phase 41 as completed (`README`, `docs/index`, `ROADMAP`).
 
 ## [0.1.31] - 2026-03-29
 
