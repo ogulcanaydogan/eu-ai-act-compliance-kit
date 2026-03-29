@@ -42,6 +42,7 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
 - Phase 36 completed (GA stabilization hardening with deterministic handoff diagnostics + Python 3.11/3.12/3.13 compatibility smoke)
 - Phase 37 completed (ops automation closeout pack with deterministic run/release/PyPI/RTD evidence artifacts)
 - Phase 38 completed (ops closeout governance rollout with policy-driven CLI/action/CI and PR-observe/main-tag enforce)
+- Phase 39 in progress (ops closeout V3 freshness/SLA threshold governance)
 
 ## Phase 1: Risk Classification Engine (Weeks 1-2) ✅ Completed
 
@@ -731,6 +732,26 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
   - Rollout model:
     - PR observe
     - main/tag enforce
+
+## Phase 39: Ops Closeout V3 (Freshness/SLA Governance) 🚧 In Progress
+
+- Scope:
+  - Add freshness threshold governance for closeout channels without breaking existing checks/artifacts.
+  - Preserve rollout model (`PR observe`, `main/tag enforce`) for ops closeout automation.
+- Planned in this phase:
+  - Additive policy thresholds:
+    - `thresholds.max_run_age_hours`
+    - `thresholds.max_release_age_hours`
+    - `thresholds.max_rtd_age_hours`
+  - Additive reason codes:
+    - `github_run_stale`
+    - `github_release_stale`
+    - `rtd_stale_or_unknown`
+  - Additive payload fields:
+    - `freshness_metrics`
+    - `freshness_thresholds`
+    - `freshness_reason_codes`
+  - Additive action outputs for freshness summary telemetry.
 
 ## Timeline Summary (Historical Plan)
 - **Week 1-2**: Risk Classification Engine (Phases 1.1-1.5)

@@ -692,6 +692,12 @@ class TestCLI:
             assert payload["status"] == "success"
             assert payload["failed"] is False
             assert payload["reason_codes"] == []
+            assert payload["freshness_reason_codes"] == []
+            assert payload["freshness_metrics"] == {
+                "run_age_hours": None,
+                "release_age_hours": None,
+                "rtd_age_hours": None,
+            }
             assert (output_dir / "ops_closeout_checks.json").exists()
             assert (output_dir / "ops_closeout_manifest.json").exists()
             assert (output_dir / "ops_closeout_evidence.md").exists()
@@ -755,6 +761,7 @@ class TestCLI:
         assert "github_release_failed" in payload["reason_codes"]
         assert "pypi_version_failed" in payload["reason_codes"]
         assert "rtd_failed" in payload["reason_codes"]
+        assert payload["freshness_reason_codes"] == []
 
     def test_ops_closeout_invalid_repo_format_fails(self):
         """`ops closeout` should fail fast for invalid repo value."""
@@ -851,6 +858,81 @@ class TestCLI:
             assert payload["version"] == "0.1.29"
             assert payload["release_run_id"] == 234
 
+    def test_ops_closeout_freshness_thresholds_enforce_fail(self, monkeypatch):
+        """`ops closeout --mode enforce` should fail when configured freshness thresholds are violated."""
+        runner = CliRunner()
+
+        def handler(request):
+            if str(request.url).endswith("/actions/runs/234"):
+                return httpx.Response(
+                    status_code=200,
+                    json={
+                        "status": "completed",
+                        "conclusion": "success",
+                        "updated_at": "2026-03-20T00:00:00Z",
+                    },
+                )
+            if str(request.url).endswith("/releases/tags/v0.1.29"):
+                return httpx.Response(
+                    status_code=200,
+                    json={
+                        "assets": [
+                            {"name": "pkg-0.1.29-py3-none-any.whl"},
+                            {"name": "pkg-0.1.29.tar.gz"},
+                        ],
+                        "published_at": "2026-03-20T00:00:00Z",
+                    },
+                )
+            if str(request.url).endswith("/pypi/eu-ai-act-compliance-kit/json"):
+                return httpx.Response(status_code=200, json={"info": {"version": "0.1.29"}})
+            if str(request.url).endswith("/rtd"):
+                return httpx.Response(status_code=200, text="ok")
+            return httpx.Response(status_code=404)
+
+        transport = httpx.MockTransport(handler)
+        original_client = httpx.Client
+
+        def _fake_client(*args, **kwargs):
+            return original_client(transport=transport)
+
+        monkeypatch.setattr("eu_ai_act.ops_closeout.httpx.Client", _fake_client)
+
+        result = runner.invoke(
+            main,
+            [
+                "ops",
+                "closeout",
+                "--version",
+                "0.1.29",
+                "--release-run-id",
+                "234",
+                "--mode",
+                "enforce",
+                "--repo",
+                "acme/repo",
+                "--github-api-base-url",
+                "https://example.test/api",
+                "--pypi-base-url",
+                "https://example.test",
+                "--rtd-url",
+                "https://example.test/rtd",
+                "--max-run-age-hours",
+                "1",
+                "--max-release-age-hours",
+                "1",
+                "--max-rtd-age-hours",
+                "1",
+                "--json",
+            ],
+        )
+
+        assert result.exit_code != 0
+        payload = json.loads(result.output[result.output.find("{") :])
+        assert payload["failed"] is True
+        assert "github_run_stale" in payload["freshness_reason_codes"]
+        assert "github_release_stale" in payload["freshness_reason_codes"]
+        assert "rtd_stale_or_unknown" in payload["freshness_reason_codes"]
+
     def test_ops_closeout_observe_mode_reports_missing_release_inputs_without_failing(self):
         """Observe mode should report missing release inputs in payload but exit successfully."""
         runner = CliRunner()
@@ -874,6 +956,22 @@ class TestCLI:
             assert payload["failed"] is True
             assert "missing_release_version" in payload["reason_codes"]
             assert "missing required release input(s) for enforce mode" in result.output
+
+    def test_ops_closeout_invalid_freshness_threshold_fails(self):
+        """`ops closeout` should fail fast for non-positive freshness thresholds."""
+        runner = CliRunner()
+        result = runner.invoke(
+            main,
+            [
+                "ops",
+                "closeout",
+                "--max-run-age-hours",
+                "0",
+            ],
+        )
+
+        assert result.exit_code != 0
+        assert "--max-run-age-hours must be > 0" in result.output
 
     def test_history_commands_list_show_diff_json(self):
         """`history` commands should return structured list/show/diff payloads."""

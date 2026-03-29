@@ -80,6 +80,7 @@ ai-act ops closeout --version 0.1.29 --release-run-id 23489289129 --json
 ai-act ops closeout --policy config/ops_closeout_policy.yaml --json
 ai-act ops closeout --version 0.1.29 --release-run-id 23489289129 --mode enforce --output-dir ops_closeout --json
 ai-act ops closeout --version 0.1.29 --release-run-id 23489289129 --policy config/ops_closeout_policy.yaml --repo ogulcanaydogan/eu-ai-act-compliance-kit --pypi-project eu-ai-act-compliance-kit --rtd-url https://eu-ai-act-compliance-kit.readthedocs.io/en/latest/ --json
+ai-act ops closeout --version 0.1.29 --release-run-id 23489289129 --max-run-age-hours 24 --max-release-age-hours 24 --max-rtd-age-hours 24 --json
 ```
 
 Checks:
@@ -88,6 +89,10 @@ Checks:
 - GitHub release/tag presence + wheel/sdist artifact visibility
 - PyPI JSON version parity (`info.version == --version`)
 - RTD URL HTTP `200`
+- Optional freshness checks (policy/flags):
+  - `max_run_age_hours`
+  - `max_release_age_hours`
+  - `max_rtd_age_hours` (uses RTD `Last-Modified` metadata when available; otherwise deterministic `rtd_stale_or_unknown`)
 
 Artifacts written to `<output-dir>` (default: current working directory):
 
@@ -101,6 +106,10 @@ Exit contract:
 - `--mode enforce`: exits non-zero when any check fails.
 - Missing release inputs (`version`, `release_run_id`) are reported as deterministic reason codes in observe mode and exit `0`.
 - Missing release inputs in enforce mode exit non-zero with a clear stderr error.
+- Freshness violations append additive reason codes:
+  - `github_run_stale`
+  - `github_release_stale`
+  - `rtd_stale_or_unknown`
 - Artifact write failure always exits non-zero with deterministic stderr error.
 
 Precedence:
@@ -113,6 +122,7 @@ JSON manifest includes:
 - `generated_at`, `mode`, `status`, `failed`
 - `version`, `release_run_id`, `repo`, `pypi_project`, `rtd_url`
 - `reason_codes`, `failed_checks`, `passed_checks`
+- `freshness_metrics`, `freshness_thresholds`, `freshness_reason_codes`
 - `artifacts`
 
 ## `classify`

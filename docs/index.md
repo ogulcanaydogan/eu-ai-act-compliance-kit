@@ -60,6 +60,7 @@ checks transparency and GPAI obligations, and renders audit-oriented reports.
 - Phase 36: GA stabilization hardening completed (deterministic handoff diagnostics + required Python 3.11/3.12/3.13 compatibility smoke gate)
 - Phase 37: Ops automation closeout pack completed (`ops closeout` command + run/release/PyPI/RTD evidence artifacts + CI rollout smoke)
 - Phase 38: Ops closeout governance rollout completed (policy-driven `ops closeout` for CLI/action/CI with PR observe and main/tag enforce)
+- Phase 39: Ops closeout V3 in progress (freshness/SLA threshold governance with additive closeout telemetry)
 
 ## End-to-End Flow
 

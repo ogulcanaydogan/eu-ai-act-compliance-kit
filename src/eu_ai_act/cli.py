@@ -1216,6 +1216,21 @@ def ops() -> None:
     help="Read the Docs URL expected to return HTTP 200.",
 )
 @click.option(
+    "--max-run-age-hours",
+    type=float,
+    help="Optional freshness threshold for GitHub run age in hours.",
+)
+@click.option(
+    "--max-release-age-hours",
+    type=float,
+    help="Optional freshness threshold for GitHub release age in hours.",
+)
+@click.option(
+    "--max-rtd-age-hours",
+    type=float,
+    help="Optional freshness threshold for RTD last-modified age in hours.",
+)
+@click.option(
     "--policy",
     type=click.Path(exists=True, dir_okay=False),
     help="Optional YAML policy file (precedence: CLI flags > policy file > defaults).",
@@ -1254,6 +1269,9 @@ def ops_closeout(
     repo: str | None,
     pypi_project: str | None,
     rtd_url: str | None,
+    max_run_age_hours: float | None,
+    max_release_age_hours: float | None,
+    max_rtd_age_hours: float | None,
     policy: str | None,
     output_dir: str | None,
     github_api_base_url: str,
@@ -1267,6 +1285,15 @@ def ops_closeout(
         sys.exit(1)
     if release_run_id is not None and release_run_id < 1:
         console.print("[red]Error: --release-run-id must be >= 1[/red]")
+        sys.exit(1)
+    if max_run_age_hours is not None and max_run_age_hours <= 0:
+        console.print("[red]Error: --max-run-age-hours must be > 0[/red]")
+        sys.exit(1)
+    if max_release_age_hours is not None and max_release_age_hours <= 0:
+        console.print("[red]Error: --max-release-age-hours must be > 0[/red]")
+        sys.exit(1)
+    if max_rtd_age_hours is not None and max_rtd_age_hours <= 0:
+        console.print("[red]Error: --max-rtd-age-hours must be > 0[/red]")
         sys.exit(1)
 
     try:
@@ -1295,6 +1322,21 @@ def ops_closeout(
         rtd_url_override = (
             rtd_url if ctx.get_parameter_source("rtd_url") == ParameterSource.COMMANDLINE else None
         )
+        max_run_age_hours_override = (
+            max_run_age_hours
+            if ctx.get_parameter_source("max_run_age_hours") == ParameterSource.COMMANDLINE
+            else None
+        )
+        max_release_age_hours_override = (
+            max_release_age_hours
+            if ctx.get_parameter_source("max_release_age_hours") == ParameterSource.COMMANDLINE
+            else None
+        )
+        max_rtd_age_hours_override = (
+            max_rtd_age_hours
+            if ctx.get_parameter_source("max_rtd_age_hours") == ParameterSource.COMMANDLINE
+            else None
+        )
         resolved_policy = resolve_ops_closeout_policy(
             policy_payload=policy_payload,
             mode=mode_override,
@@ -1303,6 +1345,9 @@ def ops_closeout(
             repo=repo_override,
             pypi_project=pypi_project_override,
             rtd_url=rtd_url_override,
+            max_run_age_hours=max_run_age_hours_override,
+            max_release_age_hours=max_release_age_hours_override,
+            max_rtd_age_hours=max_rtd_age_hours_override,
         )
     except Exception as e:
         console.print(f"[red]Error resolving ops closeout policy: {e}[/red]")
@@ -1323,6 +1368,9 @@ def ops_closeout(
     reason_codes: list[str]
     failed_checks: list[str]
     passed_checks: list[str]
+    freshness_metrics: dict[str, float | None]
+    freshness_thresholds: dict[str, float | None]
+    freshness_reason_codes: list[str]
 
     if missing_reason_codes:
         missing_details = ", ".join(
@@ -1341,6 +1389,17 @@ def ops_closeout(
         reason_codes = list(missing_reason_codes)
         failed_checks = ["required_inputs"]
         passed_checks = []
+        freshness_metrics = {
+            "run_age_hours": None,
+            "release_age_hours": None,
+            "rtd_age_hours": None,
+        }
+        freshness_thresholds = {
+            "max_run_age_hours": resolved_policy.max_run_age_hours,
+            "max_release_age_hours": resolved_policy.max_release_age_hours,
+            "max_rtd_age_hours": resolved_policy.max_rtd_age_hours,
+        }
+        freshness_reason_codes = []
     else:
         try:
             closeout_result = OpsCloseoutEvaluator().evaluate(
@@ -1353,6 +1412,9 @@ def ops_closeout(
                 github_api_base_url=github_api_base_url.strip(),
                 pypi_base_url=pypi_base_url.strip(),
                 timeout_seconds=timeout_seconds,
+                max_run_age_hours=resolved_policy.max_run_age_hours,
+                max_release_age_hours=resolved_policy.max_release_age_hours,
+                max_rtd_age_hours=resolved_policy.max_rtd_age_hours,
             )
         except Exception as e:
             console.print(f"[red]Error running ops closeout checks: {e}[/red]")
@@ -1362,6 +1424,9 @@ def ops_closeout(
         reason_codes = closeout_result.reason_codes
         failed_checks = closeout_result.failed_checks
         passed_checks = closeout_result.passed_checks
+        freshness_metrics = closeout_result.freshness_metrics
+        freshness_thresholds = closeout_result.freshness_thresholds
+        freshness_reason_codes = closeout_result.freshness_reason_codes
 
     checks_payload = {
         "generated_at": generated_at,
@@ -1371,6 +1436,9 @@ def ops_closeout(
         "repo": resolved_policy.repo,
         "pypi_project": resolved_policy.pypi_project,
         "rtd_url": resolved_policy.rtd_url,
+        "freshness_metrics": freshness_metrics,
+        "freshness_thresholds": freshness_thresholds,
+        "freshness_reason_codes": freshness_reason_codes,
         "checks": [check.to_dict() for check in checks],
     }
 
@@ -1391,6 +1459,9 @@ def ops_closeout(
         "reason_codes": reason_codes,
         "failed_checks": failed_checks,
         "passed_checks": passed_checks,
+        "freshness_metrics": freshness_metrics,
+        "freshness_thresholds": freshness_thresholds,
+        "freshness_reason_codes": freshness_reason_codes,
         "effective_policy": resolved_policy.to_dict(),
         "artifacts": {
             "ops_closeout_checks.json": str(checks_path),
@@ -1410,6 +1481,9 @@ def ops_closeout(
                 checks=checks,
                 failed=failed,
                 reason_codes=reason_codes,
+                freshness_metrics=freshness_metrics,
+                freshness_thresholds=freshness_thresholds,
+                freshness_reason_codes=freshness_reason_codes,
             ),
             encoding="utf-8",
         )
@@ -1437,6 +1511,10 @@ def ops_closeout(
         )
         if failed:
             console.print(f"[yellow]Reason Codes:[/yellow] {', '.join(reason_codes)}")
+        if freshness_reason_codes:
+            console.print(
+                f"[yellow]Freshness Reasons:[/yellow] {', '.join(freshness_reason_codes)}"
+            )
 
     if resolved_policy.mode == "enforce" and failed:
         if missing_reason_codes:
@@ -3254,6 +3332,9 @@ def _render_ops_closeout_evidence_markdown(
     checks: list[OpsCloseoutCheck],
     failed: bool,
     reason_codes: list[str],
+    freshness_metrics: dict[str, float | None],
+    freshness_thresholds: dict[str, float | None],
+    freshness_reason_codes: list[str],
 ) -> str:
     """Render closeout evidence markdown from deterministic check payload."""
     lines = [
@@ -3265,6 +3346,7 @@ def _render_ops_closeout_evidence_markdown(
         f"- Mode: {mode}",
         f"- Status: {'failed' if failed else 'success'}",
         f"- Reason codes: {', '.join(reason_codes) if reason_codes else 'none'}",
+        f"- Freshness reason codes: {', '.join(freshness_reason_codes) if freshness_reason_codes else 'none'}",
         "",
         "## Checks",
     ]
@@ -3277,6 +3359,18 @@ def _render_ops_closeout_evidence_markdown(
                 f"  - details: {check.details}",
             ]
         )
+    lines.extend(
+        [
+            "",
+            "## Freshness",
+            f"- run_age_hours: {freshness_metrics.get('run_age_hours')}",
+            f"- release_age_hours: {freshness_metrics.get('release_age_hours')}",
+            f"- rtd_age_hours: {freshness_metrics.get('rtd_age_hours')}",
+            f"- max_run_age_hours: {freshness_thresholds.get('max_run_age_hours')}",
+            f"- max_release_age_hours: {freshness_thresholds.get('max_release_age_hours')}",
+            f"- max_rtd_age_hours: {freshness_thresholds.get('max_rtd_age_hours')}",
+        ]
+    )
     lines.append("")
     return "\n".join(lines)
 
