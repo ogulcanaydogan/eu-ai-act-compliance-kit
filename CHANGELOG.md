@@ -8,16 +8,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Phase 39 kickoff (Ops Closeout V3 freshness/SLA governance):
-  - additive `ops closeout` freshness threshold support (`max_run_age_hours`, `max_release_age_hours`, `max_rtd_age_hours`)
-  - additive closeout payload fields: `freshness_metrics`, `freshness_thresholds`, `freshness_reason_codes`
-  - additive action outputs for closeout freshness telemetry
+- _None._
 
 ### Changed
-- Status surfaces mark Phase 39 as in progress (`README`, `docs/index`, `ROADMAP`).
+- _None._
 
 ### Fixed
 - _None._
+
+## [0.1.30] - 2026-03-29
+
+### Added
+- Completed Phase 39 Ops Closeout V3 freshness/SLA governance:
+  - additive `ops closeout` freshness threshold support (`max_run_age_hours`, `max_release_age_hours`, `max_rtd_age_hours`)
+  - additive closeout payload fields: `freshness_metrics`, `freshness_thresholds`, `freshness_reason_codes`
+  - additive action outputs for closeout freshness telemetry.
+
+### Changed
+- Status surfaces synchronized to mark Phase 39 as completed (`README`, `docs/index`, `ROADMAP`).
 
 ## [0.1.29] - 2026-03-29
 
