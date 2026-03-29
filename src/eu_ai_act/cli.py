@@ -1425,6 +1425,7 @@ def ops_closeout(
         try:
             release_resolution = resolve_latest_release_inputs(
                 repo=resolved_policy.repo,
+                preferred_version=effective_release_version,
                 github_api_base_url=github_api_base_url.strip(),
                 timeout_seconds=timeout_seconds,
             )

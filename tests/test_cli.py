@@ -1255,6 +1255,101 @@ class TestCLI:
         assert payload["resolution"]["resolved_run_id"] == 333
         assert payload["resolution"]["reason_codes"] == []
 
+    def test_ops_closeout_resolve_latest_release_uses_explicit_version_for_run_lookup(
+        self,
+        monkeypatch,
+    ):
+        """When version is explicit and run id is missing, resolution should fetch run for that version."""
+        runner = CliRunner()
+
+        def handler(request):
+            if str(request.url).endswith("/repos/acme/repo/releases?per_page=100"):
+                return httpx.Response(
+                    200,
+                    json=[
+                        {"tag_name": "v0.1.30", "draft": False},
+                        {"tag_name": "v0.1.31", "draft": False},
+                    ],
+                )
+            if str(request.url).endswith(
+                "/repos/acme/repo/actions/workflows/release.yml/runs?event=push&per_page=100"
+            ):
+                return httpx.Response(
+                    200,
+                    json={
+                        "workflow_runs": [
+                            {
+                                "id": 900,
+                                "head_branch": "v0.1.30",
+                                "status": "completed",
+                                "conclusion": "success",
+                            },
+                            {
+                                "id": 1002,
+                                "head_branch": "v0.1.31",
+                                "status": "completed",
+                                "conclusion": "success",
+                            },
+                        ]
+                    },
+                )
+            if str(request.url).endswith("/repos/acme/repo/actions/runs/900"):
+                return httpx.Response(
+                    200,
+                    json={"status": "completed", "conclusion": "success"},
+                )
+            if str(request.url).endswith("/repos/acme/repo/releases/tags/v0.1.30"):
+                return httpx.Response(
+                    200,
+                    json={
+                        "assets": [
+                            {"name": "pkg-0.1.30-py3-none-any.whl"},
+                            {"name": "pkg-0.1.30.tar.gz"},
+                        ]
+                    },
+                )
+            if str(request.url).endswith("/pypi/eu-ai-act-compliance-kit/json"):
+                return httpx.Response(200, json={"info": {"version": "0.1.30"}})
+            if str(request.url).endswith("/rtd"):
+                return httpx.Response(status_code=200, text="ok")
+            return httpx.Response(status_code=404)
+
+        transport = httpx.MockTransport(handler)
+        original_client = httpx.Client
+
+        def _fake_client(*args, **kwargs):
+            return original_client(transport=transport)
+
+        monkeypatch.setattr("eu_ai_act.ops_closeout.httpx.Client", _fake_client)
+
+        result = runner.invoke(
+            main,
+            [
+                "ops",
+                "closeout",
+                "--resolve-latest-release",
+                "--version",
+                "0.1.30",
+                "--repo",
+                "acme/repo",
+                "--github-api-base-url",
+                "https://example.test/api",
+                "--pypi-base-url",
+                "https://example.test",
+                "--rtd-url",
+                "https://example.test/rtd",
+                "--json",
+            ],
+        )
+
+        assert result.exit_code == 0
+        payload = json.loads(result.output[result.output.find("{") :])
+        assert payload["failed"] is False
+        assert payload["version"] == "0.1.30"
+        assert payload["release_run_id"] == 900
+        assert payload["resolution"]["resolved_version"] == "0.1.30"
+        assert payload["resolution"]["resolved_run_id"] == 900
+
     def test_ops_closeout_resolve_latest_release_enforce_fails_when_run_missing(self, monkeypatch):
         """Enforce mode should fail when auto-resolution cannot produce release run id."""
         runner = CliRunner()

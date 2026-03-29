@@ -586,6 +586,55 @@ def test_resolve_latest_release_inputs_success(monkeypatch: pytest.MonkeyPatch) 
     assert result.resolution_source == "github_release_workflow_runs_api"
 
 
+def test_resolve_latest_release_inputs_prefers_requested_version(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Resolver should use requested version for run lookup when version is explicitly provided."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/repos/acme/repo/releases"):
+            return httpx.Response(
+                200,
+                json=[
+                    {"tag_name": "v0.1.30", "draft": False},
+                    {"tag_name": "v0.1.31", "draft": False},
+                ],
+            )
+        if request.url.path.endswith("/repos/acme/repo/actions/workflows/release.yml/runs"):
+            return httpx.Response(
+                200,
+                json={
+                    "workflow_runs": [
+                        {
+                            "id": 900,
+                            "head_branch": "v0.1.30",
+                            "status": "completed",
+                            "conclusion": "success",
+                        },
+                        {
+                            "id": 1002,
+                            "head_branch": "v0.1.31",
+                            "status": "completed",
+                            "conclusion": "success",
+                        },
+                    ]
+                },
+            )
+        return httpx.Response(404)
+
+    _patch_http_client(monkeypatch, handler)
+    result = resolve_latest_release_inputs(
+        repo="acme/repo",
+        preferred_version="0.1.30",
+        github_api_base_url="https://example.test/api",
+    )
+
+    assert result.resolved_version == "0.1.30"
+    assert result.resolved_run_id == 900
+    assert result.reason_codes == []
+    assert result.resolution_source == "github_release_workflow_runs_api"
+
+
 def test_resolve_latest_release_inputs_reports_missing_release(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

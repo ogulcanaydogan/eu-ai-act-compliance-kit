@@ -796,10 +796,11 @@ def _coerce_ops_closeout_waivers(value: Any) -> list[OpsCloseoutWaiver]:
 def resolve_latest_release_inputs(
     *,
     repo: str,
+    preferred_version: str | None = None,
     github_api_base_url: str = "https://api.github.com",
     timeout_seconds: float = 20.0,
 ) -> OpsCloseoutReleaseResolution:
-    """Resolve latest semver release version and successful release workflow run id."""
+    """Resolve release version and successful release workflow run id."""
     with httpx.Client(timeout=timeout_seconds, follow_redirects=True) as client:
         releases_response = OpsCloseoutEvaluator._safe_get(
             client=client,
@@ -822,6 +823,7 @@ def resolve_latest_release_inputs(
                 resolution_source="github_releases_api",
             )
 
+        release_tags: set[str] = set()
         semver_candidates: list[tuple[tuple[int, int, int], str]] = []
         for raw_release in releases_payload:
             if not isinstance(raw_release, dict):
@@ -829,6 +831,9 @@ def resolve_latest_release_inputs(
             if bool(raw_release.get("draft")):
                 continue
             tag_name = str(raw_release.get("tag_name") or "").strip()
+            if not tag_name:
+                continue
+            release_tags.add(tag_name)
             match = _SEMVER_TAG_PATTERN.match(tag_name)
             if not match:
                 continue
@@ -843,17 +848,31 @@ def resolve_latest_release_inputs(
                 )
             )
 
-        if not semver_candidates:
-            return OpsCloseoutReleaseResolution(
-                resolved_version=None,
-                resolved_run_id=None,
-                reason_codes=["latest_release_not_found"],
-                resolution_source="github_releases_api",
-            )
+        normalized_preferred_version = str(preferred_version or "").strip()
+        target_tag: str | None = None
+        target_version: str | None = None
+        if normalized_preferred_version:
+            target_version = normalized_preferred_version.removeprefix("v")
+            target_tag = f"v{target_version}"
+            if target_tag not in release_tags:
+                return OpsCloseoutReleaseResolution(
+                    resolved_version=target_version,
+                    resolved_run_id=None,
+                    reason_codes=["latest_release_not_found"],
+                    resolution_source="github_releases_api",
+                )
+        else:
+            if not semver_candidates:
+                return OpsCloseoutReleaseResolution(
+                    resolved_version=None,
+                    resolved_run_id=None,
+                    reason_codes=["latest_release_not_found"],
+                    resolution_source="github_releases_api",
+                )
 
-        semver_candidates.sort(key=lambda item: item[0], reverse=True)
-        latest_tag = semver_candidates[0][1]
-        latest_version = latest_tag.removeprefix("v")
+            semver_candidates.sort(key=lambda item: item[0], reverse=True)
+            target_tag = semver_candidates[0][1]
+            target_version = target_tag.removeprefix("v")
 
         runs_response = OpsCloseoutEvaluator._safe_get(
             client=client,
@@ -864,7 +883,7 @@ def resolve_latest_release_inputs(
         )
         if runs_response.error is not None or runs_response.status_code != 200:
             return OpsCloseoutReleaseResolution(
-                resolved_version=latest_version,
+                resolved_version=target_version,
                 resolved_run_id=None,
                 reason_codes=["release_resolution_failed"],
                 resolution_source="github_release_workflow_runs_api",
@@ -873,7 +892,7 @@ def resolve_latest_release_inputs(
         runs_payload = OpsCloseoutEvaluator._safe_json(runs_response.body)
         if not isinstance(runs_payload, dict):
             return OpsCloseoutReleaseResolution(
-                resolved_version=latest_version,
+                resolved_version=target_version,
                 resolved_run_id=None,
                 reason_codes=["release_resolution_failed"],
                 resolution_source="github_release_workflow_runs_api",
@@ -882,7 +901,7 @@ def resolve_latest_release_inputs(
         workflow_runs = runs_payload.get("workflow_runs")
         if not isinstance(workflow_runs, list):
             return OpsCloseoutReleaseResolution(
-                resolved_version=latest_version,
+                resolved_version=target_version,
                 resolved_run_id=None,
                 reason_codes=["release_resolution_failed"],
                 resolution_source="github_release_workflow_runs_api",
@@ -895,7 +914,7 @@ def resolve_latest_release_inputs(
             head_branch = str(raw_run.get("head_branch") or "").strip()
             status = str(raw_run.get("status") or "").strip().lower()
             conclusion = str(raw_run.get("conclusion") or "").strip().lower()
-            if head_branch != latest_tag:
+            if head_branch != target_tag:
                 continue
             if status != "completed" or conclusion != "success":
                 continue
@@ -912,14 +931,14 @@ def resolve_latest_release_inputs(
 
         if not matched_run_ids:
             return OpsCloseoutReleaseResolution(
-                resolved_version=latest_version,
+                resolved_version=target_version,
                 resolved_run_id=None,
                 reason_codes=["latest_release_run_not_found"],
                 resolution_source="github_release_workflow_runs_api",
             )
 
         return OpsCloseoutReleaseResolution(
-            resolved_version=latest_version,
+            resolved_version=target_version,
             resolved_run_id=max(matched_run_ids),
             reason_codes=[],
             resolution_source="github_release_workflow_runs_api",
