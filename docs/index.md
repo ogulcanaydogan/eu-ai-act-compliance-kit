@@ -61,7 +61,7 @@ checks transparency and GPAI obligations, and renders audit-oriented reports.
 - Phase 37: Ops automation closeout pack completed (`ops closeout` command + run/release/PyPI/RTD evidence artifacts + CI rollout smoke)
 - Phase 38: Ops closeout governance rollout completed (policy-driven `ops closeout` for CLI/action/CI with PR observe and main/tag enforce)
 - Phase 39: Ops closeout V3 completed (freshness/SLA threshold governance with additive closeout telemetry)
-- Phase 40: Ops closeout V4 in progress (time-bounded reason-code waiver governance with additive closeout waiver telemetry)
+- Phase 40: Ops closeout V4 completed (time-bounded reason-code waiver governance with additive closeout waiver telemetry)
 
 ## End-to-End Flow
 
