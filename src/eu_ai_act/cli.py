@@ -928,6 +928,12 @@ def handoff(
         manifest["articles_applicable"] = articles_applicable
         manifest["compliance_summary"] = check_payload["summary"]
         manifest["security_summary"] = security_summary_payload
+        check_summary_payload = cast(dict[str, object], check_payload["summary"])
+        current_run_actionable_count = (
+            cast(int, check_summary_payload["non_compliant_count"])
+            + cast(int, check_summary_payload["partial_count"])
+            + cast(int, check_summary_payload["not_assessed_count"])
+        )
 
         current_step = "security_map"
         security_map_payload = {
@@ -1040,6 +1046,12 @@ def handoff(
                     blocked_stale_after_hours=collaboration_policy.blocked_stale_after_hours,
                     review_stale_after_hours=collaboration_policy.review_stale_after_hours,
                 )
+                if current_run_actionable_count == 0 and not bool(
+                    collaboration_metrics.get("has_collaboration_data", False)
+                ):
+                    # No actionable findings in the current handoff run should not be treated as
+                    # missing collaboration data in enforce mode.
+                    collaboration_metrics["has_collaboration_data"] = True
                 collaboration_gate_result = CollaborationGateEvaluator().evaluate(
                     policy=collaboration_policy,
                     metrics=collaboration_metrics,
