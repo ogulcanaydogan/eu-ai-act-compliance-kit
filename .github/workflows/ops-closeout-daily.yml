@@ -66,6 +66,7 @@ jobs:
           ai-act ops closeout \
             --policy config/ops_closeout_policy.yaml \
             --resolve-latest-release \
+            --escalation-pack \
             --mode "$MODE" \
             "${EXTRA_ARGS[@]}" \
             --output-dir /tmp/ops-closeout-daily/out \
@@ -104,6 +105,15 @@ jobs:
                   "- effective_reason_codes: "
                   + (", ".join(payload.get("effective_reason_codes", [])) or "none")
               )
+              lines.append(
+                  "- escalation_required: "
+                  + str(bool(payload.get("escalation_required", False))).lower()
+              )
+              lines.append(
+                  "- escalation_reason_codes: "
+                  + (", ".join(payload.get("escalation_reason_codes", [])) or "none")
+              )
+              lines.append("- escalation_artifacts: ops_closeout_escalation.json, ops_closeout_escalation.md")
           else:
               lines.append("- status: manifest_missing")
 
@@ -121,6 +131,8 @@ jobs:
             /tmp/ops-closeout-daily/out/ops_closeout_checks.json
             /tmp/ops-closeout-daily/out/ops_closeout_manifest.json
             /tmp/ops-closeout-daily/out/ops_closeout_evidence.md
+            /tmp/ops-closeout-daily/out/ops_closeout_escalation.json
+            /tmp/ops-closeout-daily/out/ops_closeout_escalation.md
             /tmp/ops-closeout-daily/stdout_manifest.json
             ops_closeout_daily_summary.md
           if-no-files-found: warn

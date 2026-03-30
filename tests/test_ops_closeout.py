@@ -7,6 +7,7 @@ import pytest
 
 from eu_ai_act.ops_closeout import (
     OpsCloseoutEvaluator,
+    build_ops_closeout_escalation_decision,
     normalize_ops_closeout_mode,
     resolve_latest_release_inputs,
     resolve_ops_closeout_policy,
@@ -470,6 +471,7 @@ def test_resolve_ops_closeout_policy_defaults_allow_missing_release_inputs() -> 
     assert policy.release_version is None
     assert policy.release_run_id is None
     assert policy.resolve_latest_release is False
+    assert policy.escalation_enabled is False
     assert policy.waivers == []
 
 
@@ -495,6 +497,18 @@ def test_resolve_ops_closeout_policy_rejects_invalid_resolve_latest_flag() -> No
     """Policy parser should reject invalid non-boolean resolve_latest values."""
     with pytest.raises(ValueError, match="release.resolve_latest"):
         resolve_ops_closeout_policy(policy_payload={"release": {"resolve_latest": "maybe"}})
+
+
+def test_resolve_ops_closeout_policy_rejects_invalid_escalation_flag() -> None:
+    """Policy parser should reject invalid non-boolean escalation.enabled values."""
+    with pytest.raises(ValueError, match="escalation.enabled"):
+        resolve_ops_closeout_policy(policy_payload={"escalation": {"enabled": "maybe"}})
+
+
+def test_resolve_ops_closeout_policy_parses_escalation_flag() -> None:
+    """Policy parser should preserve escalation.enabled toggle."""
+    policy = resolve_ops_closeout_policy(policy_payload={"escalation": {"enabled": True}})
+    assert policy.escalation_enabled is True
 
 
 def test_resolve_ops_closeout_policy_rejects_invalid_waiver_expires_at() -> None:
@@ -584,6 +598,30 @@ def test_resolve_latest_release_inputs_success(monkeypatch: pytest.MonkeyPatch) 
     assert result.resolved_run_id == 1002
     assert result.reason_codes == []
     assert result.resolution_source == "github_release_workflow_runs_api"
+
+
+def test_build_ops_closeout_escalation_decision_deduplicates_reason_codes() -> None:
+    """Escalation decision should be deterministic and deduplicate repeated reason codes."""
+    decision = build_ops_closeout_escalation_decision(
+        mode="enforce",
+        failed_checks=["github_run", "rtd"],
+        effective_reason_codes=["github_run_failed", "rtd_failed", "rtd_failed"],
+        run_context={
+            "generated_at": "2026-03-30T10:00:00+00:00",
+            "version": "0.1.33",
+            "release_run_id": 123,
+            "repo": "acme/repo",
+            "pypi_project": "eu-ai-act-compliance-kit",
+            "rtd_url": "https://example.test/rtd",
+        },
+    ).to_dict()
+
+    assert decision["escalation_required"] is True
+    assert decision["escalation_reason_codes"] == ["github_run_failed", "rtd_failed"]
+    assert decision["failed_checks"] == ["github_run", "rtd"]
+    assert decision["effective_reason_codes"] == ["github_run_failed", "rtd_failed"]
+    assert decision["mode"] == "enforce"
+    assert decision["run_context"]["version"] == "0.1.33"
 
 
 def test_resolve_latest_release_inputs_prefers_requested_version(

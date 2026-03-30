@@ -119,6 +119,7 @@ def test_ci_contains_ops_closeout_rollout_smoke_job():
     joined_run = "\n".join(run_blocks)
     assert "ai-act ops closeout" in joined_run
     assert "--policy config/ops_closeout_policy.yaml" in joined_run
+    assert "--escalation-pack" in joined_run
     assert '--mode "$GATE_MODE"' in joined_run
     assert "--max-run-age-hours 1" in joined_run
     assert "--max-release-age-hours 1" in joined_run
@@ -130,6 +131,8 @@ def test_ci_contains_ops_closeout_rollout_smoke_job():
     assert "ops_closeout_manifest.json" in joined_run
     assert "ops_closeout_checks.json" in joined_run
     assert "ops_closeout_evidence.md" in joined_run
+    assert "ops_closeout_escalation.json" in joined_run
+    assert "ops_closeout_escalation.md" in joined_run
 
 
 def test_ci_test_job_enforces_coverage_floor():
@@ -416,6 +419,8 @@ def test_action_exposes_security_gate_input_and_outputs():
     assert "ops_closeout_repo" in inputs
     assert "ops_closeout_pypi_project" in inputs
     assert "ops_closeout_rtd_url" in inputs
+    assert "ops_closeout_escalation_enabled" in inputs
+    assert inputs["ops_closeout_escalation_enabled"].get("default") == "false"
     assert "collaboration_open_count" in outputs
     assert "collaboration_in_review_count" in outputs
     assert "collaboration_blocked_count" in outputs
@@ -438,6 +443,8 @@ def test_action_exposes_security_gate_input_and_outputs():
     assert "ops_closeout_rtd_age_hours" in outputs
     assert "ops_closeout_waived_reason_codes" in outputs
     assert "ops_closeout_expired_waiver_reason_codes" in outputs
+    assert "ops_closeout_escalation_required" in outputs
+    assert "ops_closeout_escalation_reason_codes" in outputs
 
 
 def test_ci_action_smoke_exercises_security_gate_enforcement():
@@ -499,8 +506,11 @@ def test_ops_closeout_daily_workflow_contract():
     assert "ai-act ops closeout" in joined_run
     assert "--policy config/ops_closeout_policy.yaml" in joined_run
     assert "--resolve-latest-release" in joined_run
+    assert "--escalation-pack" in joined_run
     assert '--mode "$MODE"' in joined_run
     assert "ops_closeout_manifest.json" in joined_run
+    assert "ops_closeout_escalation.json" in joined_run
+    assert "ops_closeout_escalation.md" in joined_run
 
     uses_payload = "\n".join(
         str(step) for step in steps if isinstance(step, dict) and "uses" in step

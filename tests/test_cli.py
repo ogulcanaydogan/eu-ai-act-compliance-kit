@@ -699,6 +699,12 @@ class TestCLI:
             assert payload["freshness_reason_codes"] == []
             assert payload["waived_reason_codes"] == []
             assert payload["expired_waiver_reason_codes"] == []
+            assert payload["escalation_enabled"] is False
+            assert payload["escalation_required"] is False
+            assert payload["escalation_reason_codes"] == []
+            assert payload["escalation"]["mode"] == "observe"
+            assert payload["escalation"]["escalation_required"] is False
+            assert payload["escalation"]["escalation_reason_codes"] == []
             assert payload["waiver_summary"] == {
                 "configured_count": 0,
                 "matched_count": 0,
@@ -713,6 +719,207 @@ class TestCLI:
             assert (output_dir / "ops_closeout_checks.json").exists()
             assert (output_dir / "ops_closeout_manifest.json").exists()
             assert (output_dir / "ops_closeout_evidence.md").exists()
+
+    def test_ops_closeout_escalation_pack_writes_artifacts(self, monkeypatch):
+        """`ops closeout --escalation-pack` should emit deterministic escalation artifacts."""
+        runner = CliRunner()
+
+        def handler(request):
+            if str(request.url).endswith("/actions/runs/234"):
+                return httpx.Response(
+                    status_code=200,
+                    json={
+                        "status": "completed",
+                        "conclusion": "success",
+                        "html_url": "https://github.com/acme/repo/actions/runs/234",
+                    },
+                )
+            if str(request.url).endswith("/releases/tags/v0.1.29"):
+                return httpx.Response(
+                    status_code=200,
+                    json={
+                        "html_url": "https://github.com/acme/repo/releases/tag/v0.1.29",
+                        "assets": [
+                            {"name": "pkg-0.1.29-py3-none-any.whl"},
+                            {"name": "pkg-0.1.29.tar.gz"},
+                        ],
+                    },
+                )
+            if str(request.url).endswith("/pypi/eu-ai-act-compliance-kit/json"):
+                return httpx.Response(status_code=200, json={"info": {"version": "0.1.29"}})
+            if str(request.url).endswith("/rtd"):
+                return httpx.Response(status_code=200, text="ok")
+            return httpx.Response(status_code=404)
+
+        transport = httpx.MockTransport(handler)
+        original_client = httpx.Client
+
+        def _fake_client(*args, **kwargs):
+            return original_client(transport=transport)
+
+        monkeypatch.setattr("eu_ai_act.ops_closeout.httpx.Client", _fake_client)
+
+        with runner.isolated_filesystem():
+            output_dir = Path("ops_closeout")
+            result = runner.invoke(
+                main,
+                [
+                    "ops",
+                    "closeout",
+                    "--version",
+                    "0.1.29",
+                    "--release-run-id",
+                    "234",
+                    "--repo",
+                    "acme/repo",
+                    "--github-api-base-url",
+                    "https://example.test/api",
+                    "--pypi-base-url",
+                    "https://example.test",
+                    "--rtd-url",
+                    "https://example.test/rtd",
+                    "--escalation-pack",
+                    "--output-dir",
+                    str(output_dir),
+                    "--json",
+                ],
+            )
+
+            assert result.exit_code == 0
+            payload = json.loads(result.output[result.output.find("{") :])
+            assert payload["escalation_enabled"] is True
+            assert payload["escalation_required"] is False
+            assert payload["escalation_reason_codes"] == []
+            assert payload["escalation"]["run_context"]["version"] == "0.1.29"
+            assert (output_dir / "ops_closeout_escalation.json").exists()
+            assert (output_dir / "ops_closeout_escalation.md").exists()
+
+    def test_ops_closeout_observe_with_escalation_pack_reports_failure_without_nonzero(
+        self, monkeypatch
+    ):
+        """Observe mode with escalation pack should keep exit 0 while marking escalation required."""
+        runner = CliRunner()
+
+        def handler(request):
+            if str(request.url).endswith("/actions/runs/11"):
+                return httpx.Response(
+                    status_code=200, json={"status": "completed", "conclusion": "failure"}
+                )
+            if str(request.url).endswith("/releases/tags/v0.1.29"):
+                return httpx.Response(status_code=404, text="missing")
+            if str(request.url).endswith("/pypi/eu-ai-act-compliance-kit/json"):
+                return httpx.Response(status_code=404, text="missing")
+            if str(request.url).endswith("/rtd"):
+                return httpx.Response(status_code=503, text="down")
+            return httpx.Response(status_code=404)
+
+        transport = httpx.MockTransport(handler)
+        original_client = httpx.Client
+
+        def _fake_client(*args, **kwargs):
+            return original_client(transport=transport)
+
+        monkeypatch.setattr("eu_ai_act.ops_closeout.httpx.Client", _fake_client)
+
+        result = runner.invoke(
+            main,
+            [
+                "ops",
+                "closeout",
+                "--version",
+                "0.1.29",
+                "--release-run-id",
+                "11",
+                "--mode",
+                "observe",
+                "--repo",
+                "acme/repo",
+                "--github-api-base-url",
+                "https://example.test/api",
+                "--pypi-base-url",
+                "https://example.test",
+                "--rtd-url",
+                "https://example.test/rtd",
+                "--escalation-pack",
+                "--json",
+            ],
+        )
+
+        assert result.exit_code == 0
+        payload = json.loads(result.output[result.output.find("{") :])
+        assert payload["failed"] is True
+        assert payload["escalation_enabled"] is True
+        assert payload["escalation_required"] is True
+        assert "github_run_failed" in payload["escalation_reason_codes"]
+
+    def test_ops_closeout_escalation_pack_write_failure_is_nonzero(self, monkeypatch):
+        """Escalation artifact write failures must produce deterministic non-zero in all modes."""
+        runner = CliRunner()
+
+        def handler(request):
+            if str(request.url).endswith("/actions/runs/234"):
+                return httpx.Response(
+                    status_code=200,
+                    json={"status": "completed", "conclusion": "success"},
+                )
+            if str(request.url).endswith("/releases/tags/v0.1.29"):
+                return httpx.Response(
+                    status_code=200,
+                    json={
+                        "assets": [
+                            {"name": "pkg-0.1.29-py3-none-any.whl"},
+                            {"name": "pkg-0.1.29.tar.gz"},
+                        ]
+                    },
+                )
+            if str(request.url).endswith("/pypi/eu-ai-act-compliance-kit/json"):
+                return httpx.Response(status_code=200, json={"info": {"version": "0.1.29"}})
+            if str(request.url).endswith("/rtd"):
+                return httpx.Response(status_code=200, text="ok")
+            return httpx.Response(status_code=404)
+
+        transport = httpx.MockTransport(handler)
+        original_client = httpx.Client
+
+        def _fake_client(*args, **kwargs):
+            return original_client(transport=transport)
+
+        original_write_text = Path.write_text
+
+        def _patched_write_text(self: Path, data: str, *args, **kwargs):
+            if self.name == "ops_closeout_escalation.json":
+                raise OSError("disk full")
+            return original_write_text(self, data, *args, **kwargs)
+
+        monkeypatch.setattr("eu_ai_act.ops_closeout.httpx.Client", _fake_client)
+        monkeypatch.setattr(Path, "write_text", _patched_write_text)
+
+        result = runner.invoke(
+            main,
+            [
+                "ops",
+                "closeout",
+                "--version",
+                "0.1.29",
+                "--release-run-id",
+                "234",
+                "--repo",
+                "acme/repo",
+                "--github-api-base-url",
+                "https://example.test/api",
+                "--pypi-base-url",
+                "https://example.test",
+                "--rtd-url",
+                "https://example.test/rtd",
+                "--mode",
+                "observe",
+                "--escalation-pack",
+                "--json",
+            ],
+        )
+
+        assert result.exit_code != 0
+        assert "failed to write ops closeout artifacts" in result.output
 
     def test_ops_closeout_enforce_fails_on_failed_checks(self, monkeypatch):
         """`ops closeout --mode enforce` should return non-zero when any check fails."""

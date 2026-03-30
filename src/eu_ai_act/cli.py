@@ -77,6 +77,7 @@ from eu_ai_act.history import (
 from eu_ai_act.ops_closeout import (
     OpsCloseoutCheck,
     OpsCloseoutEvaluator,
+    build_ops_closeout_escalation_decision,
     resolve_latest_release_inputs,
     resolve_ops_closeout_policy,
 )
@@ -1257,6 +1258,13 @@ def ops() -> None:
     help="Optional waiver expiry override as ISO8601 UTC datetime (repeatable).",
 )
 @click.option(
+    "--escalation-pack",
+    "escalation_pack",
+    is_flag=True,
+    default=None,
+    help="Enable deterministic escalation artifact pack output (policy default preserved when omitted).",
+)
+@click.option(
     "--output-dir",
     type=click.Path(file_okay=False),
     help="Directory where closeout artifacts will be written (default: current working directory).",
@@ -1297,6 +1305,7 @@ def ops_closeout(
     resolve_latest_release: bool,
     waiver_reason_codes: tuple[str, ...],
     waiver_expires_at_values: tuple[str, ...],
+    escalation_pack: bool | None,
     output_dir: str | None,
     github_api_base_url: str,
     pypi_base_url: str,
@@ -1371,6 +1380,11 @@ def ops_closeout(
             if ctx.get_parameter_source("resolve_latest_release") == ParameterSource.COMMANDLINE
             else None
         )
+        escalation_pack_override = (
+            escalation_pack
+            if ctx.get_parameter_source("escalation_pack") == ParameterSource.COMMANDLINE
+            else None
+        )
         waiver_reason_codes_from_cli = (
             ctx.get_parameter_source("waiver_reason_codes") == ParameterSource.COMMANDLINE
         )
@@ -1404,6 +1418,7 @@ def ops_closeout(
             max_rtd_age_hours=max_rtd_age_hours_override,
             resolve_latest_release=resolve_latest_release_override,
             waivers=waiver_overrides,
+            escalation_enabled=escalation_pack_override,
         )
     except Exception as e:
         console.print(f"[red]Error resolving ops closeout policy: {e}[/red]")
@@ -1445,6 +1460,15 @@ def ops_closeout(
         "resolved_run_id": effective_release_run_id,
         "resolution_source": resolution_source,
         "reason_codes": list(resolution_reason_codes),
+    }
+    run_context_payload = {
+        "generated_at": generated_at,
+        "version": effective_release_version,
+        "release_run_id": effective_release_run_id,
+        "repo": resolved_policy.repo,
+        "pypi_project": resolved_policy.pypi_project,
+        "rtd_url": resolved_policy.rtd_url,
+        "resolution": resolution_payload,
     }
 
     missing_reason_codes: list[str] = []
@@ -1552,12 +1576,23 @@ def ops_closeout(
         "waived_reason_codes": waived_reason_codes,
         "expired_waiver_reason_codes": expired_waiver_reason_codes,
         "effective_reason_codes": effective_reason_codes,
+        "escalation_enabled": resolved_policy.escalation_enabled,
         "checks": [check.to_dict() for check in checks],
     }
+
+    escalation_payload = build_ops_closeout_escalation_decision(
+        mode=resolved_policy.mode,
+        failed_checks=failed_checks,
+        effective_reason_codes=effective_reason_codes,
+        run_context=run_context_payload,
+    ).to_dict()
+    checks_payload["escalation"] = escalation_payload
 
     checks_path = output_root / "ops_closeout_checks.json"
     evidence_path = output_root / "ops_closeout_evidence.md"
     manifest_path = output_root / "ops_closeout_manifest.json"
+    escalation_json_path = output_root / "ops_closeout_escalation.json"
+    escalation_md_path = output_root / "ops_closeout_escalation.md"
 
     manifest_payload = {
         "generated_at": generated_at,
@@ -1580,6 +1615,10 @@ def ops_closeout(
         "waived_reason_codes": waived_reason_codes,
         "expired_waiver_reason_codes": expired_waiver_reason_codes,
         "effective_reason_codes": effective_reason_codes,
+        "escalation_enabled": resolved_policy.escalation_enabled,
+        "escalation_required": escalation_payload["escalation_required"],
+        "escalation_reason_codes": escalation_payload["escalation_reason_codes"],
+        "escalation": escalation_payload,
         "effective_policy": resolved_policy.to_dict(),
         "artifacts": {
             "ops_closeout_checks.json": str(checks_path),
@@ -1587,6 +1626,9 @@ def ops_closeout(
             "ops_closeout_evidence.md": str(evidence_path),
         },
     }
+    if resolved_policy.escalation_enabled:
+        manifest_payload["artifacts"]["ops_closeout_escalation.json"] = str(escalation_json_path)
+        manifest_payload["artifacts"]["ops_closeout_escalation.md"] = str(escalation_md_path)
 
     try:
         checks_path.write_text(json.dumps(checks_payload, indent=2), encoding="utf-8")
@@ -1610,6 +1652,15 @@ def ops_closeout(
             ),
             encoding="utf-8",
         )
+        if resolved_policy.escalation_enabled:
+            escalation_json_path.write_text(
+                json.dumps(escalation_payload, indent=2),
+                encoding="utf-8",
+            )
+            escalation_md_path.write_text(
+                _render_ops_closeout_escalation_markdown(escalation_payload=escalation_payload),
+                encoding="utf-8",
+            )
         manifest_path.write_text(json.dumps(manifest_payload, indent=2), encoding="utf-8")
     except Exception as e:
         click.echo(f"Error: failed to write ops closeout artifacts: {e}", err=True)
@@ -1646,6 +1697,16 @@ def ops_closeout(
                 "[yellow]Expired Waiver Reasons:[/yellow] "
                 f"{', '.join(expired_waiver_reason_codes)}"
             )
+        if resolved_policy.escalation_enabled:
+            console.print(
+                "[bold]Escalation Required:[/bold] "
+                f"{str(bool(escalation_payload['escalation_required'])).lower()}"
+            )
+            if escalation_payload["escalation_reason_codes"]:
+                console.print(
+                    "[yellow]Escalation Reasons:[/yellow] "
+                    f"{', '.join(cast(list[str], escalation_payload['escalation_reason_codes']))}"
+                )
 
     if resolved_policy.mode == "enforce" and failed:
         if missing_reason_codes:
@@ -3521,6 +3582,36 @@ def _render_ops_closeout_evidence_markdown(
             f"- expired_count: {waiver_summary.get('expired_count', 0)}",
         ]
     )
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _render_ops_closeout_escalation_markdown(*, escalation_payload: dict[str, Any]) -> str:
+    """Render deterministic escalation markdown payload."""
+    run_context = escalation_payload.get("run_context", {})
+    if not isinstance(run_context, dict):
+        run_context = {}
+
+    lines = [
+        "# Ops Closeout Escalation Pack",
+        "",
+        f"- Escalation required: {str(bool(escalation_payload.get('escalation_required', False))).lower()}",
+        "- Escalation reason codes: "
+        f"{', '.join(cast(list[str], escalation_payload.get('escalation_reason_codes', []))) if escalation_payload.get('escalation_reason_codes') else 'none'}",
+        "- Failed checks: "
+        f"{', '.join(cast(list[str], escalation_payload.get('failed_checks', []))) if escalation_payload.get('failed_checks') else 'none'}",
+        "- Effective reason codes: "
+        f"{', '.join(cast(list[str], escalation_payload.get('effective_reason_codes', []))) if escalation_payload.get('effective_reason_codes') else 'none'}",
+        f"- Mode: {escalation_payload.get('mode', 'observe')}",
+        "",
+        "## Run Context",
+        f"- generated_at: {run_context.get('generated_at', 'unknown')}",
+        f"- version: {run_context.get('version', 'unknown')}",
+        f"- release_run_id: {run_context.get('release_run_id', 'unknown')}",
+        f"- repo: {run_context.get('repo', 'unknown')}",
+        f"- pypi_project: {run_context.get('pypi_project', 'unknown')}",
+        f"- rtd_url: {run_context.get('rtd_url', 'unknown')}",
+    ]
     lines.append("")
     return "\n".join(lines)
 

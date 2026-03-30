@@ -8,10 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- _None._
+- Phase 42 in progress: Ops closeout V6 escalation pack foundation.
+- Additive `ops closeout` escalation controls:
+  - CLI flag: `--escalation-pack`
+  - policy field: `escalation.enabled`
+- Additive closeout escalation artifacts:
+  - `ops_closeout_escalation.json`
+  - `ops_closeout_escalation.md`
+- Additive composite action outputs for closeout escalation telemetry:
+  - `ops_closeout_escalation_required`
+  - `ops_closeout_escalation_reason_codes`
 
 ### Changed
-- _None._
+- CI `ops-closeout-rollout-smoke` now validates escalation artifact shape.
+- Scheduled closeout workflow now runs with escalation pack enabled and uploads escalation artifacts.
 
 ### Fixed
 - _None._
