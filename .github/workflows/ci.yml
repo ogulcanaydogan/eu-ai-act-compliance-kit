@@ -431,6 +431,7 @@ jobs:
             --release-run-id 234 \
             --mode "$GATE_MODE" \
             --policy config/ops_closeout_policy.yaml \
+            --escalation-pack \
             --repo acme/repo \
             --github-api-base-url http://127.0.0.1:8877 \
             --pypi-base-url http://127.0.0.1:8877 \
@@ -455,10 +456,18 @@ jobs:
           manifest = json.loads((out / "ops_closeout_manifest.json").read_text())
           checks = json.loads((out / "ops_closeout_checks.json").read_text())
           evidence = (out / "ops_closeout_evidence.md").read_text()
+          escalation = json.loads((out / "ops_closeout_escalation.json").read_text())
+          escalation_md = (out / "ops_closeout_escalation.md").read_text()
 
           assert manifest["mode"] in {"observe", "enforce"}
           assert manifest["status"] == "success"
           assert manifest["failed"] is False
+          assert manifest["escalation_enabled"] is True
+          assert manifest["escalation_required"] is False
+          assert manifest["escalation_reason_codes"] == []
+          assert manifest["escalation"]["mode"] in {"observe", "enforce"}
+          assert manifest["escalation"]["escalation_required"] is False
+          assert manifest["escalation"]["escalation_reason_codes"] == []
           assert "github_run_stale" in manifest["reason_codes"]
           assert "github_release_stale" in manifest["reason_codes"]
           assert "rtd_stale_or_unknown" in manifest["reason_codes"]
@@ -494,6 +503,9 @@ jobs:
 
           assert "checks" in checks
           assert len(checks["checks"]) == 4
+          assert checks["escalation_enabled"] is True
+          assert checks["escalation"]["escalation_required"] is False
+          assert checks["escalation"]["escalation_reason_codes"] == []
           assert "github_run_stale" in checks["freshness_reason_codes"]
           assert "github_release_stale" in checks["freshness_reason_codes"]
           assert "rtd_stale_or_unknown" in checks["freshness_reason_codes"]
@@ -507,6 +519,10 @@ jobs:
           assert "Reason codes: github_run_stale, github_release_stale, rtd_stale_or_unknown" in evidence
           assert "Freshness reason codes: github_run_stale, github_release_stale, rtd_stale_or_unknown" in evidence
           assert "Waived reason codes: github_release_stale, github_run_stale, rtd_stale_or_unknown" in evidence
+          assert "# Ops Closeout Escalation Pack" in escalation_md
+          assert escalation["mode"] in {"observe", "enforce"}
+          assert escalation["escalation_required"] is False
+          assert escalation["escalation_reason_codes"] == []
           PY
 
   export-ops-gate-smoke:

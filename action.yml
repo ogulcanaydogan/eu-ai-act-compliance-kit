@@ -97,6 +97,10 @@ inputs:
     description: "Optional RTD URL override for ops closeout checks"
     required: false
     default: ""
+  ops_closeout_escalation_enabled:
+    description: "Enable ops closeout escalation artifact pack execution and outputs (true/false)"
+    required: false
+    default: "false"
   report_format:
     description: "Report output format (json, md, html)"
     required: false
@@ -230,6 +234,12 @@ outputs:
   ops_closeout_expired_waiver_reason_codes:
     description: "Comma-separated expired ops closeout waiver reason codes"
     value: ${{ steps.analyze.outputs.ops_closeout_expired_waiver_reason_codes }}
+  ops_closeout_escalation_required:
+    description: "Ops closeout escalation-required flag (true/false)"
+    value: ${{ steps.analyze.outputs.ops_closeout_escalation_required }}
+  ops_closeout_escalation_reason_codes:
+    description: "Comma-separated ops closeout escalation reason codes"
+    value: ${{ steps.analyze.outputs.ops_closeout_escalation_reason_codes }}
 
 runs:
   using: "composite"
@@ -387,6 +397,11 @@ runs:
           if [[ -n "$OPS_CLOSEOUT_RTD_URL_INPUT" ]]; then
             OPS_CLOSEOUT_RTD_URL_ARGS=(--rtd-url "$OPS_CLOSEOUT_RTD_URL_INPUT")
           fi
+          OPS_CLOSEOUT_ESCALATION_ENABLED_INPUT="${{ inputs.ops_closeout_escalation_enabled }}"
+          OPS_CLOSEOUT_ESCALATION_ARGS=()
+          if [[ "$OPS_CLOSEOUT_ESCALATION_ENABLED_INPUT" == "true" ]]; then
+            OPS_CLOSEOUT_ESCALATION_ARGS=(--escalation-pack)
+          fi
 
           set +e
           ai-act ops closeout \
@@ -397,6 +412,7 @@ runs:
             "${OPS_CLOSEOUT_REPO_ARGS[@]}" \
             "${OPS_CLOSEOUT_PYPI_PROJECT_ARGS[@]}" \
             "${OPS_CLOSEOUT_RTD_URL_ARGS[@]}" \
+            "${OPS_CLOSEOUT_ESCALATION_ARGS[@]}" \
             --json > /tmp/ops_closeout_gate.json
           OPS_CLOSEOUT_EXIT_CODE=$?
           set -e
@@ -561,6 +577,24 @@ runs:
         ops_closeout_expired_waiver_reason_codes = ",".join(
             str(code) for code in ops_closeout_expired_waiver_reason_codes_list if str(code)
         )
+        ops_closeout_escalation = ops_closeout.get("escalation", {})
+        if not isinstance(ops_closeout_escalation, dict):
+            ops_closeout_escalation = {}
+        ops_closeout_escalation_required = bool(
+            ops_closeout.get(
+                "escalation_required",
+                ops_closeout_escalation.get("escalation_required", False),
+            )
+        )
+        ops_closeout_escalation_reason_codes_list = ops_closeout.get(
+            "escalation_reason_codes",
+            ops_closeout_escalation.get("escalation_reason_codes", []),
+        )
+        if not isinstance(ops_closeout_escalation_reason_codes_list, list):
+            ops_closeout_escalation_reason_codes_list = []
+        ops_closeout_escalation_reason_codes = ",".join(
+            str(code) for code in ops_closeout_escalation_reason_codes_list if str(code)
+        )
         run_age_raw = ops_closeout_freshness_metrics.get("run_age_hours")
         release_age_raw = ops_closeout_freshness_metrics.get("release_age_hours")
         rtd_age_raw = ops_closeout_freshness_metrics.get("rtd_age_hours")
@@ -628,6 +662,14 @@ runs:
         print(
             "ops_closeout_expired_waiver_reason_codes="
             f"{ops_closeout_expired_waiver_reason_codes}"
+        )
+        print(
+            "ops_closeout_escalation_required="
+            f"{'true' if ops_closeout_escalation_required else 'false'}"
+        )
+        print(
+            "ops_closeout_escalation_reason_codes="
+            f"{ops_closeout_escalation_reason_codes}"
         )
         PY
 
@@ -726,6 +768,8 @@ runs:
         OPS_CLOSEOUT_FAILED_CHECKS="${{ steps.analyze.outputs.ops_closeout_failed_checks }}"
         OPS_CLOSEOUT_WAIVED_REASON_CODES="${{ steps.analyze.outputs.ops_closeout_waived_reason_codes }}"
         OPS_CLOSEOUT_EXPIRED_WAIVER_REASON_CODES="${{ steps.analyze.outputs.ops_closeout_expired_waiver_reason_codes }}"
+        OPS_CLOSEOUT_ESCALATION_REQUIRED="${{ steps.analyze.outputs.ops_closeout_escalation_required }}"
+        OPS_CLOSEOUT_ESCALATION_REASON_CODES="${{ steps.analyze.outputs.ops_closeout_escalation_reason_codes }}"
         OPS_CLOSEOUT_EXIT_CODE="${{ steps.analyze.outputs.ops_closeout_exit_code }}"
 
         if [[ "$RISK_TIER" == "unacceptable" ]]; then
@@ -775,6 +819,7 @@ runs:
           echo "❌ Workflow failed: Ops closeout policy blocked this run"
           echo "   mode=$OPS_CLOSEOUT_MODE exit_code=$OPS_CLOSEOUT_EXIT_CODE failed_checks=$OPS_CLOSEOUT_FAILED_CHECKS reason_codes=$OPS_CLOSEOUT_REASON_CODES"
           echo "   waived_reason_codes=$OPS_CLOSEOUT_WAIVED_REASON_CODES expired_waiver_reason_codes=$OPS_CLOSEOUT_EXPIRED_WAIVER_REASON_CODES"
+          echo "   escalation_required=$OPS_CLOSEOUT_ESCALATION_REQUIRED escalation_reason_codes=$OPS_CLOSEOUT_ESCALATION_REASON_CODES"
           echo "   Address ops closeout findings before merging."
           exit 1
         fi

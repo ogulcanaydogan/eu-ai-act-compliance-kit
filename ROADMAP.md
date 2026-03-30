@@ -45,6 +45,7 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
 - Phase 39 completed (ops closeout V3 freshness/SLA threshold governance)
 - Phase 40 completed (ops closeout V4 time-bounded waiver governance)
 - Phase 41 completed (ops automation V5 with scheduled closeout and auto-resolved release inputs)
+- Phase 42 in progress (ops closeout V6 escalation-pack artifacts + action/CI rollout)
 
 ## Phase 1: Risk Classification Engine (Weeks 1-2) ✅ Completed
 
@@ -787,6 +788,23 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
     - `.github/workflows/ops-closeout-daily.yml` (daily 09:00 UTC + workflow_dispatch)
   - Hardened run-resolution behavior:
     - when release version is explicitly provided and run id is missing, closeout resolves the successful run for that explicit version instead of always pairing with the latest release tag.
+
+## Phase 42: Ops Automation V6 (Escalation Pack) 🚧 In Progress
+
+- Scope in this phase:
+  - Add escalation-pack artifact generation to `ops closeout` without changing existing closeout contracts.
+  - Roll out escalation signals through composite action outputs and closeout CI smoke/daily automation.
+- Planned delivery:
+  - Additive closeout CLI flag:
+    - `--escalation-pack`
+  - Additive policy field:
+    - `escalation.enabled`
+  - Additive artifacts:
+    - `ops_closeout_escalation.json`
+    - `ops_closeout_escalation.md`
+  - Additive action outputs:
+    - `ops_closeout_escalation_required`
+    - `ops_closeout_escalation_reason_codes`
 
 ## Timeline Summary (Historical Plan)
 - **Week 1-2**: Risk Classification Engine (Phases 1.1-1.5)

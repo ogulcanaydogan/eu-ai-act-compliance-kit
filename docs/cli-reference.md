@@ -83,6 +83,7 @@ ai-act ops closeout --version 0.1.31 --release-run-id 23718807136 --mode enforce
 ai-act ops closeout --version 0.1.31 --release-run-id 23718807136 --policy config/ops_closeout_policy.yaml --repo ogulcanaydogan/eu-ai-act-compliance-kit --pypi-project eu-ai-act-compliance-kit --rtd-url https://eu-ai-act-compliance-kit.readthedocs.io/en/latest/ --json
 ai-act ops closeout --version 0.1.31 --release-run-id 23718807136 --max-run-age-hours 24 --max-release-age-hours 24 --max-rtd-age-hours 24 --json
 ai-act ops closeout --version 0.1.31 --release-run-id 23718807136 --max-run-age-hours 1 --max-release-age-hours 1 --max-rtd-age-hours 1 --waiver-reason-code github_run_stale --waiver-expires-at 2099-01-01T00:00:00Z --json
+ai-act ops closeout --policy config/ops_closeout_policy.yaml --resolve-latest-release --escalation-pack --json
 ```
 
 Checks:
@@ -100,12 +101,18 @@ Checks:
   - CLI overrides: repeat `--waiver-reason-code` and `--waiver-expires-at` in matched pairs
   - active waivers suppress matching reason codes from effective failure set
   - expired waivers do not suppress failures and are reported via dedicated payload fields
+- Optional escalation pack (policy/flag):
+  - policy field `escalation.enabled`
+  - CLI override `--escalation-pack`
+  - adds deterministic escalation payload and artifacts without changing base closeout checks
 
 Artifacts written to `<output-dir>` (default: current working directory):
 
 - `ops_closeout_checks.json`
 - `ops_closeout_manifest.json`
 - `ops_closeout_evidence.md`
+- `ops_closeout_escalation.json` (when escalation enabled)
+- `ops_closeout_escalation.md` (when escalation enabled)
 
 Exit contract:
 
@@ -138,6 +145,7 @@ JSON manifest includes:
 - `reason_codes`, `failed_checks`, `passed_checks`
 - `freshness_metrics`, `freshness_thresholds`, `freshness_reason_codes`
 - `waiver_summary`, `waived_reason_codes`, `expired_waiver_reason_codes`, `effective_reason_codes`
+- `escalation_enabled`, `escalation_required`, `escalation_reason_codes`, `escalation`
 - `artifacts`
 
 ## `classify`

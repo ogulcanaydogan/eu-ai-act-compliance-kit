@@ -45,6 +45,7 @@ class OpsCloseoutPolicy:
     max_rtd_age_hours: float | None
     resolve_latest_release: bool
     waivers: list[OpsCloseoutWaiver]
+    escalation_enabled: bool
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -63,6 +64,7 @@ class OpsCloseoutPolicy:
                 "max_rtd_age_hours": self.max_rtd_age_hours,
             },
             "waivers": [waiver.to_dict() for waiver in self.waivers],
+            "escalation": {"enabled": self.escalation_enabled},
         }
 
 
@@ -138,6 +140,28 @@ class OpsCloseoutReleaseResolution:
             "resolved_run_id": self.resolved_run_id,
             "reason_codes": list(self.reason_codes),
             "resolution_source": self.resolution_source,
+        }
+
+
+@dataclass(frozen=True)
+class OpsCloseoutEscalationDecision:
+    """Deterministic escalation decision payload for closeout failures."""
+
+    escalation_required: bool
+    escalation_reason_codes: list[str]
+    failed_checks: list[str]
+    effective_reason_codes: list[str]
+    mode: OpsCloseoutMode
+    run_context: dict[str, Any]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "escalation_required": self.escalation_required,
+            "escalation_reason_codes": list(self.escalation_reason_codes),
+            "failed_checks": list(self.failed_checks),
+            "effective_reason_codes": list(self.effective_reason_codes),
+            "mode": self.mode,
+            "run_context": dict(self.run_context),
         }
 
 
@@ -584,6 +608,7 @@ def resolve_ops_closeout_policy(
     max_rtd_age_hours: float | None = None,
     resolve_latest_release: bool | None = None,
     waivers: list[dict[str, str | None]] | None = None,
+    escalation_enabled: bool | None = None,
 ) -> OpsCloseoutPolicy:
     """Resolve ops closeout policy with precedence: CLI > policy file > defaults."""
     values: dict[str, Any] = {
@@ -598,6 +623,7 @@ def resolve_ops_closeout_policy(
         "max_rtd_age_hours": None,
         "resolve_latest_release": False,
         "waivers": [],
+        "escalation_enabled": False,
     }
 
     if policy_payload is not None:
@@ -635,6 +661,12 @@ def resolve_ops_closeout_policy(
         waivers_payload = policy_payload.get("waivers")
         if waivers_payload is not None:
             values["waivers"] = waivers_payload
+        escalation_payload = policy_payload.get("escalation")
+        if escalation_payload is not None:
+            if not isinstance(escalation_payload, dict):
+                raise ValueError("Policy field 'escalation' must be an object.")
+            if "enabled" in escalation_payload:
+                values["escalation_enabled"] = escalation_payload.get("enabled")
 
     if mode is not None:
         values["mode"] = mode
@@ -658,6 +690,8 @@ def resolve_ops_closeout_policy(
         values["resolve_latest_release"] = resolve_latest_release
     if waivers is not None:
         values["waivers"] = waivers
+    if escalation_enabled is not None:
+        values["escalation_enabled"] = escalation_enabled
 
     resolved_mode = normalize_ops_closeout_mode(str(values["mode"]))
 
@@ -704,6 +738,10 @@ def resolve_ops_closeout_policy(
         "Policy release.resolve_latest",
     )
     resolved_waivers = _coerce_ops_closeout_waivers(values["waivers"])
+    resolved_escalation_enabled = _coerce_bool(
+        values["escalation_enabled"],
+        "Policy escalation.enabled",
+    )
 
     return OpsCloseoutPolicy(
         mode=resolved_mode,
@@ -717,6 +755,26 @@ def resolve_ops_closeout_policy(
         max_rtd_age_hours=resolved_max_rtd_age_hours,
         resolve_latest_release=resolved_resolve_latest_release,
         waivers=resolved_waivers,
+        escalation_enabled=resolved_escalation_enabled,
+    )
+
+
+def build_ops_closeout_escalation_decision(
+    *,
+    mode: OpsCloseoutMode,
+    failed_checks: list[str],
+    effective_reason_codes: list[str],
+    run_context: dict[str, Any],
+) -> OpsCloseoutEscalationDecision:
+    """Build deterministic escalation decision payload from closeout result context."""
+    escalation_reason_codes = list(dict.fromkeys(effective_reason_codes))
+    return OpsCloseoutEscalationDecision(
+        escalation_required=bool(escalation_reason_codes),
+        escalation_reason_codes=escalation_reason_codes,
+        failed_checks=list(failed_checks),
+        effective_reason_codes=escalation_reason_codes,
+        mode=mode,
+        run_context=dict(run_context),
     )
 
 
