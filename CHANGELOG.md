@@ -16,6 +16,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - _None._
 
+## [0.1.34] - 2026-03-30
+
+### Changed
+- Finalized Phase 43 project closure sync:
+  - status surfaces aligned to project closure and maintenance mode (`README`, `docs/index`, `ROADMAP`)
+  - release metadata advanced for closure patch release.
+
+### Fixed
+- Unblocked `handoff --governance --governance-mode enforce` for non-actionable descriptors:
+  - no-actionable handoff runs now treat collaboration data as present with deterministic zero counts
+  - `missing_collaboration_data` is no longer raised for zero-actionable runs
+  - existing enforce behavior remains unchanged for actionable runs when collaboration data is missing.
+
 ## [0.1.33] - 2026-03-30
 
 ### Added

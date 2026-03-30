@@ -20,7 +20,7 @@ checks transparency and GPAI obligations, and renders audit-oriented reports.
 - Add governance-aware handoff outputs for decision-ready operations (`--governance`)
 - Generate one-command ops closeout evidence for release channels (`ai-act ops closeout`)
 
-## Current Delivery Status (March 29, 2026)
+## Current Delivery Status (March 30, 2026)
 
 - Phase 1: Risk classification complete
 - Phase 2: Compliance checker, checklist, transparency, GPAI complete
@@ -64,6 +64,8 @@ checks transparency and GPAI obligations, and renders audit-oriented reports.
 - Phase 40: Ops closeout V4 completed (time-bounded reason-code waiver governance with additive closeout waiver telemetry)
 - Phase 41: Ops automation V5 completed (scheduled closeout workflow + auto-resolved release inputs)
 - Phase 42: Ops automation V6 completed (escalation-pack artifacts and summary signals for closeout failures)
+- Phase 43: Final CI unblock completed (handoff governance enforce semantics corrected for non-actionable runs)
+- Project closure state: completed, now in maintenance mode for patch-only stabilization and operations reliability.
 
 ## End-to-End Flow
 
