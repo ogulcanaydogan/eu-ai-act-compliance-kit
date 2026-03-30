@@ -411,6 +411,37 @@ class TestCLI:
             )
             assert (output_dir / "governance_gate.json").exists()
 
+    def test_handoff_governance_enforce_succeeds_for_non_actionable_descriptor(self):
+        """Enforce mode should not fail on missing collaboration data when run has no actionable findings."""
+        runner = CliRunner()
+        system_yaml = EXAMPLES_DIR / "spam_filter.yaml"
+
+        with runner.isolated_filesystem():
+            output_dir = Path("handoff_out")
+            result = runner.invoke(
+                main,
+                [
+                    "handoff",
+                    str(system_yaml),
+                    "--output-dir",
+                    str(output_dir),
+                    "--governance",
+                    "--governance-mode",
+                    "enforce",
+                    "--governance-policy",
+                    str(REPO_ROOT / "config" / "governance_handoff_policy.yaml"),
+                    "--json",
+                ],
+            )
+
+            assert result.exit_code == 0
+            payload = json.loads(result.output[result.output.find("{") :])
+            assert payload["status"] == "success"
+            assert payload["governance_failed"] is False
+            assert payload["governance_reason_codes"] == []
+            governance_payload = json.loads((output_dir / "governance_gate.json").read_text())
+            assert governance_payload["failed"] is False
+
     def test_handoff_rejects_export_target_without_governance(self):
         """`handoff --export-target` should require governance mode."""
         runner = CliRunner()

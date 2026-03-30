@@ -137,3 +137,27 @@ def test_collaboration_gate_stale_thresholds_disabled_when_not_configured():
 
     assert result.failed is False
     assert result.reason_codes == []
+
+
+def test_collaboration_gate_enforce_passes_with_data_and_zero_violations():
+    """Enforce mode should pass when data is present and no thresholds are violated."""
+    policy = resolve_collaboration_gate_policy(
+        mode="enforce",
+        blocked_max=0,
+        unassigned_actionable_max=0,
+    )
+    result = CollaborationGateEvaluator().evaluate(
+        policy=policy,
+        metrics={
+            "has_collaboration_data": True,
+            "blocked_count": 0,
+            "unassigned_actionable_count": 0,
+            "stale_actionable_count": 0,
+            "blocked_stale_count": 0,
+            "review_stale_count": 0,
+        },
+    )
+
+    assert result.mode == "enforce"
+    assert result.failed is False
+    assert result.reason_codes == []
