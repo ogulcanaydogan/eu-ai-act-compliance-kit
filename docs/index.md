@@ -63,7 +63,7 @@ checks transparency and GPAI obligations, and renders audit-oriented reports.
 - Phase 39: Ops closeout V3 completed (freshness/SLA threshold governance with additive closeout telemetry)
 - Phase 40: Ops closeout V4 completed (time-bounded reason-code waiver governance with additive closeout waiver telemetry)
 - Phase 41: Ops automation V5 completed (scheduled closeout workflow + auto-resolved release inputs)
-- Phase 42: Ops automation V6 in progress (escalation-pack artifacts and summary signals for closeout failures)
+- Phase 42: Ops automation V6 completed (escalation-pack artifacts and summary signals for closeout failures)
 
 ## End-to-End Flow
 

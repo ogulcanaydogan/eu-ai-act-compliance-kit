@@ -8,23 +8,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Phase 42 in progress: Ops closeout V6 escalation pack foundation.
-- Additive `ops closeout` escalation controls:
-  - CLI flag: `--escalation-pack`
-  - policy field: `escalation.enabled`
-- Additive closeout escalation artifacts:
-  - `ops_closeout_escalation.json`
-  - `ops_closeout_escalation.md`
-- Additive composite action outputs for closeout escalation telemetry:
-  - `ops_closeout_escalation_required`
-  - `ops_closeout_escalation_reason_codes`
+- _None._
+
+### Changed
+- _None._
+
+### Fixed
+- _None._
+
+## [0.1.33] - 2026-03-30
+
+### Added
+- Completed Phase 42 Ops Automation V6 escalation pack rollout:
+  - additive `ops closeout` escalation controls:
+    - CLI flag: `--escalation-pack`
+    - policy field: `escalation.enabled`
+  - additive closeout escalation artifacts:
+    - `ops_closeout_escalation.json`
+    - `ops_closeout_escalation.md`
+  - additive composite action outputs for closeout escalation telemetry:
+    - `ops_closeout_escalation_required`
+    - `ops_closeout_escalation_reason_codes`
 
 ### Changed
 - CI `ops-closeout-rollout-smoke` now validates escalation artifact shape.
 - Scheduled closeout workflow now runs with escalation pack enabled and uploads escalation artifacts.
-
-### Fixed
-- _None._
+- Status surfaces synchronized to mark Phase 42 as completed (`README`, `docs/index`, `ROADMAP`).
 
 ## [0.1.32] - 2026-03-29
 

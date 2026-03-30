@@ -310,7 +310,7 @@ pre-commit run --hook-stage pre-push --all-files
 - Phase 39: ops closeout v3 completed (freshness/SLA thresholds and additive freshness signals across CLI/action/CI)
 - Phase 40: ops closeout v4 completed (time-bounded reason-code waivers with additive waiver telemetry)
 - Phase 41: ops automation v5 completed (scheduled closeout + auto-resolved release inputs)
-- Phase 42: ops automation v6 in progress (escalation-pack artifacts for closeout failures across CLI/action/CI)
+- Phase 42: ops automation v6 completed (escalation-pack artifacts for closeout failures across CLI/action/CI)
 
 ## Disclaimer
 
