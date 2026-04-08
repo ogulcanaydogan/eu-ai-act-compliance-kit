@@ -65,7 +65,7 @@ checks transparency and GPAI obligations, and renders audit-oriented reports.
 - Phase 41: Ops automation V5 completed (scheduled closeout workflow + auto-resolved release inputs)
 - Phase 42: Ops automation V6 completed (escalation-pack artifacts and summary signals for closeout failures)
 - Phase 43: Final CI unblock completed (handoff governance enforce semantics corrected for non-actionable runs)
-- Phase 44: Maintenance V1 in progress (weekly maintenance automation + required maintenance smoke gate)
+- Phase 44: Maintenance V1 completed (weekly maintenance automation + required maintenance smoke gate)
 - Project closure state: completed, now in maintenance mode for patch-first stabilization and operations reliability.
 
 ## Maintenance Playbook
