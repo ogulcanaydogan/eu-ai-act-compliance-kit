@@ -8,10 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- _None._
+- Phase 44 maintenance v1 in progress:
+  - new weekly maintenance automation workflow (`.github/workflows/maintenance-weekly.yml`)
+  - new required CI maintenance smoke job (`maintenance-smoke`) with PR observe/main-tag enforce closeout mode
+  - CI contract coverage for maintenance workflow and maintenance-smoke/all-checks dependency.
 
 ### Changed
-- _None._
+- Maintenance playbook documentation synchronized across README, docs index, CLI reference, and roadmap status surfaces.
 
 ### Fixed
 - _None._

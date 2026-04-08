@@ -525,6 +525,142 @@ jobs:
           assert escalation["escalation_reason_codes"] == []
           PY
 
+  maintenance-smoke:
+    runs-on: ubuntu-latest
+    name: Maintenance Smoke
+    needs: [lint, test]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run maintenance closeout smoke (PR observe, main/tag enforce)
+        env:
+          IS_MAIN_OR_TAG: ${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') }}
+        run: |
+          mkdir -p /tmp/maintenance-smoke/out
+          cat <<'PY' >/tmp/maintenance-smoke/mock_server.py
+          from __future__ import annotations
+
+          import json
+          from http.server import BaseHTTPRequestHandler, HTTPServer
+
+          class Handler(BaseHTTPRequestHandler):
+              def do_GET(self):
+                  if self.path == "/repos/acme/repo/actions/runs/444":
+                      self._send_json(
+                          200,
+                          {
+                              "status": "completed",
+                              "conclusion": "success",
+                              "html_url": "https://github.com/acme/repo/actions/runs/444",
+                              "updated_at": "2026-03-30T00:00:00Z",
+                          },
+                      )
+                      return
+                  if self.path == "/repos/acme/repo/releases/tags/v0.1.34":
+                      self._send_json(
+                          200,
+                          {
+                              "html_url": "https://github.com/acme/repo/releases/tag/v0.1.34",
+                              "assets": [
+                                  {"name": "eu_ai_act_compliance_kit-0.1.34-py3-none-any.whl"},
+                                  {"name": "eu_ai_act_compliance_kit-0.1.34.tar.gz"},
+                              ],
+                              "published_at": "2026-03-30T00:00:00Z",
+                          },
+                      )
+                      return
+                  if self.path == "/pypi/eu-ai-act-compliance-kit/json":
+                      self._send_json(200, {"info": {"version": "0.1.34"}})
+                      return
+                  if self.path == "/rtd":
+                      self.send_response(200)
+                      self.send_header("Content-Type", "text/plain; charset=utf-8")
+                      self.send_header("Last-Modified", "Sun, 30 Mar 2026 00:00:00 GMT")
+                      self.end_headers()
+                      self.wfile.write(b"ok")
+                      return
+
+                  self.send_response(404)
+                  self.end_headers()
+
+              def log_message(self, format, *args):
+                  return
+
+              def _send_json(self, status_code: int, payload: dict):
+                  body = json.dumps(payload).encode("utf-8")
+                  self.send_response(status_code)
+                  self.send_header("Content-Type", "application/json")
+                  self.send_header("Content-Length", str(len(body)))
+                  self.end_headers()
+                  self.wfile.write(body)
+
+          HTTPServer(("127.0.0.1", 8878), Handler).serve_forever()
+          PY
+
+          python /tmp/maintenance-smoke/mock_server.py &
+          SERVER_PID=$!
+          trap "kill $SERVER_PID" EXIT
+          sleep 1
+
+          GATE_MODE="observe"
+          if [[ "${{ github.event_name }}" != "pull_request" && "$IS_MAIN_OR_TAG" == "true" ]]; then
+            GATE_MODE="enforce"
+          fi
+
+          ai-act ops closeout \
+            --version 0.1.34 \
+            --release-run-id 444 \
+            --mode "$GATE_MODE" \
+            --policy config/ops_closeout_policy.yaml \
+            --repo acme/repo \
+            --github-api-base-url http://127.0.0.1:8878 \
+            --pypi-base-url http://127.0.0.1:8878 \
+            --rtd-url http://127.0.0.1:8878/rtd \
+            --output-dir /tmp/maintenance-smoke/out \
+            --json > /tmp/maintenance-smoke/stdout_manifest.json
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          out = Path("/tmp/maintenance-smoke/out")
+          manifest = json.loads((out / "ops_closeout_manifest.json").read_text())
+          checks = json.loads((out / "ops_closeout_checks.json").read_text())
+          assert manifest["mode"] in {"observe", "enforce"}
+          assert manifest["status"] == "success"
+          assert manifest["failed"] is False
+          assert manifest["failed_checks"] == []
+          assert "freshness_metrics" in manifest
+          assert "effective_reason_codes" in manifest
+          assert "checks" in checks
+          assert len(checks["checks"]) == 4
+          assert checks["escalation_enabled"] is False
+          assert checks["escalation"]["escalation_required"] is False
+          PY
+
+      - name: Upload maintenance smoke artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: maintenance-smoke-evidence
+          path: |
+            /tmp/maintenance-smoke/out/ops_closeout_checks.json
+            /tmp/maintenance-smoke/out/ops_closeout_manifest.json
+            /tmp/maintenance-smoke/out/ops_closeout_evidence.md
+            /tmp/maintenance-smoke/stdout_manifest.json
+          if-no-files-found: warn
+
   export-ops-gate-smoke:
     runs-on: ubuntu-latest
     name: Export Ops Gate Smoke
@@ -928,12 +1064,12 @@ jobs:
   all-checks:
     runs-on: ubuntu-latest
     name: All Checks Passed
-    needs: [lint, test, compat-smoke, quickstart-smoke, examples-smoke, handoff-smoke, handoff-governance-rollout-smoke, ops-closeout-rollout-smoke, export-ops-gate-smoke, collaboration-smoke, collaboration-gate-smoke, build, docker, docs, security, action-smoke]
+    needs: [lint, test, compat-smoke, quickstart-smoke, examples-smoke, handoff-smoke, handoff-governance-rollout-smoke, ops-closeout-rollout-smoke, maintenance-smoke, export-ops-gate-smoke, collaboration-smoke, collaboration-gate-smoke, build, docker, docs, security, action-smoke]
     if: always()
     steps:
       - name: Check status
         run: |
-          if [[ "${{ needs.lint.result }}" == "failure" || "${{ needs.test.result }}" == "failure" || "${{ needs.compat-smoke.result }}" == "failure" || "${{ needs.quickstart-smoke.result }}" == "failure" || "${{ needs.examples-smoke.result }}" == "failure" || "${{ needs.handoff-smoke.result }}" == "failure" || "${{ needs.handoff-governance-rollout-smoke.result }}" == "failure" || "${{ needs.ops-closeout-rollout-smoke.result }}" == "failure" || "${{ needs.export-ops-gate-smoke.result }}" == "failure" || "${{ needs.collaboration-smoke.result }}" == "failure" || "${{ needs.collaboration-gate-smoke.result }}" == "failure" || "${{ needs.build.result }}" == "failure" || "${{ needs.docker.result }}" == "failure" || "${{ needs.action-smoke.result }}" == "failure" ]]; then
+          if [[ "${{ needs.lint.result }}" == "failure" || "${{ needs.test.result }}" == "failure" || "${{ needs.compat-smoke.result }}" == "failure" || "${{ needs.quickstart-smoke.result }}" == "failure" || "${{ needs.examples-smoke.result }}" == "failure" || "${{ needs.handoff-smoke.result }}" == "failure" || "${{ needs.handoff-governance-rollout-smoke.result }}" == "failure" || "${{ needs.ops-closeout-rollout-smoke.result }}" == "failure" || "${{ needs.maintenance-smoke.result }}" == "failure" || "${{ needs.export-ops-gate-smoke.result }}" == "failure" || "${{ needs.collaboration-smoke.result }}" == "failure" || "${{ needs.collaboration-gate-smoke.result }}" == "failure" || "${{ needs.build.result }}" == "failure" || "${{ needs.docker.result }}" == "failure" || "${{ needs.action-smoke.result }}" == "failure" ]]; then
             echo "One or more checks failed"
             exit 1
           fi

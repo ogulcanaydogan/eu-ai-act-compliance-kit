@@ -20,7 +20,7 @@ checks transparency and GPAI obligations, and renders audit-oriented reports.
 - Add governance-aware handoff outputs for decision-ready operations (`--governance`)
 - Generate one-command ops closeout evidence for release channels (`ai-act ops closeout`)
 
-## Current Delivery Status (March 30, 2026)
+## Current Delivery Status (April 8, 2026)
 
 - Phase 1: Risk classification complete
 - Phase 2: Compliance checker, checklist, transparency, GPAI complete
@@ -65,7 +65,15 @@ checks transparency and GPAI obligations, and renders audit-oriented reports.
 - Phase 41: Ops automation V5 completed (scheduled closeout workflow + auto-resolved release inputs)
 - Phase 42: Ops automation V6 completed (escalation-pack artifacts and summary signals for closeout failures)
 - Phase 43: Final CI unblock completed (handoff governance enforce semantics corrected for non-actionable runs)
-- Project closure state: completed, now in maintenance mode for patch-only stabilization and operations reliability.
+- Phase 44: Maintenance V1 in progress (weekly maintenance automation + required maintenance smoke gate)
+- Project closure state: completed, now in maintenance mode for patch-first stabilization and operations reliability.
+
+## Maintenance Playbook
+
+- Weekly maintenance automation runs quality gates (`pytest`, `mypy`, `mkdocs --strict`, security scan) and closeout evidence checks.
+- For local operations, use:
+  - `ai-act ops closeout --policy config/ops_closeout_policy.yaml --resolve-latest-release --escalation-pack --json`
+- Treat `config/*.yaml` policy files as primary runtime source for repeatable governance behavior across CLI and CI.
 
 ## End-to-End Flow
 

@@ -148,6 +148,15 @@ JSON manifest includes:
 - `escalation_enabled`, `escalation_required`, `escalation_reason_codes`, `escalation`
 - `artifacts`
 
+Maintenance runbook (Phase 44):
+
+- Preferred policy-first invocation:
+  - `ai-act ops closeout --policy config/ops_closeout_policy.yaml --resolve-latest-release --escalation-pack --json`
+- Weekly maintenance automation uses the same policy source and emits artifact + summary evidence for:
+  - quality gates (`pytest`, `mypy`, `mkdocs --strict`)
+  - security scan (`bandit`)
+  - ops closeout checks.
+
 ## `classify`
 
 Classifies a system descriptor into a risk tier.
