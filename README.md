@@ -312,7 +312,7 @@ pre-commit run --hook-stage pre-push --all-files
 - Phase 41: ops automation v5 completed (scheduled closeout + auto-resolved release inputs)
 - Phase 42: ops automation v6 completed (escalation-pack artifacts for closeout failures across CLI/action/CI)
 - Phase 43: final CI unblock completed (handoff governance enforce no-actionable semantics fixed on `main`)
-- Phase 44: maintenance v1 in progress (weekly maintenance automation + required maintenance smoke gate)
+- Phase 44: maintenance v1 completed (weekly maintenance automation + required maintenance smoke gate)
 - Project status: completed; repository is in maintenance mode for patch and operational reliability updates.
 
 ## Maintenance Playbook

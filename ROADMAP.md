@@ -47,7 +47,7 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
 - Phase 41 completed (ops automation V5 with scheduled closeout and auto-resolved release inputs)
 - Phase 42 completed (ops closeout V6 escalation-pack artifacts + action/CI rollout)
 - Phase 43 completed (final CI unblock for handoff governance enforce no-actionable semantics)
-- Phase 44 in progress (maintenance v1 hardening with weekly automation and CI maintenance-smoke gate)
+- Phase 44 completed (maintenance v1 hardening with weekly automation and CI maintenance-smoke gate)
 - Project status: completed and transitioned to maintenance mode (patch-first stabilization + operational reliability).
 
 ## Phase 1: Risk Classification Engine (Weeks 1-2) ✅ Completed
@@ -809,12 +809,12 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
     - `ops_closeout_escalation_required`
     - `ops_closeout_escalation_reason_codes`
 
-## Phase 44: Maintenance V1 (Stabilization Sprint) 🚧 In Progress
+## Phase 44: Maintenance V1 (Stabilization Sprint) ✅ Completed
 
-- Scope in this phase:
+- Scope delivered in this phase:
   - Add weekly maintenance automation for reliability checks and closeout evidence continuity.
   - Add required CI maintenance smoke gate while preserving existing observe/enforce rollout model.
-- Planned delivery:
+- Delivery completed:
   - New workflow:
     - `.github/workflows/maintenance-weekly.yml` (`schedule` + `workflow_dispatch`)
   - Weekly automation suite:
