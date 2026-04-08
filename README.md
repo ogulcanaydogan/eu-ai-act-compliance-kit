@@ -312,7 +312,18 @@ pre-commit run --hook-stage pre-push --all-files
 - Phase 41: ops automation v5 completed (scheduled closeout + auto-resolved release inputs)
 - Phase 42: ops automation v6 completed (escalation-pack artifacts for closeout failures across CLI/action/CI)
 - Phase 43: final CI unblock completed (handoff governance enforce no-actionable semantics fixed on `main`)
-- Project status: completed; repository is in maintenance mode for patches and operational reliability updates.
+- Phase 44: maintenance v1 in progress (weekly maintenance automation + required maintenance smoke gate)
+- Project status: completed; repository is in maintenance mode for patch and operational reliability updates.
+
+## Maintenance Playbook
+
+- Run local maintenance gate before release or policy updates:
+  - `uv run pytest -q`
+  - `uv run mypy src/eu_ai_act`
+  - `uv run mkdocs build --strict`
+  - `uv run --with bandit bandit -r src/eu_ai_act`
+- Use `ai-act ops closeout --policy config/ops_closeout_policy.yaml --resolve-latest-release --escalation-pack --json` for deterministic closeout evidence.
+- Keep governance policies centralized in `config/*.yaml`; prefer policy files over ad-hoc flag mixes for repeatable operations.
 
 ## Disclaimer
 

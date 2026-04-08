@@ -10,6 +10,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "ci.yml"
 ACTION_PATH = REPO_ROOT / "action.yml"
 OPS_CLOSEOUT_DAILY_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "ops-closeout-daily.yml"
+MAINTENANCE_WEEKLY_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "maintenance-weekly.yml"
 
 
 def _load_ci_jobs() -> dict:
@@ -23,6 +24,10 @@ def _load_action_payload() -> dict:
 
 def _load_ops_closeout_daily_payload() -> dict:
     return yaml.safe_load(OPS_CLOSEOUT_DAILY_WORKFLOW_PATH.read_text(encoding="utf-8"))
+
+
+def _load_maintenance_weekly_payload() -> dict:
+    return yaml.safe_load(MAINTENANCE_WEEKLY_WORKFLOW_PATH.read_text(encoding="utf-8"))
 
 
 def test_ci_contains_required_quickstart_smoke_job():
@@ -135,6 +140,25 @@ def test_ci_contains_ops_closeout_rollout_smoke_job():
     assert "ops_closeout_escalation.md" in joined_run
 
 
+def test_ci_contains_maintenance_smoke_job():
+    """CI must include maintenance-smoke job with PR observe/main-tag enforce closeout path."""
+    jobs = _load_ci_jobs()
+    assert "maintenance-smoke" in jobs
+
+    maintenance_job = jobs["maintenance-smoke"]
+    assert maintenance_job.get("name") == "Maintenance Smoke"
+
+    steps = maintenance_job.get("steps", [])
+    run_blocks = [step.get("run", "") for step in steps if isinstance(step, dict)]
+    joined_run = "\n".join(run_blocks)
+    assert "ai-act ops closeout" in joined_run
+    assert "--policy config/ops_closeout_policy.yaml" in joined_run
+    assert '--mode "$GATE_MODE"' in joined_run
+    assert "ops_closeout_manifest.json" in joined_run
+    assert "ops_closeout_checks.json" in joined_run
+    assert "IS_MAIN_OR_TAG" in joined_run
+
+
 def test_ci_test_job_enforces_coverage_floor():
     """CI test job should enforce minimum coverage threshold."""
     jobs = _load_ci_jobs()
@@ -245,6 +269,22 @@ def test_all_checks_treats_ops_closeout_rollout_smoke_as_required():
     )
     run_script = check_status_step.get("run", "")
     assert "needs.ops-closeout-rollout-smoke.result" in run_script
+
+
+def test_all_checks_treats_maintenance_smoke_as_required():
+    """All-checks gate must evaluate maintenance-smoke result as required."""
+    jobs = _load_ci_jobs()
+    assert "all-checks" in jobs
+
+    all_checks_job = jobs["all-checks"]
+    needs = all_checks_job.get("needs", [])
+    assert "maintenance-smoke" in needs
+
+    check_status_step = next(
+        step for step in all_checks_job.get("steps", []) if step.get("name") == "Check status"
+    )
+    run_script = check_status_step.get("run", "")
+    assert "needs.maintenance-smoke.result" in run_script
 
 
 def test_ci_contains_export_ops_gate_smoke_job():
@@ -511,6 +551,48 @@ def test_ops_closeout_daily_workflow_contract():
     assert "ops_closeout_manifest.json" in joined_run
     assert "ops_closeout_escalation.json" in joined_run
     assert "ops_closeout_escalation.md" in joined_run
+
+    uses_payload = "\n".join(
+        str(step) for step in steps if isinstance(step, dict) and "uses" in step
+    )
+    assert "actions/upload-artifact@v4" in uses_payload
+
+
+def test_maintenance_weekly_workflow_contract():
+    """Maintenance weekly workflow must include weekly schedule and full maintenance suite."""
+    payload = _load_maintenance_weekly_payload()
+
+    on_payload = payload.get("on", payload.get(True, {}))
+    assert isinstance(on_payload, dict)
+    schedule_payload = on_payload.get("schedule", [])
+    assert isinstance(schedule_payload, list)
+    assert any(
+        item.get("cron") == "0 9 * * 1" for item in schedule_payload if isinstance(item, dict)
+    )
+
+    workflow_dispatch = on_payload.get("workflow_dispatch", {})
+    assert isinstance(workflow_dispatch, dict)
+    dispatch_inputs = workflow_dispatch.get("inputs", {})
+    assert "mode" in dispatch_inputs
+    assert dispatch_inputs["mode"].get("default") == "observe"
+
+    jobs = payload.get("jobs", {})
+    assert "maintenance-weekly" in jobs
+    maintenance_job = jobs["maintenance-weekly"]
+    assert maintenance_job.get("name") == "Maintenance Weekly"
+
+    steps = maintenance_job.get("steps", [])
+    run_blocks = [step.get("run", "") for step in steps if isinstance(step, dict)]
+    joined_run = "\n".join(run_blocks)
+    assert "uv run pytest -q" in joined_run
+    assert "uv run mypy src/eu_ai_act" in joined_run
+    assert "uv run mkdocs build --strict" in joined_run
+    assert "uv run --with bandit bandit -r src/eu_ai_act" in joined_run
+    assert "ai-act ops closeout" in joined_run
+    assert "--policy config/ops_closeout_policy.yaml" in joined_run
+    assert "--resolve-latest-release" in joined_run
+    assert "--escalation-pack" in joined_run
+    assert "maintenance_results.json" in joined_run
 
     uses_payload = "\n".join(
         str(step) for step in steps if isinstance(step, dict) and "uses" in step

@@ -3,7 +3,7 @@
 ## Vision
 Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifies AI systems by risk tier, generates compliance checklists, and produces audit-ready reports. The first open-source tool that makes EU AI Act compliance accessible to every AI team.
 
-## Status Snapshot (March 30, 2026)
+## Status Snapshot (April 8, 2026)
 - Phase 1 completed
 - Phase 2 completed
 - Phase 3 JSON/Markdown/HTML/PDF completed
@@ -47,7 +47,8 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
 - Phase 41 completed (ops automation V5 with scheduled closeout and auto-resolved release inputs)
 - Phase 42 completed (ops closeout V6 escalation-pack artifacts + action/CI rollout)
 - Phase 43 completed (final CI unblock for handoff governance enforce no-actionable semantics)
-- Project status: completed and transitioned to maintenance mode (patch-only stabilization + operational reliability).
+- Phase 44 in progress (maintenance v1 hardening with weekly automation and CI maintenance-smoke gate)
+- Project status: completed and transitioned to maintenance mode (patch-first stabilization + operational reliability).
 
 ## Phase 1: Risk Classification Engine (Weeks 1-2) ✅ Completed
 
@@ -807,6 +808,26 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
   - Additive action outputs:
     - `ops_closeout_escalation_required`
     - `ops_closeout_escalation_reason_codes`
+
+## Phase 44: Maintenance V1 (Stabilization Sprint) 🚧 In Progress
+
+- Scope in this phase:
+  - Add weekly maintenance automation for reliability checks and closeout evidence continuity.
+  - Add required CI maintenance smoke gate while preserving existing observe/enforce rollout model.
+- Planned delivery:
+  - New workflow:
+    - `.github/workflows/maintenance-weekly.yml` (`schedule` + `workflow_dispatch`)
+  - Weekly automation suite:
+    - `uv run pytest -q`
+    - `uv run mypy src/eu_ai_act`
+    - `uv run mkdocs build --strict`
+    - `uv run --with bandit bandit -r src/eu_ai_act`
+    - `ai-act ops closeout --policy config/ops_closeout_policy.yaml --resolve-latest-release --escalation-pack`
+  - New required CI gate:
+    - `maintenance-smoke`
+    - included in `all-checks` dependency set
+  - Documentation/runbook sync:
+    - maintenance playbook notes in `README` and docs home.
 
 ## Timeline Summary (Historical Plan)
 - **Week 1-2**: Risk Classification Engine (Phases 1.1-1.5)
