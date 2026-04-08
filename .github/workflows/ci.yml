@@ -643,7 +643,10 @@ jobs:
           assert manifest["failed_checks"] == []
           assert "freshness_metrics" in manifest
           assert "effective_reason_codes" in manifest
-          assert checks["failed"] is False
+          assert "checks" in checks
+          assert len(checks["checks"]) == 4
+          assert checks["escalation_enabled"] is False
+          assert checks["escalation"]["escalation_required"] is False
           PY
 
       - name: Upload maintenance smoke artifacts
