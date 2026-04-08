@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 SecurityGateMode = Literal["observe", "enforce"]
 SecurityGateProfile = Literal["strict", "balanced", "lenient"]
@@ -91,7 +91,7 @@ class SecurityGateEvaluator:
         if normalized not in self.VALID_MODES:
             allowed = ", ".join(self.VALID_MODES)
             raise ValueError(f"Invalid security gate mode: {mode}. Expected one of: {allowed}.")
-        return normalized  # type: ignore[return-value]
+        return cast(SecurityGateMode, normalized)
 
     def _normalize_profile(self, profile: str) -> SecurityGateProfile:
         normalized = profile.strip().lower()
@@ -100,7 +100,7 @@ class SecurityGateEvaluator:
             raise ValueError(
                 f"Invalid security gate profile: {profile}. Expected one of: {allowed}."
             )
-        return normalized  # type: ignore[return-value]
+        return cast(SecurityGateProfile, normalized)
 
     def _effective_profile(
         self,
