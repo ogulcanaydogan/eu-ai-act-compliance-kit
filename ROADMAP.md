@@ -3,7 +3,7 @@
 ## Vision
 Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifies AI systems by risk tier, generates compliance checklists, and produces audit-ready reports. The first open-source tool that makes EU AI Act compliance accessible to every AI team.
 
-## Status Snapshot (April 8, 2026)
+## Status Snapshot (April 9, 2026)
 - Phase 1 completed
 - Phase 2 completed
 - Phase 3 JSON/Markdown/HTML/PDF completed
@@ -48,6 +48,7 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
 - Phase 42 completed (ops closeout V6 escalation-pack artifacts + action/CI rollout)
 - Phase 43 completed (final CI unblock for handoff governance enforce no-actionable semantics)
 - Phase 44 completed (maintenance v1 hardening with weekly automation and CI maintenance-smoke gate)
+- Phase 45 completed (release reliability hardening with two-attempt trusted publishing and deterministic PyPI version verification)
 - Project status: completed and transitioned to maintenance mode (patch-first stabilization + operational reliability).
 
 ## Phase 1: Risk Classification Engine (Weeks 1-2) ✅ Completed
@@ -828,6 +829,22 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
     - included in `all-checks` dependency set
   - Documentation/runbook sync:
     - maintenance playbook notes in `README` and docs home.
+
+## Phase 45: Release Reliability Hardening ✅ Completed
+
+- Scope delivered in this phase:
+  - Harden release publish reliability while preserving trusted publishing, environment approval, and job ordering.
+  - Add deterministic post-publish version verification and publish diagnostics output.
+- Delivery completed:
+  - `.github/workflows/release.yml` now includes:
+    - trusted publish attempt 1 (`continue-on-error: true`)
+    - trusted publish attempt 2 gated on attempt 1 failure
+    - mandatory PyPI version verification (`info.version == tag version`)
+    - publish diagnostics JSON artifact and workflow summary section
+  - `tests/test_ci_contract.py` now validates release workflow contracts for:
+    - two-attempt publish path
+    - deterministic verify step
+    - diagnostics artifact + summary steps.
 
 ## Timeline Summary (Historical Plan)
 - **Week 1-2**: Risk Classification Engine (Phases 1.1-1.5)

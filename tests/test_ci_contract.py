@@ -9,6 +9,7 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "ci.yml"
 ACTION_PATH = REPO_ROOT / "action.yml"
+RELEASE_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "release.yml"
 OPS_CLOSEOUT_DAILY_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "ops-closeout-daily.yml"
 MAINTENANCE_WEEKLY_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "maintenance-weekly.yml"
 
@@ -20,6 +21,10 @@ def _load_ci_jobs() -> dict:
 
 def _load_action_payload() -> dict:
     return yaml.safe_load(ACTION_PATH.read_text(encoding="utf-8"))
+
+
+def _load_release_payload() -> dict:
+    return yaml.safe_load(RELEASE_WORKFLOW_PATH.read_text(encoding="utf-8"))
 
 
 def _load_ops_closeout_daily_payload() -> dict:
@@ -598,3 +603,85 @@ def test_maintenance_weekly_workflow_contract():
         str(step) for step in steps if isinstance(step, dict) and "uses" in step
     )
     assert "actions/upload-artifact@v4" in uses_payload
+
+
+def test_release_workflow_contains_retry_publish_path():
+    """Release workflow must include two-attempt trusted publishing path for transient errors."""
+    payload = _load_release_payload()
+    jobs = payload.get("jobs", {})
+    assert "publish-pypi" in jobs
+
+    publish_job = jobs["publish-pypi"]
+    steps = publish_job.get("steps", [])
+    step_names = [step.get("name") for step in steps if isinstance(step, dict)]
+    assert "Publish package to PyPI (attempt 1)" in step_names
+    assert "Publish package to PyPI (attempt 2)" in step_names
+
+    attempt_1 = next(
+        step for step in steps if isinstance(step, dict) and step.get("id") == "publish_attempt_1"
+    )
+    attempt_2 = next(
+        step for step in steps if isinstance(step, dict) and step.get("id") == "publish_attempt_2"
+    )
+    assert attempt_1.get("continue-on-error") is True
+    assert attempt_2.get("if") == "steps.publish_attempt_1.outcome != 'success'"
+    assert "pypa/gh-action-pypi-publish@release/v1" in attempt_1.get("uses", "")
+    assert "pypa/gh-action-pypi-publish@release/v1" in attempt_2.get("uses", "")
+
+
+def test_release_workflow_contains_deterministic_pypi_version_verify_step():
+    """Release workflow must verify that published PyPI version matches the tag version."""
+    payload = _load_release_payload()
+    jobs = payload.get("jobs", {})
+    publish_job = jobs.get("publish-pypi", {})
+    steps = publish_job.get("steps", [])
+
+    verify_step = next(
+        step for step in steps if isinstance(step, dict) and step.get("id") == "verify_pypi"
+    )
+    verify_run = verify_step.get("run", "")
+    assert "https://pypi.org/pypi/" in verify_run
+    assert "EXPECTED_VERSION" in verify_run
+    assert "verified_version" in verify_run
+    assert "raise SystemExit(1)" in verify_run
+
+
+def test_release_workflow_emits_publish_diagnostics_artifact_and_summary():
+    """Release workflow must write diagnostics JSON and append publish outcomes to summary."""
+    payload = _load_release_payload()
+    jobs = payload.get("jobs", {})
+    publish_job = jobs.get("publish-pypi", {})
+    steps = publish_job.get("steps", [])
+
+    diagnostic_step = next(
+        step
+        for step in steps
+        if isinstance(step, dict) and step.get("name") == "Build publish diagnostics"
+    )
+    assert diagnostic_step.get("if") == "always()"
+    diagnostic_run = diagnostic_step.get("run", "")
+    assert "publish-diagnostics.json" in diagnostic_run
+    assert "attempt_1_outcome" in diagnostic_run
+    assert "verify_outcome" in diagnostic_run
+
+    upload_step = next(
+        step
+        for step in steps
+        if isinstance(step, dict) and step.get("name") == "Upload publish diagnostics"
+    )
+    assert upload_step.get("if") == "always()"
+    assert upload_step.get("uses") == "actions/upload-artifact@v4"
+    assert upload_step.get("with", {}).get("name") == "pypi-publish-diagnostics"
+    assert upload_step.get("with", {}).get("path") == "publish-diagnostics.json"
+
+    summary_step = next(
+        step
+        for step in steps
+        if isinstance(step, dict)
+        and step.get("name") == "Append publish diagnostics to workflow summary"
+    )
+    assert summary_step.get("if") == "always()"
+    summary_run = summary_step.get("run", "")
+    assert "PyPI Publish Diagnostics" in summary_run
+    assert "Attempt 1 outcome" in summary_run
+    assert "Expected version" in summary_run

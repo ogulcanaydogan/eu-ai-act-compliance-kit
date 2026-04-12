@@ -61,8 +61,122 @@ jobs:
           name: dist
           path: dist/
 
-      - name: Publish package to PyPI
+      - name: Publish package to PyPI (attempt 1)
+        id: publish_attempt_1
+        continue-on-error: true
         uses: pypa/gh-action-pypi-publish@release/v1
+
+      - name: Publish package to PyPI (attempt 2)
+        id: publish_attempt_2
+        if: steps.publish_attempt_1.outcome != 'success'
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+      - name: Verify package version on PyPI
+        id: verify_pypi
+        env:
+          EXPECTED_VERSION: ${{ github.ref_name }}
+          PYPI_PROJECT: eu-ai-act-compliance-kit
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import time
+          import urllib.request
+
+          expected = os.environ["EXPECTED_VERSION"].lstrip("v")
+          project = os.environ["PYPI_PROJECT"]
+          url = f"https://pypi.org/pypi/{project}/json"
+          errors = []
+          verified_version = ""
+          verified_status = 0
+
+          for attempt in range(1, 11):
+              try:
+                  with urllib.request.urlopen(url, timeout=20) as response:
+                      verified_status = int(response.getcode() or 0)
+                      payload = json.loads(response.read().decode("utf-8"))
+                  verified_version = str(payload.get("info", {}).get("version", ""))
+                  if verified_status == 200 and verified_version == expected:
+                      with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+                          fh.write(f"verified_version={verified_version}\n")
+                          fh.write(f"verified_status={verified_status}\n")
+                      print(f"Verified {project} {verified_version} on PyPI.")
+                      break
+                  errors.append(
+                      f"attempt {attempt}: status={verified_status}, "
+                      f"version={verified_version!r}, expected={expected!r}"
+                  )
+              except Exception as exc:  # noqa: BLE001
+                  errors.append(f"attempt {attempt}: {exc}")
+              time.sleep(min(30, attempt * 2))
+          else:
+              print("PyPI version verification failed.")
+              for err in errors:
+                  print(f"- {err}")
+              with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+                  fh.write(f"verified_version={verified_version}\n")
+                  fh.write(f"verified_status={verified_status}\n")
+              raise SystemExit(1)
+          PY
+
+      - name: Build publish diagnostics
+        if: always()
+        env:
+          ATTEMPT_1_OUTCOME: ${{ steps.publish_attempt_1.outcome }}
+          ATTEMPT_2_OUTCOME: ${{ steps.publish_attempt_2.outcome }}
+          VERIFY_OUTCOME: ${{ steps.verify_pypi.outcome }}
+          VERIFY_VERSION: ${{ steps.verify_pypi.outputs.verified_version }}
+          VERIFY_STATUS: ${{ steps.verify_pypi.outputs.verified_status }}
+          EXPECTED_VERSION: ${{ github.ref_name }}
+          PYPI_PROJECT: eu-ai-act-compliance-kit
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from datetime import datetime, timezone
+
+          payload = {
+              "generated_at": datetime.now(timezone.utc).isoformat(),
+              "project": os.environ["PYPI_PROJECT"],
+              "expected_version": os.environ["EXPECTED_VERSION"].lstrip("v"),
+              "attempt_1_outcome": os.environ.get("ATTEMPT_1_OUTCOME", "unknown"),
+              "attempt_2_outcome": os.environ.get("ATTEMPT_2_OUTCOME", "skipped"),
+              "verify_outcome": os.environ.get("VERIFY_OUTCOME", "unknown"),
+              "verified_version": os.environ.get("VERIFY_VERSION", ""),
+              "verified_status": os.environ.get("VERIFY_STATUS", ""),
+          }
+          with open("publish-diagnostics.json", "w", encoding="utf-8") as fh:
+              json.dump(payload, fh, indent=2, sort_keys=True)
+          PY
+
+      - name: Upload publish diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pypi-publish-diagnostics
+          path: publish-diagnostics.json
+          if-no-files-found: error
+
+      - name: Append publish diagnostics to workflow summary
+        if: always()
+        env:
+          ATTEMPT_1_OUTCOME: ${{ steps.publish_attempt_1.outcome }}
+          ATTEMPT_2_OUTCOME: ${{ steps.publish_attempt_2.outcome }}
+          VERIFY_OUTCOME: ${{ steps.verify_pypi.outcome }}
+          VERIFY_VERSION: ${{ steps.verify_pypi.outputs.verified_version }}
+          VERIFY_STATUS: ${{ steps.verify_pypi.outputs.verified_status }}
+          EXPECTED_VERSION: ${{ github.ref_name }}
+        run: |
+          {
+            echo "## PyPI Publish Diagnostics"
+            echo
+            echo "- Attempt 1 outcome: \`${ATTEMPT_1_OUTCOME:-unknown}\`"
+            echo "- Attempt 2 outcome: \`${ATTEMPT_2_OUTCOME:-skipped}\`"
+            echo "- Verify step outcome: \`${VERIFY_OUTCOME:-unknown}\`"
+            echo "- Expected version: \`${EXPECTED_VERSION#v}\`"
+            echo "- Verified version: \`${VERIFY_VERSION:-unknown}\`"
+            echo "- Verify HTTP status: \`${VERIFY_STATUS:-unknown}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   github-release:
     name: Create GitHub Release

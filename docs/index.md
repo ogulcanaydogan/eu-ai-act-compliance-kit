@@ -66,6 +66,7 @@ checks transparency and GPAI obligations, and renders audit-oriented reports.
 - Phase 42: Ops automation V6 completed (escalation-pack artifacts and summary signals for closeout failures)
 - Phase 43: Final CI unblock completed (handoff governance enforce semantics corrected for non-actionable runs)
 - Phase 44: Maintenance V1 completed (weekly maintenance automation + required maintenance smoke gate)
+- Phase 45: Release reliability hardening completed (two-attempt trusted publish path + deterministic PyPI version verification + publish diagnostics artifact)
 - Project closure state: completed, now in maintenance mode for patch-first stabilization and operations reliability.
 
 ## Maintenance Playbook

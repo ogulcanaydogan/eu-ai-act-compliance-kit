@@ -16,6 +16,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - _None._
 
+## [0.1.36] - 2026-04-09
+
+### Added
+- Completed Phase 45 release reliability hardening:
+  - two-attempt trusted publishing path in `.github/workflows/release.yml` for transient publish failures
+  - deterministic PyPI version verification step after publish
+  - additive publish diagnostics artifact (`pypi-publish-diagnostics`) and workflow summary block.
+- Added release workflow CI contract tests that assert:
+  - retry attempt path presence
+  - deterministic PyPI verify step presence
+  - diagnostics artifact and summary step presence.
+
+### Changed
+- Status surfaces synchronized to mark Phase 45 as completed across `README`, `docs/index`, and `ROADMAP`.
+- Project version advanced to `0.1.36`.
+
+### Fixed
+- Reduced manual-intervention risk on transient PyPI/OIDC publish failures by adding deterministic retry + verification flow.
+
 ## [0.1.35] - 2026-04-08
 
 ### Added
