@@ -8,15 +8,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Phase 46 release hardening in progress:
-  - Node24 migration of remaining workflow `actions/upload-artifact@v4` usage in CI/release/scheduled workflows
-  - CI contract guard asserting workflow set no longer references `actions/upload-artifact@v4`.
+- _None._
 
 ### Changed
-- Status surfaces updated for Phase 46 in-progress tracking (`README`, `docs/index`, `ROADMAP`).
+- _None._
 
 ### Fixed
 - _None._
+
+## [0.1.37] - 2026-04-15
+
+### Added
+- Completed Phase 46 Node24 CI migration hardening:
+  - migrated remaining workflow `actions/upload-artifact@v4` usage to `actions/upload-artifact@v7`
+  - added workflow-level CI contract guard asserting no remaining `upload-artifact@v4` references.
+
+### Changed
+- Status surfaces synchronized to mark Phase 46 as completed across `README`, `docs/index`, and `ROADMAP`.
+- Project version advanced to `0.1.37`.
+
+### Fixed
+- Reduced GitHub Actions runtime deprecation risk by removing remaining Node20-bound artifact upload action usage.
 
 ## [0.1.36] - 2026-04-09
 
