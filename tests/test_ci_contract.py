@@ -560,7 +560,7 @@ def test_ops_closeout_daily_workflow_contract():
     uses_payload = "\n".join(
         str(step) for step in steps if isinstance(step, dict) and "uses" in step
     )
-    assert "actions/upload-artifact@v4" in uses_payload
+    assert "actions/upload-artifact@v7" in uses_payload
 
 
 def test_maintenance_weekly_workflow_contract():
@@ -602,7 +602,7 @@ def test_maintenance_weekly_workflow_contract():
     uses_payload = "\n".join(
         str(step) for step in steps if isinstance(step, dict) and "uses" in step
     )
-    assert "actions/upload-artifact@v4" in uses_payload
+    assert "actions/upload-artifact@v7" in uses_payload
 
 
 def test_release_workflow_contains_retry_publish_path():
@@ -670,7 +670,7 @@ def test_release_workflow_emits_publish_diagnostics_artifact_and_summary():
         if isinstance(step, dict) and step.get("name") == "Upload publish diagnostics"
     )
     assert upload_step.get("if") == "always()"
-    assert upload_step.get("uses") == "actions/upload-artifact@v4"
+    assert upload_step.get("uses") == "actions/upload-artifact@v7"
     assert upload_step.get("with", {}).get("name") == "pypi-publish-diagnostics"
     assert upload_step.get("with", {}).get("path") == "publish-diagnostics.json"
 
@@ -685,3 +685,13 @@ def test_release_workflow_emits_publish_diagnostics_artifact_and_summary():
     assert "PyPI Publish Diagnostics" in summary_run
     assert "Attempt 1 outcome" in summary_run
     assert "Expected version" in summary_run
+
+
+def test_workflows_do_not_reference_upload_artifact_v4():
+    """Node24 migration guard: no workflow should still use upload-artifact@v4."""
+    workflow_root = REPO_ROOT / ".github" / "workflows"
+    payload = "\n".join(
+        workflow_path.read_text(encoding="utf-8")
+        for workflow_path in sorted(workflow_root.glob("*.yml"))
+    )
+    assert "actions/upload-artifact@v4" not in payload

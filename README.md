@@ -314,6 +314,7 @@ pre-commit run --hook-stage pre-push --all-files
 - Phase 43: final CI unblock completed (handoff governance enforce no-actionable semantics fixed on `main`)
 - Phase 44: maintenance v1 completed (weekly maintenance automation + required maintenance smoke gate)
 - Phase 45: release reliability hardening completed (two-attempt PyPI trusted publish path + deterministic post-publish version verification + diagnostics artifact)
+- Phase 46: Node24 CI migration hardening in progress (migrating remaining `upload-artifact@v4` usage to Node24-compatible major with contract guards)
 - Project status: completed; repository is in maintenance mode for patch and operational reliability updates.
 
 ## Maintenance Playbook
