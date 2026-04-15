@@ -8,10 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- _None._
+- Phase 46 release hardening in progress:
+  - Node24 migration of remaining workflow `actions/upload-artifact@v4` usage in CI/release/scheduled workflows
+  - CI contract guard asserting workflow set no longer references `actions/upload-artifact@v4`.
 
 ### Changed
-- _None._
+- Status surfaces updated for Phase 46 in-progress tracking (`README`, `docs/index`, `ROADMAP`).
 
 ### Fixed
 - _None._
