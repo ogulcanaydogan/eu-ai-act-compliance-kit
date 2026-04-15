@@ -49,7 +49,7 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
 - Phase 43 completed (final CI unblock for handoff governance enforce no-actionable semantics)
 - Phase 44 completed (maintenance v1 hardening with weekly automation and CI maintenance-smoke gate)
 - Phase 45 completed (release reliability hardening with two-attempt trusted publishing and deterministic PyPI version verification)
-- Phase 46 in progress (Node24 CI migration hardening for remaining workflow action runtime deprecation paths)
+- Phase 46 completed (Node24 CI migration hardening for remaining workflow action runtime deprecation paths)
 - Project status: completed and transitioned to maintenance mode (patch-first stabilization + operational reliability).
 
 ## Phase 1: Risk Classification Engine (Weeks 1-2) ✅ Completed
@@ -847,14 +847,14 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
     - deterministic verify step
     - diagnostics artifact + summary steps.
 
-## Phase 46: Node24 CI Migration Hardening 🚧 In Progress
+## Phase 46: Node24 CI Migration Hardening ✅ Completed
 
-- Scope in this phase:
+- Scope delivered in this phase:
   - Remove remaining Node20 deprecation risk by migrating residual workflow `actions/upload-artifact@v4` usage.
   - Keep behavior unchanged (artifact names, paths, and rollout model), only runtime/action-major hardening.
-- Planned delivery:
-  - Update remaining workflow action usage to Node24-compatible major.
-  - Expand CI contract tests with:
+- Delivery completed:
+  - Migrated remaining workflow action usage to Node24-compatible major (`actions/upload-artifact@v7`).
+  - Expanded CI contract tests with:
     - updated action-version assertions
     - explicit guard that no workflow references `actions/upload-artifact@v4`.
 

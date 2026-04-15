@@ -67,7 +67,7 @@ checks transparency and GPAI obligations, and renders audit-oriented reports.
 - Phase 43: Final CI unblock completed (handoff governance enforce semantics corrected for non-actionable runs)
 - Phase 44: Maintenance V1 completed (weekly maintenance automation + required maintenance smoke gate)
 - Phase 45: Release reliability hardening completed (two-attempt trusted publish path + deterministic PyPI version verification + publish diagnostics artifact)
-- Phase 46: Node24 CI migration hardening in progress (remaining `upload-artifact@v4` workflow usage migration + CI contract guard)
+- Phase 46: Node24 CI migration hardening completed (remaining `upload-artifact@v4` workflow usage migrated + CI contract guard added)
 - Project closure state: completed, now in maintenance mode for patch-first stabilization and operations reliability.
 
 ## Maintenance Playbook
