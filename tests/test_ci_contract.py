@@ -695,3 +695,10 @@ def test_workflows_do_not_reference_upload_artifact_v4():
         for workflow_path in sorted(workflow_root.glob("*.yml"))
     )
     assert "actions/upload-artifact@v4" not in payload
+
+
+def test_ci_uses_node24_compatible_codecov_action_major():
+    """CI hardening guard: coverage upload should not use deprecated codecov-action@v3."""
+    payload = CI_WORKFLOW_PATH.read_text(encoding="utf-8")
+    assert "codecov/codecov-action@v5" in payload
+    assert "codecov/codecov-action@v3" not in payload
