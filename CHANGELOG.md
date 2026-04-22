@@ -8,10 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- _None._
+- Phase 47 in-progress maintenance hardening kickoff:
+  - added CI contract guard to prevent regressions to legacy `codecov/codecov-action@v3`.
 
 ### Changed
-- _None._
+- Updated CI coverage upload action major to `codecov/codecov-action@v5` for runtime freshness hardening.
+- Status surfaces synchronized to mark Phase 47 as in progress across `README`, `docs/index`, and `ROADMAP`.
 
 ### Fixed
 - _None._

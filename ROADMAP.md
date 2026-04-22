@@ -3,7 +3,7 @@
 ## Vision
 Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifies AI systems by risk tier, generates compliance checklists, and produces audit-ready reports. The first open-source tool that makes EU AI Act compliance accessible to every AI team.
 
-## Status Snapshot (April 15, 2026)
+## Status Snapshot (April 22, 2026)
 - Phase 1 completed
 - Phase 2 completed
 - Phase 3 JSON/Markdown/HTML/PDF completed
@@ -50,6 +50,7 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
 - Phase 44 completed (maintenance v1 hardening with weekly automation and CI maintenance-smoke gate)
 - Phase 45 completed (release reliability hardening with two-attempt trusted publishing and deterministic PyPI version verification)
 - Phase 46 completed (Node24 CI migration hardening for remaining workflow action runtime deprecation paths)
+- Phase 47 in progress (CI action runtime freshness hardening for remaining non-Node24-compatible action majors)
 - Project status: completed and transitioned to maintenance mode (patch-first stabilization + operational reliability).
 
 ## Phase 1: Risk Classification Engine (Weeks 1-2) ✅ Completed
@@ -857,6 +858,15 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
   - Expanded CI contract tests with:
     - updated action-version assertions
     - explicit guard that no workflow references `actions/upload-artifact@v4`.
+
+## Phase 47: CI Action Runtime Freshness Hardening 🚧 In Progress
+
+- Scope targeted in this phase:
+  - Remove residual action-major deprecation risk in CI by upgrading remaining legacy action majors.
+  - Preserve workflow behavior (artifact contracts, rollout modes, required dependencies), changing only runtime majors and contract guards.
+- Current implementation status:
+  - Upgraded CI coverage upload step to `codecov/codecov-action@v5`.
+  - Added CI contract guard ensuring no workflow regression to `codecov/codecov-action@v3`.
 
 ## Timeline Summary (Historical Plan)
 - **Week 1-2**: Risk Classification Engine (Phases 1.1-1.5)
