@@ -315,7 +315,7 @@ pre-commit run --hook-stage pre-push --all-files
 - Phase 44: maintenance v1 completed (weekly maintenance automation + required maintenance smoke gate)
 - Phase 45: release reliability hardening completed (two-attempt PyPI trusted publish path + deterministic post-publish version verification + diagnostics artifact)
 - Phase 46: Node24 CI migration hardening completed (migrated remaining workflow `upload-artifact@v4` usage and added workflow-level CI guard)
-- Phase 47: CI action runtime freshness hardening in progress (coverage upload action major refresh + workflow contract guard expansion)
+- Phase 47: CI action runtime freshness hardening completed (coverage upload action major refresh + workflow contract guard expansion)
 - Project status: completed; repository is in maintenance mode for patch and operational reliability updates.
 
 ## Maintenance Playbook
