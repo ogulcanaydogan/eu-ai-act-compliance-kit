@@ -53,6 +53,15 @@ Automated compliance toolkit for the EU AI Act (Regulation 2024/1689). Classifie
 - Phase 47 completed (CI action runtime freshness hardening for remaining non-Node24-compatible action majors)
 - Project status: completed and transitioned to maintenance mode (patch-first stabilization + operational reliability).
 
+## v0.2.0 — Annex Coverage Expansion (target: 2026-09-30)
+
+Deepen compliance coverage beyond risk-tier classification by implementing section-level checkers for the EU AI Act's mandatory Annexes.
+
+- **Annex IV — Technical Documentation** (scaffolded in v0.1.39): wire `check_annex_iv_completeness()` into the `check` CLI command; emit Annex IV coverage table in HTML/Markdown reports.
+- **Annex IX — Conformity Assessment**: model the Article 43 conformity assessment procedure paths (internal vs. third-party); flag systems that must use a notified body.
+- **Annex XI — Post-Market Monitoring**: generate post-market monitoring plan template pre-filled from the system descriptor.
+- CLI flag: `ai-act check --annex-detail` for per-section breakdown in reports.
+
 ## Phase 1: Risk Classification Engine (Weeks 1-2) ✅ Completed
 
 ### 1.1 Project Initialization
