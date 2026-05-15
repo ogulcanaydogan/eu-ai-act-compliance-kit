@@ -11,11 +11,11 @@ Reference: Regulation (EU) 2024/1689, Annex IV.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 
-class AnnexIVSection(str, Enum):
+class AnnexIVSection(StrEnum):
     """Enumeration of the eight mandatory sections of Annex IV."""
 
     GENERAL_DESCRIPTION = "1"
@@ -130,7 +130,9 @@ def annex_iv_coverage_summary(findings: list[AnnexIVFinding]) -> dict[str, Any]:
         "total_sections": len(findings),
         "covered_sections": covered,
         "coverage_pct": round(100 * covered / len(findings)) if findings else 0,
-        "critical_missing": [f.section.value for f in findings if not f.covered and f.severity == "CRITICAL"],
+        "critical_missing": [
+            f.section.value for f in findings if not f.covered and f.severity == "CRITICAL"
+        ],
         "findings": [
             {
                 "section": f.section.value,

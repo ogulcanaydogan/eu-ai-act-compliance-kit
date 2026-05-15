@@ -1,11 +1,9 @@
 """Tests for Annex IV technical documentation coverage checker."""
 
-import pytest
 from eu_ai_act.annexes.annex_iv import (
     AnnexIVSection,
-    AnnexIVFinding,
-    check_annex_iv_completeness,
     annex_iv_coverage_summary,
+    check_annex_iv_completeness,
 )
 
 
