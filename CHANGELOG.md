@@ -16,7 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - _None._
 
 ### Fixed
-- _None._
+- `test_ci_uses_node24_compatible_codecov_action_major` (`tests/test_ci_contract.py`) — guard now denies the pre-Node-24 majors (`v3`, `v4`) rather than pinning to `v5`, so future Dependabot bumps that move to `v6`+ remain Node-24-compatible without re-touching the test.
 
 ## [0.1.38] - 2026-04-22
 
