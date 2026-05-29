@@ -1,10 +1,19 @@
 """Tests for Annex IV technical documentation coverage checker."""
 
+from pathlib import Path
+
 from eu_ai_act.annexes.annex_iv import (
     AnnexIVSection,
     annex_iv_coverage_summary,
     check_annex_iv_completeness,
 )
+from eu_ai_act.checker import ComplianceChecker
+from eu_ai_act.classifier import RiskClassifier
+from eu_ai_act.reporter import ReportGenerator
+from eu_ai_act.schema import load_system_descriptor_from_file
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+EXAMPLES_DIR = REPO_ROOT / "examples"
 
 
 def _full_doc() -> dict:
@@ -73,3 +82,84 @@ def test_eight_sections_returned():
     assert len(findings) == 8
     section_ids = {f.section for f in findings}
     assert section_ids == set(AnnexIVSection)
+
+
+# ---------------------------------------------------------------------------
+# Reporter integration tests
+# ---------------------------------------------------------------------------
+
+
+def _build_base_reporter_inputs(system_yaml: Path):
+    descriptor = load_system_descriptor_from_file(str(system_yaml))
+    classifier = RiskClassifier()
+    checker = ComplianceChecker()
+    classification = classifier.classify(descriptor)
+    compliance_report = checker.check(descriptor)
+    return descriptor, classification, compliance_report
+
+
+class TestReporterAnnexIVIntegration:
+    """Reporter renders Annex IV section only when annex_iv_findings is supplied."""
+
+    def test_markdown_contains_annex_iv_heading_when_findings_present(self):
+        descriptor, classification, compliance_report = _build_base_reporter_inputs(
+            EXAMPLES_DIR / "medical_diagnosis.yaml"
+        )
+        findings = check_annex_iv_completeness(_full_doc())
+        result = ReportGenerator().generate_report(
+            descriptor=descriptor,
+            classification=classification,
+            compliance_report=compliance_report,
+            annex_iv_findings=findings,
+            format="md",
+        )
+        assert "## Annex IV" in result
+        assert "Coverage:" in result
+
+    def test_markdown_omits_annex_iv_section_when_findings_absent(self):
+        descriptor, classification, compliance_report = _build_base_reporter_inputs(
+            EXAMPLES_DIR / "medical_diagnosis.yaml"
+        )
+        result = ReportGenerator().generate_report(
+            descriptor=descriptor,
+            classification=classification,
+            compliance_report=compliance_report,
+            annex_iv_findings=None,
+            format="md",
+        )
+        assert "Annex IV" not in result
+
+    def test_html_contains_annex_iv_heading_when_findings_present(self):
+        descriptor, classification, compliance_report = _build_base_reporter_inputs(
+            EXAMPLES_DIR / "spam_filter.yaml"
+        )
+        findings = check_annex_iv_completeness(_full_doc())
+        result = ReportGenerator().generate_report(
+            descriptor=descriptor,
+            classification=classification,
+            compliance_report=compliance_report,
+            annex_iv_findings=findings,
+            format="html",
+        )
+        assert "Annex IV" in result
+        assert "Technical Documentation Coverage" in result
+
+    def test_markdown_table_rows_match_finding_count(self):
+        findings = check_annex_iv_completeness(_full_doc())
+        descriptor, classification, compliance_report = _build_base_reporter_inputs(
+            EXAMPLES_DIR / "spam_filter.yaml"
+        )
+        result = ReportGenerator().generate_report(
+            descriptor=descriptor,
+            classification=classification,
+            compliance_report=compliance_report,
+            annex_iv_findings=findings,
+            format="md",
+        )
+        # Each finding produces one Markdown table row starting with "| "
+        table_rows = [
+            line
+            for line in result.splitlines()
+            if line.startswith("| ") and "---" not in line and "Section" not in line
+        ]
+        assert len(table_rows) == len(findings)

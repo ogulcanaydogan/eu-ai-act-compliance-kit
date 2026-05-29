@@ -19,6 +19,7 @@ from rich.panel import Panel
 from rich.progress import Progress
 from rich.table import Table
 
+from eu_ai_act.annexes import check_annex_iv_completeness
 from eu_ai_act.checker import ComplianceChecker
 from eu_ai_act.checklist import ChecklistGenerator
 from eu_ai_act.classifier import RiskClassifier
@@ -208,11 +209,19 @@ def classify(system_yaml: str, output_json: bool) -> None:
     show_default=True,
     help="Security gate profile. Used when --security-gate=enforce.",
 )
+@click.option(
+    "--annex-detail",
+    "annex_detail",
+    is_flag=True,
+    default=False,
+    help="Run Annex IV technical-documentation completeness check and include results in output.",
+)
 def check(
     system_yaml: str,
     output_json: bool,
     security_gate_mode: str,
     security_gate_profile: str,
+    annex_detail: bool,
 ) -> None:
     """
     Perform full compliance check on an AI system.
@@ -275,6 +284,30 @@ def check(
     except Exception as e:
         history_warning = str(e)
 
+    annex_iv_payload: dict[str, Any] | None = None
+    if annex_detail:
+        technical_doc = descriptor.model_dump()
+        annex_iv_findings = check_annex_iv_completeness(technical_doc)
+        annex_iv_payload = {
+            "total_sections": len(annex_iv_findings),
+            "covered_sections": sum(1 for f in annex_iv_findings if f.covered),
+            "coverage_pct": (
+                round(100 * sum(1 for f in annex_iv_findings if f.covered) / len(annex_iv_findings))
+                if annex_iv_findings
+                else 0
+            ),
+            "findings": [
+                {
+                    "section": f.section.value,
+                    "title": f.title,
+                    "status": f.status,
+                    "severity": f.severity,
+                    "missing_fields": f.missing_fields,
+                }
+                for f in annex_iv_findings
+            ],
+        }
+
     if output_json:
         output = _build_check_output_payload(
             descriptor=descriptor,
@@ -285,6 +318,8 @@ def check(
             security_summary_payload=security_summary_payload,
             security_gate_result=security_gate_result,
         )
+        if annex_iv_payload is not None:
+            output["annex_iv"] = annex_iv_payload
         click.echo(json.dumps(output, indent=2))
     else:
         console.print(
@@ -378,6 +413,29 @@ def check(
         gate_table.add_row("Partial Controls", str(security_gate_result.partial_count))
         gate_table.add_row("Not Assessed Controls", str(security_gate_result.not_assessed_count))
         console.print(gate_table)
+
+        if annex_iv_payload is not None:
+            annex_table = Table(title="Annex IV — Technical Documentation Coverage")
+            annex_table.add_column("Section", style="cyan")
+            annex_table.add_column("Title")
+            annex_table.add_column("Severity")
+            annex_table.add_column("Status")
+            annex_table.add_column("Missing Fields")
+            for entry in annex_iv_payload["findings"]:
+                status_style = "green" if entry["status"] == "COVERED" else "red"
+                annex_table.add_row(
+                    entry["section"],
+                    entry["title"],
+                    entry["severity"],
+                    f"[{status_style}]{entry['status']}[/{status_style}]",
+                    ", ".join(entry["missing_fields"]) if entry["missing_fields"] else "-",
+                )
+            console.print(annex_table)
+            console.print(
+                f"Coverage: {annex_iv_payload['covered_sections']}/"
+                f"{annex_iv_payload['total_sections']} sections "
+                f"({annex_iv_payload['coverage_pct']}%)"
+            )
 
     if history_warning:
         click.echo(f"Warning: failed to write history event: {history_warning}", err=True)
