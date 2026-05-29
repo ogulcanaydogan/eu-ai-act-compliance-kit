@@ -3584,3 +3584,51 @@ class TestCLI:
             assert result.exit_code != 0
             output = result.output + getattr(result, "stderr", "")
             assert expected_error in output
+
+
+class TestCheckAnnexDetail:
+    """Tests for the --annex-detail flag on the check command."""
+
+    @pytest.fixture(autouse=True)
+    def _isolate_history_path(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("EU_AI_ACT_HISTORY_PATH", str(tmp_path / "history.jsonl"))
+
+    def test_check_annex_detail_json_includes_annex_iv_key(self):
+        """`check --annex-detail --json` should add an annex_iv key to the payload."""
+        runner = CliRunner()
+        system_yaml = EXAMPLES_DIR / "medical_diagnosis.yaml"
+        result = runner.invoke(
+            main,
+            ["check", str(system_yaml), "--json", "--annex-detail"],
+        )
+
+        assert result.exit_code == 0
+        json_start = result.output.find("{")
+        payload = json.loads(result.output[json_start:])
+
+        assert "annex_iv" in payload
+        annex_iv = payload["annex_iv"]
+        assert annex_iv["total_sections"] == 8
+        assert "covered_sections" in annex_iv
+        assert "coverage_pct" in annex_iv
+        assert isinstance(annex_iv["findings"], list)
+        assert len(annex_iv["findings"]) == 8
+        for finding in annex_iv["findings"]:
+            assert "section" in finding
+            assert "title" in finding
+            assert "status" in finding
+            assert finding["status"] in ("COVERED", "MISSING")
+            assert "severity" in finding
+            assert "missing_fields" in finding
+
+    def test_check_without_annex_detail_omits_annex_iv_key(self):
+        """`check --json` without --annex-detail should not include annex_iv key."""
+        runner = CliRunner()
+        system_yaml = EXAMPLES_DIR / "medical_diagnosis.yaml"
+        result = runner.invoke(main, ["check", str(system_yaml), "--json"])
+
+        assert result.exit_code == 0
+        json_start = result.output.find("{")
+        payload = json.loads(result.output[json_start:])
+
+        assert "annex_iv" not in payload

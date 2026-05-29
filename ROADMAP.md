@@ -877,6 +877,16 @@ Deepen compliance coverage beyond risk-tier classification by implementing secti
   - Upgraded CI coverage upload step to `codecov/codecov-action@v5`.
   - Added CI contract guard ensuring no workflow regression to `codecov/codecov-action@v3`.
 
+## Phase 48: v0.1.39 — Annex IV CLI and Reporter Wiring ✅ Completed
+
+- Scope targeted in this phase:
+  - Wire the existing `check_annex_iv_completeness()` module into the CLI and reporters so it produces visible output.
+  - Annex IX and XI checkers remain open as v0.2.0 items.
+- Delivery completed:
+  - Added `--annex-detail` flag to `check` CLI command; calls `check_annex_iv_completeness()` against the loaded descriptor dict and attaches results under the `annex_iv` key.
+  - Markdown and HTML reporters render an Annex IV section (per-section pass/fail table) when `annex_iv_findings` is supplied; section is omitted silently when absent.
+  - Added reporter integration tests in `tests/test_annex_iv.py` and CLI flag tests in `tests/test_cli.py`.
+
 ## Timeline Summary (Historical Plan)
 - **Week 1-2**: Risk Classification Engine (Phases 1.1-1.5)
 - **Week 2-3**: Compliance Checker Engine (Phase 2)

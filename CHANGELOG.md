@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `eu_ai_act.annexes.annex_iv` module: section-level coverage checker for Annex IV (Technical Documentation) of Regulation (EU) 2024/1689. Models all 8 mandatory sections, validates evidence fields per section, and returns structured `AnnexIVFinding` objects with severity, coverage status, and missing field lists.
 - `check_annex_iv_completeness(technical_doc)` and `annex_iv_coverage_summary(findings)` public API.
 - 5 unit tests in `tests/test_annex_iv.py` covering full coverage, missing critical sections, empty doc, and section-count invariant.
+- `check` CLI now accepts `--annex-detail` to emit Annex IV technical-documentation coverage; Markdown and HTML reporters render the section pass/fail table.
 
 ### Changed
 - _None._

@@ -10,6 +10,7 @@ import json
 from datetime import UTC, datetime
 from typing import Any, cast
 
+from eu_ai_act.annexes.annex_iv import AnnexIVFinding
 from eu_ai_act.checker import ComplianceFinding, ComplianceReport
 from eu_ai_act.checklist import ChecklistItem, ComplianceChecklist
 from eu_ai_act.classifier import RiskClassification
@@ -38,6 +39,7 @@ class ReportGenerator:
         transparency_findings: list[TransparencyFinding] | None = None,
         gpai_assessment: GPAIAssessment | None = None,
         checklist: ComplianceChecklist | None = None,
+        annex_iv_findings: list[AnnexIVFinding] | None = None,
         format: str = "json",
     ) -> str:
         """Generate a report using a shared payload and format-specific renderers."""
@@ -48,6 +50,7 @@ class ReportGenerator:
             transparency_findings=transparency_findings or [],
             gpai_assessment=gpai_assessment,
             checklist=checklist,
+            annex_iv_findings=annex_iv_findings,
         )
 
         if format == "json":
@@ -66,6 +69,7 @@ class ReportGenerator:
         transparency_findings: list[TransparencyFinding] | None = None,
         gpai_assessment: GPAIAssessment | None = None,
         checklist: ComplianceChecklist | None = None,
+        annex_iv_findings: list[AnnexIVFinding] | None = None,
     ) -> str:
         """Backward-compatible wrapper for JSON report generation."""
         return self.generate_report(
@@ -75,6 +79,7 @@ class ReportGenerator:
             transparency_findings=transparency_findings,
             gpai_assessment=gpai_assessment,
             checklist=checklist,
+            annex_iv_findings=annex_iv_findings,
             format="json",
         )
 
@@ -86,6 +91,7 @@ class ReportGenerator:
         transparency_findings: list[TransparencyFinding] | None = None,
         gpai_assessment: GPAIAssessment | None = None,
         checklist: ComplianceChecklist | None = None,
+        annex_iv_findings: list[AnnexIVFinding] | None = None,
     ) -> str:
         """Backward-compatible wrapper for Markdown report generation."""
         return self.generate_report(
@@ -95,6 +101,7 @@ class ReportGenerator:
             transparency_findings=transparency_findings,
             gpai_assessment=gpai_assessment,
             checklist=checklist,
+            annex_iv_findings=annex_iv_findings,
             format="md",
         )
 
@@ -106,6 +113,7 @@ class ReportGenerator:
         transparency_findings: list[TransparencyFinding] | None = None,
         gpai_assessment: GPAIAssessment | None = None,
         checklist: ComplianceChecklist | None = None,
+        annex_iv_findings: list[AnnexIVFinding] | None = None,
     ) -> str:
         """Backward-compatible wrapper for HTML report generation."""
         return self.generate_report(
@@ -115,6 +123,7 @@ class ReportGenerator:
             transparency_findings=transparency_findings,
             gpai_assessment=gpai_assessment,
             checklist=checklist,
+            annex_iv_findings=annex_iv_findings,
             format="html",
         )
 
@@ -163,6 +172,7 @@ class ReportGenerator:
         transparency_findings: list[TransparencyFinding],
         gpai_assessment: GPAIAssessment | None,
         checklist: ComplianceChecklist | None,
+        annex_iv_findings: list[AnnexIVFinding] | None = None,
     ) -> dict[str, Any]:
         """Build shared report payload for all renderers."""
         generated_at = self._utc_timestamp()
@@ -234,7 +244,28 @@ class ReportGenerator:
             [self._serialize_checklist_item(item) for item in checklist.items] if checklist else []
         )
 
-        return {
+        annex_iv_payload: dict[str, Any] | None = None
+        if annex_iv_findings is not None:
+            covered = sum(1 for f in annex_iv_findings if f.covered)
+            annex_iv_payload = {
+                "total_sections": len(annex_iv_findings),
+                "covered_sections": covered,
+                "coverage_pct": (
+                    round(100 * covered / len(annex_iv_findings)) if annex_iv_findings else 0
+                ),
+                "findings": [
+                    {
+                        "section": f.section.value,
+                        "title": f.title,
+                        "status": f.status,
+                        "severity": f.severity,
+                        "missing_fields": f.missing_fields,
+                    }
+                    for f in annex_iv_findings
+                ],
+            }
+
+        payload: dict[str, Any] = {
             "system_name": descriptor.name,
             "version": descriptor.version,
             "generated_at": generated_at,
@@ -252,6 +283,9 @@ class ReportGenerator:
             "recommended_actions": recommended_actions,
             "recommended_action_count": len(recommended_actions),
         }
+        if annex_iv_payload is not None:
+            payload["annex_iv"] = annex_iv_payload
+        return payload
 
     def _render_markdown(self, payload: dict[str, Any]) -> str:
         """Render report payload as Markdown."""
@@ -361,6 +395,29 @@ class ReportGenerator:
         else:
             lines.append("- No audit trail entries available.")
 
+        if payload.get("annex_iv") is not None:
+            annex_iv = payload["annex_iv"]
+            lines.extend(
+                [
+                    "",
+                    "## Annex IV — Technical Documentation Coverage",
+                    (
+                        f"Coverage: {annex_iv['covered_sections']}/"
+                        f"{annex_iv['total_sections']} sections "
+                        f"({annex_iv['coverage_pct']}%)"
+                    ),
+                    "",
+                    "| Section | Title | Severity | Status | Missing Fields |",
+                    "| --- | --- | --- | --- | --- |",
+                ]
+            )
+            for finding in annex_iv["findings"]:
+                missing = ", ".join(finding["missing_fields"]) if finding["missing_fields"] else "-"
+                lines.append(
+                    f"| {finding['section']} | {finding['title']} | {finding['severity']} "
+                    f"| {finding['status']} | {missing} |"
+                )
+
         lines.extend(
             ["", "---", "Report generated from compliance, transparency, and GPAI signals."]
         )
@@ -385,6 +442,7 @@ class ReportGenerator:
         audit_rows = self._build_simple_list(
             payload["audit_trail"], "No audit trail entries available."
         )
+        annex_iv_section = self._build_annex_iv_rows(payload)
 
         return f"""<!DOCTYPE html>
 <html lang=\"en\">
@@ -451,6 +509,7 @@ class ReportGenerator:
 
         <h2>Audit Trail</h2>
         {audit_rows}
+        {annex_iv_section}
     </div>
 </body>
 </html>
@@ -562,6 +621,44 @@ class ReportGenerator:
             return f"<p>{html.escape(empty_message)}</p>"
         items = "".join(f"<li>{html.escape(value)}</li>" for value in values)
         return f"<ul>{items}</ul>"
+
+    def _build_annex_iv_rows(self, payload: dict[str, Any]) -> str:
+        """Build HTML block for Annex IV technical-documentation coverage section."""
+        annex_iv = payload.get("annex_iv")
+        if annex_iv is None:
+            return ""
+
+        rows = []
+        for finding in annex_iv["findings"]:
+            missing = (
+                html.escape(", ".join(finding["missing_fields"]))
+                if finding["missing_fields"]
+                else "-"
+            )
+            rows.append(
+                "<tr>"
+                f"<td>{html.escape(finding['section'])}</td>"
+                f"<td>{html.escape(finding['title'])}</td>"
+                f"<td>{html.escape(finding['severity'])}</td>"
+                f"<td>{html.escape(finding['status'])}</td>"
+                f"<td>{missing}</td>"
+                "</tr>"
+            )
+
+        table = (
+            "<table><thead><tr>"
+            "<th>Section</th><th>Title</th><th>Severity</th><th>Status</th><th>Missing Fields</th>"
+            "</tr></thead><tbody>" + "".join(rows) + "</tbody></table>"
+        )
+        coverage_text = (
+            f"Coverage: {annex_iv['covered_sections']}/{annex_iv['total_sections']} sections "
+            f"({annex_iv['coverage_pct']}%)"
+        )
+        return (
+            "<h2>Annex IV — Technical Documentation Coverage</h2>"
+            f"<p>{html.escape(coverage_text)}</p>"
+            f"{table}"
+        )
 
     def _serialize_compliance_finding(self, finding: ComplianceFinding) -> dict[str, Any]:
         """Serialize compliance finding payload."""
