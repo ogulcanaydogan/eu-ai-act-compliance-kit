@@ -55,6 +55,16 @@ reporting = [
     "jinja2>=3.1.0",
 ]
 
+[dependency-groups]
+# Default group uv installs for `uv run` (used by the Maintenance Weekly workflow).
+dev = [
+    "pytest>=7.4.0",
+    "mypy>=1.5.0",
+    "mkdocs>=1.5.0",
+    "mkdocs-material>=9.4.0",
+    "mkdocs-include-markdown-plugin>=6.0.0",
+]
+
 [project.urls]
 Homepage = "https://github.com/ogulcanaydogan/eu-ai-act-compliance-kit"
 Documentation = "https://eu-ai-act-compliance-kit.readthedocs.io"
