@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     name: Lint
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -40,7 +40,7 @@ jobs:
         python-version: ["3.11", "3.12"]
     name: Test (Python ${{ matrix.python-version }})
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -71,7 +71,7 @@ jobs:
     name: Compat Smoke (Python ${{ matrix.python-version }})
     needs: [lint]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -108,7 +108,7 @@ jobs:
     name: Quickstart Smoke
     needs: [lint, test]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -134,7 +134,7 @@ jobs:
     name: Examples Smoke
     needs: [lint, test]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -222,7 +222,7 @@ jobs:
     name: Handoff Smoke
     needs: [lint, test]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -274,7 +274,7 @@ jobs:
     name: Handoff Governance Rollout Smoke
     needs: [lint, test]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -338,7 +338,7 @@ jobs:
     name: Ops Closeout Rollout Smoke
     needs: [lint, test]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -530,7 +530,7 @@ jobs:
     name: Maintenance Smoke
     needs: [lint, test]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -666,7 +666,7 @@ jobs:
     name: Export Ops Gate Smoke
     needs: [lint, test]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -716,7 +716,7 @@ jobs:
     name: Collaboration Smoke
     needs: [lint, test]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -768,7 +768,7 @@ jobs:
     name: Collaboration Gate Smoke
     needs: [lint, test]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -824,7 +824,7 @@ jobs:
     name: Build
     needs: [lint, test, quickstart-smoke, examples-smoke, handoff-smoke, export-ops-gate-smoke, collaboration-smoke, collaboration-gate-smoke]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -853,7 +853,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Reset Docker Hub auth for anonymous base-image pulls
         run: |
@@ -878,7 +878,7 @@ jobs:
     name: Build Documentation
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -899,7 +899,7 @@ jobs:
     name: Security Check
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -920,7 +920,7 @@ jobs:
     name: Action Smoke
     needs: [lint, test, quickstart-smoke, examples-smoke, handoff-smoke, export-ops-gate-smoke, collaboration-smoke, collaboration-gate-smoke]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Minimal-risk scenario should pass
         id: minimal
