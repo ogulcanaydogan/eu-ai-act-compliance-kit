@@ -207,38 +207,16 @@ Fail policy:
 - collaboration gate fails only when `collaboration_gate_mode=enforce` and action-evaluated collaboration governance result is failed
 - ops-closeout gate fails only when `ops_closeout_enabled=true`, `ops_closeout_mode=enforce`, and action-evaluated ops closeout result is failed
 
-## For UK Global Talent Evidence
+## Open-Core Boundary
 
-This repository is structured to generate verifiable signals of technical impact:
-
-- **Measurable output artifacts**: compliance reports, checklist items, history events, static dashboards
-- **Release discipline**: semver tag-driven pipeline (`qa-build -> trusted PyPI publish -> GitHub Release`)
-- **Open contribution readiness**: CI, tests, docs, contribution guide, roadmap, changelog
-- **Public traceability**: issues, PRs, release notes, and workflow history
-
-Evidence-friendly links:
-
-- Repo: <https://github.com/ogulcanaydogan/eu-ai-act-compliance-kit>
-- Docs: <https://eu-ai-act-compliance-kit.readthedocs.io>
-- Launch Evidence: [docs/launch_evidence_v0_1_0.md](docs/launch_evidence_v0_1_0.md)
-- Roadmap: [ROADMAP.md](ROADMAP.md)
-- Changelog: [CHANGELOG.md](CHANGELOG.md)
-- Contributing: [CONTRIBUTING.md](CONTRIBUTING.md)
-
-## Open-Core Boundary (Commercial Strategy)
-
-### Open-source scope (Apache-2.0)
+Everything in this repository is open source under Apache-2.0:
 
 - Core compliance engine (classification/checker/checklist/transparency/gpai)
 - CLI + report generation + local history/dashboard
 - Documentation, examples, and CI integration
 
-### Reserved commercial scope (private)
-
-- Enterprise policy packs and jurisdiction overlays
-- Managed multi-tenant dashboard / hosted compliance ops
-- Advisory automation and premium support SLAs
-- Proprietary integrations and deployment controls
+Enterprise policy packs, jurisdiction overlays, and hosted multi-tenant operation
+are kept out of scope here to keep the open-source core focused.
 
 ## Development
 
@@ -278,45 +256,12 @@ pre-commit run --hook-stage pre-push --all-files
 - [Examples](docs/examples.md)
 - [Adoption Evidence Template](docs/adoption_evidence_template.md)
 
-## Roadmap Status
+## Project Status
 
-- Phase 1-12: completed (including v0.1.0 launch closure)
-- Phase 13: adoption hardening completed
-- Phase 14: external export core completed (payload-first, no live API push)
-- Phase 15: CI/release runtime hardening completed (Node20 deprecation cleanup + security gate stabilization)
-- Phase 16: live export push completed (strict fail-fast + retry/backoff controls for `--push`)
-- Phase 17: export push production hardening completed (create-only idempotency ledger + duplicate-safe push)
-- Phase 18: export operator observability + upsert push completed (`export ledger list|stats` + lookup-first upsert mode)
-- Phase 19: export ops hardening completed (`export batch` + `export reconcile` for operational reliability)
-- Phase 20: quality and coverage hardening completed (example matrix + CI/test contract gates)
-- Phase 21: export v3 reliability completed (reconcile drift detection + guarded repair with explicit `--apply`)
-- Phase 22: export v4 ops completed (persistent ops log + `export replay` and `export rollup`)
-- Phase 23: OWASP security mapping core completed (`security-map` command + `check/report` security integration)
-- Phase 24: security ops integration completed (`dashboard/history/export` now include additive security mapping snapshots)
-- Phase 25: enforceable security gate completed (observe-by-default + optional enforce mode across CLI/action/CI)
-- Phase 26: security gate v2 completed (profiles + tier-aware policy, observe default preserved)
-- Phase 27: export ops governance completed (`export gate` + reconcile log continuity + observe-only CI smoke gate)
-- Phase 28: export ops governance enforce rollout completed (shared policy file + PR observe/main-tag enforce across action and CI)
-- Phase 29: team collaboration core completed (local-first ledger + `collaboration` CLI + observe-only action/CI signals)
-- Phase 30: collaboration governance completed (`collaboration gate` policy evaluator + PR-observe/main-tag enforce rollout in action/CI)
-- Phase 31: collaboration governance v2 completed (SLA/staleness-aware thresholds with additive policy and contract expansion)
-- Phase 32: GA completion pack completed (one-command `handoff` artifact orchestration + CI handoff smoke gate)
-- Phase 33: collaboration governance v3 completed (in-review staleness policy signals + additive action/CI contract expansion)
-- Phase 34: governance handoff v1 completed (single-command governance aggregation artifact + enforce-capable handoff mode)
-- Phase 35: governance handoff v2 completed (policy-driven action/CI rollout with PR observe and main/tag enforce)
-- Phase 36: GA stabilization hardening completed (deterministic handoff diagnostics + required Python 3.11/3.12/3.13 compatibility smoke gate)
-- Phase 37: ops automation closeout pack completed (`ops closeout` command + run/release/PyPI/RTD evidence artifacts + CI rollout smoke)
-- Phase 38: ops closeout governance rollout completed (policy-driven CLI/action/CI rollout with PR observe and main/tag enforce)
-- Phase 39: ops closeout v3 completed (freshness/SLA thresholds and additive freshness signals across CLI/action/CI)
-- Phase 40: ops closeout v4 completed (time-bounded reason-code waivers with additive waiver telemetry)
-- Phase 41: ops automation v5 completed (scheduled closeout + auto-resolved release inputs)
-- Phase 42: ops automation v6 completed (escalation-pack artifacts for closeout failures across CLI/action/CI)
-- Phase 43: final CI unblock completed (handoff governance enforce no-actionable semantics fixed on `main`)
-- Phase 44: maintenance v1 completed (weekly maintenance automation + required maintenance smoke gate)
-- Phase 45: release reliability hardening completed (two-attempt PyPI trusted publish path + deterministic post-publish version verification + diagnostics artifact)
-- Phase 46: Node24 CI migration hardening completed (migrated remaining workflow `upload-artifact@v4` usage and added workflow-level CI guard)
-- Phase 47: CI action runtime freshness hardening completed (coverage upload action major refresh + workflow contract guard expansion)
-- Project status: completed; repository is in maintenance mode for patch and operational reliability updates.
+Stable and in active maintenance. The core compliance engine, CLI, reporting, and
+GitHub Action are feature-complete for the v0.1.x line and covered by 350+ tests on
+Python 3.11-3.13. Release history is in [CHANGELOG.md](CHANGELOG.md); planned work is
+tracked in [ROADMAP.md](ROADMAP.md); contribution setup is in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Maintenance Playbook
 
